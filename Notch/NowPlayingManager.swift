@@ -13,6 +13,14 @@ struct LyricLine: Equatable {
     let text: String
 }
 
+// ⚡️ FIX 1: Removed UUID() and created a "Stable ID". This stops SwiftUI from destroying and glitching AsyncImages every 1.5 seconds!
+struct PlaylistTrack: Identifiable, Equatable {
+    var id: String { title + artist }
+    let title: String
+    let artist: String
+    let imageURL: String?
+}
+
 class NowPlayingManager: ObservableObject {
     @Published var currentSong: String = "No Music"
     private var internalSongIdentifier: String = ""
@@ -27,11 +35,10 @@ class NowPlayingManager: ObservableObject {
     @Published var lyrics: [LyricLine] = []
     @Published var activeLyricIndex: Int = 0
     @Published var isSearchingLyrics: Bool = false
+    @Published var playlist: [PlaylistTrack] = []
     
     var timer: Timer?
     private var isFetching = false
-    
-    // ⚡️ FIX 2: Timer tracking to prevent the ghost-lock bug
     private var lastFetchTime = Date(timeIntervalSince1970: 0)
     private var lastLoopToggleTime = Date(timeIntervalSince1970: 0)
     
@@ -42,7 +49,7 @@ class NowPlayingManager: ObservableObject {
     let supportedBrowsers = ["Google Chrome", "Brave Browser", "Microsoft Edge", "Safari"]
     
     init() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             self?.fetchTitle()
         }
     }
@@ -125,97 +132,102 @@ class NowPlayingManager: ObservableObject {
         if let idx = lyrics.lastIndex(where: { $0.time <= self.currentTime + 0.3 }), self.activeLyricIndex != idx { self.activeLyricIndex = idx }
     }
     
+    // MARK: - APPLESCRIPT COMPILER
+    private func buildAppleScript(browser: String, jsCode: String, wIdx: Int? = nil, tIdx: Int? = nil) -> String {
+        let escapedJS = jsCode.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+        if let w = wIdx, let t = tIdx {
+            if browser == "Safari" {
+                return "tell application \"Safari\"\ntry\nwith timeout of 1 second\ntell tab \(t) of window \(w) to return do JavaScript \"\(escapedJS)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\""
+            } else {
+                return "tell application \"\(browser)\"\ntry\nwith timeout of 1 second\ntell tab \(t) of window \(w) to return execute javascript \"\(escapedJS)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\""
+            }
+        } else {
+            if browser == "Safari" {
+                return "tell application \"Safari\"\nset wCount to count of windows\nrepeat with wIdx from 1 to wCount\nset tCount to count of tabs of window wIdx\nrepeat with tIdx from 1 to tCount\nset tabResult to \"NOT_PLAYING\"\ntry\nwith timeout of 1 second\ntell tab tIdx of window wIdx to set tabResult to do JavaScript \"\(escapedJS)\"\nend timeout\nend try\nif tabResult is not \"NOT_PLAYING\" and tabResult is not \"\" and tabResult is not missing value then\nreturn tabResult as string & \"|||\" & wIdx & \"|||\" & tIdx\nend if\nend repeat\nend repeat\nend tell\nreturn \"NOT_FOUND\""
+            } else {
+                return "tell application \"\(browser)\"\nset wCount to count of windows\nrepeat with wIdx from 1 to wCount\nset tCount to count of tabs of window wIdx\nrepeat with tIdx from 1 to tCount\nset tabResult to \"NOT_PLAYING\"\ntry\nwith timeout of 1 second\ntell tab tIdx of window wIdx to set tabResult to execute javascript \"\(escapedJS)\"\nend timeout\nend try\nif tabResult is not \"NOT_PLAYING\" and tabResult is not \"\" and tabResult is not missing value then\nreturn tabResult as string & \"|||\" & wIdx & \"|||\" & tIdx\nend if\nend repeat\nend repeat\nend tell\nreturn \"NOT_FOUND\""
+            }
+        }
+    }
+    
     // MARK: - MEDIA CONTROLS
-    let NX_KEYTYPE_PLAY: Int32 = 16
-    let NX_KEYTYPE_NEXT: Int32 = 17
-    let NX_KEYTYPE_PREVIOUS: Int32 = 18
+    func playTrack(_ track: PlaylistTrack) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let safeTitle = track.title.replacingOccurrences(of: "'", with: "\\'")
+            let jsCode = """
+            (function() {
+                var targetTitle = '\(safeTitle)';
+                var host = window.location.hostname;
+                if (host.includes('music.youtube.com')) {
+                    var qItems = document.querySelectorAll('ytmusic-player-queue-item');
+                    for(var i=0; i<qItems.length; i++) {
+                        var tN = qItems[i].querySelector('.song-title, .title, yt-formatted-string[title]');
+                        var text = tN ? (tN.innerText || tN.getAttribute('title') || '').trim() : '';
+                        if (text === targetTitle) {
+                            var playBtn = qItems[i].querySelector('ytmusic-play-button-renderer') || qItems[i].querySelector('#play-button');
+                            if (playBtn) { playBtn.click(); } else { qItems[i].dispatchEvent(new MouseEvent('dblclick', {bubbles: true, cancelable: true, view: window})); }
+                            return 'PLAYED';
+                        }
+                    }
+                }
+                return 'NOT_FOUND';
+            })();
+            """
+            if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
+                let fastScript = self.buildAppleScript(browser: browser, jsCode: jsCode, wIdx: wIdx, tIdx: tIdx)
+                _ = NSAppleScript(source: fastScript)?.executeAndReturnError(nil)
+                self.triggerFastFetch()
+            }
+        }
+    }
     
     func skipBackward() {
-        // ⚡️ FIX 1: Pushed Spotify call to background thread to stop UI from freezing on click
         if lastActiveBrowser == "SpotifyNative" {
             DispatchQueue.global(qos: .userInitiated).async {
-                if self.currentTime > 3.0 {
-                    _ = NSAppleScript(source: "tell application \"Spotify\"\nset player position to 0\nplay\nend tell")?.executeAndReturnError(nil)
-                } else {
-                    _ = NSAppleScript(source: "tell application \"Spotify\" to previous track")?.executeAndReturnError(nil)
-                }
-                DispatchQueue.main.async { self.currentTime = 0.0 }
-                self.triggerFastFetch()
+                if self.currentTime > 3.0 { _ = NSAppleScript(source: "tell application \"Spotify\"\nset player position to 0\nplay\nend tell")?.executeAndReturnError(nil)
+                } else { _ = NSAppleScript(source: "tell application \"Spotify\" to previous track")?.executeAndReturnError(nil) }
+                DispatchQueue.main.async { self.currentTime = 0.0 }; self.triggerFastFetch()
             }
             return
         }
-        
         DispatchQueue.global(qos: .userInitiated).async {
             let jsCode = "(function() { var host = window.location.hostname; var active = null; if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (media[i].duration > 1) { active = media[i]; break; } } } if (active) { if (active.currentTime > 3 || active.ended || (active.duration > 0 && active.duration - active.currentTime < 1.5)) { active.currentTime = 0; active.play(); return 'RESTARTED'; } } return 'SKIP'; })();"
-            
             if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
-                let fastScript = browser == "Safari" ? "tell application \"Safari\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return do JavaScript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"SKIP\"" : "tell application \"\(browser)\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return execute javascript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"SKIP\""
-                
+                let fastScript = self.buildAppleScript(browser: browser, jsCode: jsCode, wIdx: wIdx, tIdx: tIdx)
                 if let res = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue, res == "RESTARTED" {
-                    DispatchQueue.main.async {
-                        self.currentTime = 0.0
-                        self.isPlaying = true
-                        self.updateActiveLyric()
-                    }
-                    self.triggerFastFetch()
-                    return
+                    DispatchQueue.main.async { self.currentTime = 0.0; self.isPlaying = true; self.updateActiveLyric() }; self.triggerFastFetch(); return
                 }
             }
-            self.sendMediaKey(key: self.NX_KEYTYPE_PREVIOUS)
-            DispatchQueue.main.async { self.currentTime = 0.0 }
-            self.triggerFastFetch()
+            self.sendMediaKey(key: 18); DispatchQueue.main.async { self.currentTime = 0.0 }; self.triggerFastFetch()
         }
     }
     
     func togglePlayPause() {
-        // ⚡️ FIX 1: Pushed Spotify call to background thread to stop UI from freezing
         if lastActiveBrowser == "SpotifyNative" {
-            DispatchQueue.global(qos: .userInitiated).async {
-                _ = NSAppleScript(source: "tell application \"Spotify\" to playpause")?.executeAndReturnError(nil)
-                DispatchQueue.main.async { self.isPlaying.toggle() }
-                self.triggerFastFetch()
-            }
+            DispatchQueue.global(qos: .userInitiated).async { _ = NSAppleScript(source: "tell application \"Spotify\" to playpause")?.executeAndReturnError(nil); DispatchQueue.main.async { self.isPlaying.toggle() }; self.triggerFastFetch() }
             return
         }
-        
         DispatchQueue.global(qos: .userInitiated).async {
-            let jsCode = "(function() { var host = window.location.hostname; if (host.includes('music.youtube.com')) { var playBtn = document.querySelector('#play-pause-button'); if (playBtn) { playBtn.click(); return 'TOGGLED'; } } else if (host.includes('http://googleusercontent.com/spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-playpause]'); if (spotBtn) { spotBtn.click(); return 'TOGGLED'; } } var active = null; if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (media[i].duration > 1) { active = media[i]; break; } } } if (active) { if (active.paused || active.ended) { active.play(); return 'PLAYED'; } else { active.pause(); return 'PAUSED'; } } return 'NOT_FOUND'; })();"
-            
+            let jsCode = "(function() { var host = window.location.hostname; if (host.includes('music.youtube.com')) { var playBtn = document.querySelector('#play-pause-button'); if (playBtn) { playBtn.click(); return 'TOGGLED'; } } else if (host.includes('http://googleusercontent.com/spotify.com')) { var spotBtn = document.querySelector('[data-testid=\"control-button-playpause\"]'); if (spotBtn) { spotBtn.click(); return 'TOGGLED'; } } var active = null; if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (media[i].duration > 1) { active = media[i]; break; } } } if (active) { if (active.paused || active.ended) { active.play(); return 'PLAYED'; } else { active.pause(); return 'PAUSED'; } } return 'NOT_FOUND'; })();"
             if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
-                let fastScript = browser == "Safari" ? "tell application \"Safari\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return do JavaScript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return execute javascript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\""
-                
+                let fastScript = self.buildAppleScript(browser: browser, jsCode: jsCode, wIdx: wIdx, tIdx: tIdx)
                 if let res = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue, (res == "PLAYED" || res == "PAUSED" || res == "TOGGLED") {
-                    DispatchQueue.main.async {
-                        if res == "TOGGLED" { self.isPlaying.toggle() } else { self.isPlaying = (res == "PLAYED") }
-                    }
-                    self.triggerFastFetch()
-                    return
+                    DispatchQueue.main.async { if res == "TOGGLED" { self.isPlaying.toggle() } else { self.isPlaying = (res == "PLAYED") } }; self.triggerFastFetch(); return
                 }
             }
-            self.sendMediaKey(key: self.NX_KEYTYPE_PLAY); DispatchQueue.main.async { self.isPlaying.toggle() }; self.triggerFastFetch()
+            self.sendMediaKey(key: 16); DispatchQueue.main.async { self.isPlaying.toggle() }; self.triggerFastFetch()
         }
     }
     
     func skipForward() {
-        // ⚡️ FIX 1: Pushed Spotify call to background thread to stop UI from freezing
         if lastActiveBrowser == "SpotifyNative" {
-            DispatchQueue.global(qos: .userInitiated).async {
-                _ = NSAppleScript(source: "tell application \"Spotify\" to next track")?.executeAndReturnError(nil)
-                DispatchQueue.main.async { self.currentTime = 0.0 }
-                self.triggerFastFetch()
-            }
+            DispatchQueue.global(qos: .userInitiated).async { _ = NSAppleScript(source: "tell application \"Spotify\" to next track")?.executeAndReturnError(nil); DispatchQueue.main.async { self.currentTime = 0.0 }; self.triggerFastFetch() }
             return
         }
-        
-        sendMediaKey(key: NX_KEYTYPE_NEXT); DispatchQueue.main.async { self.currentTime = 0.0 }; triggerFastFetch()
+        sendMediaKey(key: 17); DispatchQueue.main.async { self.currentTime = 0.0 }; triggerFastFetch()
     }
     
-    private func triggerFastFetch() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            self.isFetching = false
-            self.fetchTitle()
-        }
-    }
+    private func triggerFastFetch() { DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.isFetching = false; self.fetchTitle() } }
     
     private func sendMediaKey(key: Int32) {
         let dataDown = Int((key << 16) | 0xa00); let dataUp = Int((key << 16) | 0xb00)
@@ -226,63 +238,42 @@ class NowPlayingManager: ObservableObject {
     
     func seek(to percentage: Double) {
         DispatchQueue.main.async { self.currentTime = self.duration * percentage; self.updateActiveLyric() }
-        
         if lastActiveBrowser == "SpotifyNative" {
-            DispatchQueue.global(qos: .userInitiated).async {
-                let script = "tell application \"Spotify\"\nset dur to (duration of current track) / 1000\nset player position to dur * \(percentage)\nend tell"
-                _ = NSAppleScript(source: script)?.executeAndReturnError(nil); self.triggerFastFetch()
-            }
+            DispatchQueue.global(qos: .userInitiated).async { let script = "tell application \"Spotify\"\nset dur to (duration of current track) / 1000\nset player position to dur * \(percentage)\nend tell"; _ = NSAppleScript(source: script)?.executeAndReturnError(nil); self.triggerFastFetch() }
             return
         }
-        
         DispatchQueue.global(qos: .userInitiated).async {
             let jsCode = "(function() { function pt(str) { if(!str) return 0; var p = str.split(':'); var s = 0; var m = 1; while (p.length > 0) { s += m * parseInt(p.pop(), 10); m *= 60; } return s; } var percentage = \(percentage); var host = window.location.hostname; var active = null; if (host.includes('music.youtube.com')) { active = document.querySelector('.html5-main-video'); var ytmTime = document.querySelector('.time-info.ytmusic-player-bar'); if (active && ytmTime) { var p = ytmTime.innerText.split('/'); if (p.length === 2) { var localCurr = pt(p[0].trim()); var localDur = pt(p[1].trim()); if (localDur > 0) { var offset = active.currentTime - localCurr; active.currentTime = offset + (localDur * percentage); return 'SEEKED'; } } } } if (host.includes('youtube.com') && !host.includes('music.youtube.com')) { active = document.querySelector('.html5-main-video'); } else if (!host.includes('music.youtube.com')) { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (media[i].duration > 1) { active = media[i]; break; } } } if (active && active.duration) { active.currentTime = active.duration * percentage; return 'SEEKED'; } return 'NOT_FOUND'; })();"
-            
             if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
-                let fastScript = browser == "Safari" ? "tell application \"Safari\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return do JavaScript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return execute javascript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\""
-                
+                let fastScript = self.buildAppleScript(browser: browser, jsCode: jsCode, wIdx: wIdx, tIdx: tIdx)
                 if let res = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue, res == "SEEKED" { self.triggerFastFetch(); return }
             }
-            self.runFullAppleScriptLoop(jsCode: jsCode) { _ in }; self.triggerFastFetch()
+            if let script = NSAppleScript(source: self.buildAppleScript(browser: "Safari", jsCode: jsCode)) { _ = script.executeAndReturnError(nil) }
+            self.triggerFastFetch()
         }
     }
     
     func toggleLoop() {
         DispatchQueue.main.async { self.lastLoopToggleTime = Date(); self.loopMode = (self.loopMode + 1) % 3 }
-        
         if lastActiveBrowser == "SpotifyNative" {
-            DispatchQueue.global(qos: .userInitiated).async {
-                let script = "tell application \"Spotify\"\nset repeating to not repeating\nif repeating then\nreturn \"ALL\"\nelse\nreturn \"NONE\"\nend if\nend tell"
-                if let result = NSAppleScript(source: script)?.executeAndReturnError(nil).stringValue {
-                    DispatchQueue.main.async { if result == "ALL" { self.loopMode = 1 } else { self.loopMode = 0 } }
-                }
-            }
+            DispatchQueue.global(qos: .userInitiated).async { let script = "tell application \"Spotify\"\nset repeating to not repeating\nif repeating then\nreturn \"ALL\"\nelse\nreturn \"NONE\"\nend if\nend tell"; if let result = NSAppleScript(source: script)?.executeAndReturnError(nil).stringValue { DispatchQueue.main.async { if result == "ALL" { self.loopMode = 1 } else { self.loopMode = 0 } } } }
             return
         }
-        
         DispatchQueue.global(qos: .userInitiated).async {
-            let jsCode = "(function() { var host = window.location.hostname; if (host.includes('music.youtube.com')) { var btns = document.querySelectorAll('ytmusic-player-bar button'); var repeatBtn = null; for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { repeatBtn = btns[i]; break; } } if (repeatBtn) { repeatBtn.click(); return 'TOGGLED'; } return 'NOT_FOUND'; } else if (host.includes('http://googleusercontent.com/spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-repeat]'); if (spotBtn) { spotBtn.click(); return 'TOGGLED'; } } else if (host.includes('music.apple.com')) { var appleBtn = document.querySelector('.button-repeat') || document.querySelector('[data-testid=repeat-button]'); if (appleBtn) { appleBtn.click(); return 'TOGGLED'; } } else if (host.includes('youtube.com')) { var yt = document.querySelector('.html5-main-video'); if (yt && !yt.paused && yt.currentTime > 0) { yt.loop = !yt.loop; if(yt.loop) yt.setAttribute('loop', ''); else yt.removeAttribute('loop'); return yt.loop ? 'ALL' : 'NONE'; } } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { media[i].loop = !media[i].loop; return media[i].loop ? 'ALL' : 'NONE'; } } } return 'NOT_FOUND'; })();"
+            let jsCode = "(function() { var host = window.location.hostname; if (host.includes('music.youtube.com')) { var btns = document.querySelectorAll('ytmusic-player-bar button'); var repeatBtn = null; for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { repeatBtn = btns[i]; break; } } if (repeatBtn) { repeatBtn.click(); return 'TOGGLED'; } return 'NOT_FOUND'; } else if (host.includes('http://googleusercontent.com/spotify.com')) { var spotBtn = document.querySelector('[data-testid=\"control-button-repeat\"]'); if (spotBtn) { spotBtn.click(); return 'TOGGLED'; } } else if (host.includes('music.apple.com')) { var appleBtn = document.querySelector('.button-repeat') || document.querySelector('[data-testid=\"repeat-button\"]'); if (appleBtn) { appleBtn.click(); return 'TOGGLED'; } } else if (host.includes('youtube.com')) { var yt = document.querySelector('.html5-main-video'); if (yt && !yt.paused && yt.currentTime > 0) { yt.loop = !yt.loop; if(yt.loop) yt.setAttribute('loop', ''); else yt.removeAttribute('loop'); return yt.loop ? 'ALL' : 'NONE'; } } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { media[i].loop = !media[i].loop; return media[i].loop ? 'ALL' : 'NONE'; } } } return 'NOT_FOUND'; })();"
             if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
-                let fastScript = browser == "Safari" ? "tell application \"Safari\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return do JavaScript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return execute javascript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\""
+                let fastScript = self.buildAppleScript(browser: browser, jsCode: jsCode, wIdx: wIdx, tIdx: tIdx)
                 if let result = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue, result != "NOT_FOUND" {
-                    DispatchQueue.main.async { if result == "ALL" { self.loopMode = 1 } else if result == "NONE" { self.loopMode = 0 } }
-                    return
+                    DispatchQueue.main.async { if result == "ALL" { self.loopMode = 1 } else if result == "NONE" { self.loopMode = 0 } }; return
                 }
             }
-            self.runFullAppleScriptLoop(jsCode: jsCode) { result in DispatchQueue.main.async { if result == "ALL" { self.loopMode = 1 } else if result == "NONE" { self.loopMode = 0 } } }
+            if let script = NSAppleScript(source: self.buildAppleScript(browser: "Safari", jsCode: jsCode)) { _ = script.executeAndReturnError(nil) }
         }
     }
     
-    // MARK: - FETCH LOGIC WITH JS FIXES
+    // MARK: - THE MAIN FETCH ENGINE
     func fetchTitle() {
-        // ⚡️ FIX 2: Added a robust 3-second failsafe to kill ghost locks and restore UI updates
-        if isFetching {
-            if Date().timeIntervalSince(lastFetchTime) > 3.0 {
-                isFetching = false
-            } else {
-                return
-            }
-        }
+        if isFetching { if Date().timeIntervalSince(lastFetchTime) > 3.0 { isFetching = false } else { return } }
         isFetching = true
         lastFetchTime = Date()
         
@@ -323,61 +314,50 @@ class NowPlayingManager: ObservableObject {
                 return "NOT_PLAYING"
                 """
                 if let res = NSAppleScript(source: spotScript)?.executeAndReturnError(nil).stringValue, res != "NOT_PLAYING", res != "NOT_FOUND" {
-                    self.parseAndApplyResult(result: res, browser: "SpotifyNative")
+                    self.parseAndApplyResult(result: res + "|||Queue unavailable for Spotify Native", browser: "SpotifyNative")
                     return
                 }
             }
             
             if activeBrowsers.isEmpty { DispatchQueue.main.async { self.isPlaying = false; self.isFetching = false }; return }
-            
             if let last = self.lastActiveBrowser, activeBrowsers.contains(last) {
                 activeBrowsers.removeAll(where: { $0 == last })
                 activeBrowsers.insert(last, at: 0)
             }
             
-            let jsCode = "(function() { function pt(str) { if(!str) return 0; var p = str.split(':'); var s = 0; var m = 1; while (p.length > 0) { s += m * parseInt(p.pop(), 10); m *= 60; } return s; } var host = window.location.hostname; var isPlaying = false; var loopState = 'NONE'; var active = null; var cTitle = ''; var cArtist = ''; var cCurr = -1; var cDur = -1; if (host.includes('music.youtube.com')) { active = document.querySelector('.html5-main-video'); if (active && (!active.paused || active.ended) && active.currentTime > 0) isPlaying = true; var btns = document.querySelectorAll('ytmusic-player-bar button'); for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { if (lbl.includes('1') || lbl.includes('one') || lbl.includes('una') || lbl.includes('곡')) { loopState = 'ONE'; } else if (!lbl.includes('off') && !lbl.includes('안함') && !lbl.includes('desactiv')) { loopState = 'ALL'; } else { loopState = 'NONE'; } break; } } var tEl = document.querySelector('ytmusic-player-bar .title'); var aEl = document.querySelector('ytmusic-player-bar .byline'); if (tEl) cTitle = tEl.innerText; if (aEl) cArtist = aEl.innerText.split('•')[0].trim(); var ytmTime = document.querySelector('.time-info.ytmusic-player-bar'); if (ytmTime) { var p = ytmTime.innerText.split('/'); if(p.length === 2) { cCurr = pt(p[0].trim()); cDur = pt(p[1].trim()); } } } else if (host.includes('http://googleusercontent.com/spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-repeat]'); if (spotBtn) { var checked = spotBtn.getAttribute('aria-checked'); if (checked === 'mixed') loopState = 'ONE'; else if (checked === 'true') loopState = 'ALL'; else loopState = 'NONE'; } var playBtn = document.querySelector('[data-testid=control-button-playpause]'); if (playBtn && playBtn.getAttribute('aria-label') === 'Pause') { isPlaying = true; } var tElSpot = document.querySelector('[data-testid=context-item-info-title]'); var aElSpot = document.querySelector('[data-testid=context-item-info-artist]'); if (tElSpot) cTitle = tElSpot.innerText; if (aElSpot) cArtist = aElSpot.innerText; var posEl = document.querySelector('[data-testid=playback-position]'); var durEl = document.querySelector('[data-testid=playback-duration]'); cCurr = posEl ? pt(posEl.innerText) : -1; cDur = durEl ? pt(durEl.innerText) : -1; } else if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); if (active && (!active.paused || active.ended) && active.currentTime > 0) { isPlaying = true; loopState = (active.loop || active.hasAttribute('loop')) ? 'ALL' : 'NONE'; if(active.duration > 0.05) { cDur = active.duration - 0.05; } var attrTitle = document.querySelector('.ytVideoAttributeViewModelTitle'); var attrArtist = document.querySelector('.ytVideoAttributeViewModelSubtitle'); if (attrTitle) cTitle = attrTitle.innerText.trim(); if (attrArtist) cArtist = attrArtist.innerText.trim(); if (!cTitle) { var rows = document.querySelectorAll('ytd-info-row-renderer, ytd-metadata-row-renderer'); for(var j=0; j<rows.length; j++) { var txt = rows[j].innerText.toLowerCase(); if(txt.includes('song') || txt.includes('노래')) { var tC = rows[j].querySelector('#content'); if(tC) cTitle = tC.innerText; } if(txt.includes('artist') || txt.includes('아티스트')) { var aC = rows[j].querySelector('#content'); if(aC) cArtist = aC.innerText; } } } } } else if (!host.includes('music.apple.com')) { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if ((!media[i].paused || media[i].ended) && media[i].currentTime > 0) { active = media[i]; isPlaying = true; loopState = active.loop ? 'ALL' : 'NONE'; break; } } } if (!isPlaying && navigator.mediaSession && navigator.mediaSession.playbackState === 'playing') { isPlaying = true; } if (isPlaying) { var title = cTitle || document.title; var artist = cArtist; var img = 'NO_IMAGE'; var curr = 0; var dur = 1; if (active) { curr = cCurr !== -1 ? cCurr : active.currentTime; dur = cDur !== -1 && !isNaN(cDur) && cDur !== 0 ? cDur : (active.duration || 1); } else { curr = cCurr !== -1 ? cCurr : 0; dur = cDur !== -1 && !isNaN(cDur) && cDur !== 0 ? cDur : 1; } if (navigator.mediaSession && navigator.mediaSession.metadata) { var m = navigator.mediaSession.metadata; if(!cTitle && m.title) title = m.title; if(!cArtist && m.artist) artist = m.artist; if(m.artwork && m.artwork.length > 0) img = m.artwork[m.artwork.length - 1].src; } return title + '|||' + (artist ? artist : 'EMPTY_ARTIST') + '|||' + img + '|||' + loopState + '|||' + curr + '|||' + dur; } return 'NOT_PLAYING'; })();"
-            
-            if let browser = self.lastActiveBrowser, browser != "SpotifyNative", let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
-                let fastScript = browser == "Safari" ? "tell application \"Safari\"\nset tabResult to \"NOT_PLAYING\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to set tabResult to do JavaScript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is not \"NOT_PLAYING\" and tabResult is not \"\" and tabResult is not missing value then\nreturn tabResult as string & \"|||\" & \"\(wIdx)\" & \"|||\" & \"\(tIdx)\"\nend if\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\nset tabResult to \"NOT_PLAYING\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to set tabResult to execute javascript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is not \"NOT_PLAYING\" and tabResult is not \"\" and tabResult is not missing value then\nreturn tabResult as string & \"|||\" & \"\(wIdx)\" & \"|||\" & \"\(tIdx)\"\nend if\nend tell\nreturn \"NOT_FOUND\""
-                
-                if let result = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue, result != "NOT_FOUND", result != "NOT_PLAYING" {
-                    self.parseAndApplyResult(result: result, browser: browser); return
-                } else {
-                    self.lastActiveBrowser = nil; self.lastWindowIndex = nil; self.lastTabIndex = nil
-                }
-            }
+            // ⚡️ FIX 2: Removed `!== cTitle` logic so the current song stays in the list!
+            let jsCode = "(function(){function pt(str){if(!str)return 0;var p=str.split(':');var s=0,m=1;while(p.length>0){s+=m*parseInt(p.pop(),10);m*=60;}return s;}var host=window.location.hostname;var active=null;var cTitle='',cArtist='',cImg='NO_IMAGE',cCurr=-1,cDur=-1,loopState='NONE',playlist='';if(host.includes('music.youtube.com')){active=document.querySelector('.html5-main-video');var tEl=document.querySelector('ytmusic-player-bar .title');var aEl=document.querySelector('ytmusic-player-bar .byline');if(tEl)cTitle=tEl.innerText;if(aEl)cArtist=aEl.innerText.split('•')[0].trim();var time=document.querySelector('.time-info.ytmusic-player-bar');if(time){var p=time.innerText.split('/');if(p.length===2){cCurr=pt(p[0]);cDur=pt(p[1]);}}try{var qItems=document.querySelectorAll('ytmusic-player-queue-item');var pArr=[];var start=0;for(var i=0;i<qItems.length;i++){if(qItems[i].hasAttribute('selected')||qItems[i].getAttribute('play-button-state')==='playing'){start=i;break;}}for(var j=start;j<qItems.length;j++){var tN=qItems[j].querySelector('.song-title, .title, yt-formatted-string[title]');var aN=qItems[j].querySelector('.byline');var iN=qItems[j].querySelector('img');var tText=tN?(tN.innerText||tN.getAttribute('title')||'').trim():'';var aText=aN?aN.innerText.replace(/\\n/g,'').trim():'Unknown';var iSrc=iN?(iN.src||''):'NO_IMAGE';if(tText){pArr.push(tText+'~~~'+aText+'~~~'+iSrc);}if(pArr.length>=15)break;}playlist=pArr.join('&&&');}catch(e){}}else if(host.includes('http://googleusercontent.com/spotify.com')){active=document.querySelector('video, audio');var tEl=document.querySelector('[data-testid=context-item-info-title]');var aEl=document.querySelector('[data-testid=context-item-info-artist]');if(tEl)cTitle=tEl.innerText;if(aEl)cArtist=aEl.innerText;var cEl=document.querySelector('[data-testid=playback-position]');var dEl=document.querySelector('[data-testid=playback-duration]');if(cEl)cCurr=pt(cEl.innerText);if(dEl)cDur=pt(dEl.innerText);}else if(host.includes('youtube.com')){active=document.querySelector('.html5-main-video');loopState=(active&&(active.loop||active.hasAttribute('loop')))?'ALL':'NONE';if(active&&active.duration>0.05){cDur=active.duration-0.05;}var attrTitle=document.querySelector('.ytVideoAttributeViewModelTitle')||document.querySelector('#title h1 yt-formatted-string');var attrArtist=document.querySelector('.ytVideoAttributeViewModelSubtitle')||document.querySelector('#owner-name a');if(attrTitle)cTitle=attrTitle.innerText.trim();if(attrArtist)cArtist=attrArtist.innerText.trim();try{var ytdItems=document.querySelectorAll('ytd-playlist-panel-video-renderer');var ytdArr=[];var ytdStart=0;for(var k=0;k<ytdItems.length;k++){if(ytdItems[k].hasAttribute('selected')){ytdStart=k;break;}}for(var l=ytdStart;l<ytdItems.length;l++){var yT=ytdItems[l].querySelector('#video-title');var yA=ytdItems[l].querySelector('#byline');var yI=ytdItems[l].querySelector('img');var iSrc=yI?(yI.src||''):'NO_IMAGE';if(yT&&yT.innerText.trim()){ytdArr.push(yT.innerText.trim()+'~~~'+(yA?yA.innerText.trim():'Unknown')+'~~~'+iSrc);}if(ytdArr.length>=15)break;}playlist=ytdArr.join('&&&');}catch(e){}}else{var media=document.querySelectorAll('video, audio');for(var i=0;i<media.length;i++){if(!media[i].paused&&media[i].currentTime>0){active=media[i];break;}}}var isPlaying=(active&&(!active.paused||active.ended)&&active.currentTime>0);if(!isPlaying&&navigator.mediaSession&&navigator.mediaSession.playbackState==='playing')isPlaying=true;if(isPlaying){var title=cTitle||document.title;var artist=cArtist||'EMPTY_ARTIST';var curr=cCurr!==-1?cCurr:(active?active.currentTime:0);var dur=cDur!==-1&&isNaN(cDur)===false&&cDur!==0?cDur:(active?(active.duration||1):1);if(navigator.mediaSession&&navigator.mediaSession.metadata){var m=navigator.mediaSession.metadata;if(!cTitle&&m.title)title=m.title;if(artist==='EMPTY_ARTIST'&&m.artist)artist=m.artist;if(cImg==='NO_IMAGE'&&m.artwork&&m.artwork.length>0)cImg=m.artwork[m.artwork.length-1].src;}return title+'|||'+artist+'|||'+cImg+'|||'+loopState+'|||'+curr+'|||'+dur+'|||'+playlist;}return 'NOT_PLAYING';})();"
             
             self.runFullAppleScriptLoop(jsCode: jsCode) { result in
                 if let res = result {
-                    let parts = res.components(separatedBy: "|||")
-                    if parts.count >= 8 { self.parseAndApplyResult(result: res, browser: parts.last!) }
+                    self.parseAndApplyResult(result: res, browser: res.components(separatedBy: "|||").last ?? "Unknown")
                 } else {
                     DispatchQueue.main.async { self.isPlaying = false; self.isFetching = false }
                 }
             }
         }
     }
-    
+
     private func runFullAppleScriptLoop(jsCode: String, completion: @escaping (String?) -> Void) {
         let runningApps = NSWorkspace.shared.runningApplications
-        var activeBrowsers: [String] = []
-        for app in runningApps { if let name = app.localizedName, self.supportedBrowsers.contains(name) { activeBrowsers.append(name) } }
-        
-        for browser in activeBrowsers {
-            let script = browser == "Safari" ? "tell application \"Safari\"\nset wCount to count of windows\nrepeat with wIdx from 1 to wCount\nset tCount to count of tabs of window wIdx\nrepeat with tIdx from 1 to tCount\nset tabResult to \"NOT_PLAYING\"\ntry\nwith timeout of 1 second\ntell tab tIdx of window wIdx to set tabResult to do JavaScript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is not \"NOT_PLAYING\" and tabResult is not \"\" and tabResult is not missing value then\nreturn tabResult as string & \"|||\" & wIdx & \"|||\" & tIdx\nend if\nend repeat\nend repeat\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\nset wCount to count of windows\nrepeat with wIdx from 1 to wCount\nset tCount to count of tabs of window wIdx\nrepeat with tIdx from 1 to tCount\nset tabResult to \"NOT_PLAYING\"\ntry\nwith timeout of 1 second\ntell tab tIdx of window wIdx to set tabResult to execute javascript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is not \"NOT_PLAYING\" and tabResult is not \"\" and tabResult is not missing value then\nreturn tabResult as string & \"|||\" & wIdx & \"|||\" & tIdx\nend if\nend repeat\nend repeat\nend tell\nreturn \"NOT_FOUND\""
-            
-            if let result = NSAppleScript(source: script)?.executeAndReturnError(nil).stringValue, result != "NOT_FOUND", result != "NOT_PLAYING" {
-                completion(result + "|||" + browser); return
+        let browsers = runningApps.filter { supportedBrowsers.contains($0.localizedName ?? "") }
+        for app in browsers {
+            if let name = app.localizedName {
+                let script = self.buildAppleScript(browser: name, jsCode: jsCode)
+                if let result = NSAppleScript(source: script)?.executeAndReturnError(nil).stringValue {
+                    completion(result + "|||" + name); return
+                }
             }
         }
         completion(nil)
     }
-    
+
     private func parseAndApplyResult(result: String, browser: String) {
         DispatchQueue.main.async {
-            self.isPlaying = true
             let components = result.components(separatedBy: "|||")
+            guard components.count >= 6 else { self.isFetching = false; return }
             
+            self.isPlaying = true
             let rawTitle = components[0].replacingOccurrences(of: " - YouTube Music", with: "").replacingOccurrences(of: " - YouTube", with: "").replacingOccurrences(of: " | Spotify", with: "")
             let rawArtist = components[1] == "EMPTY_ARTIST" ? "" : components[1]
             let imgString = components[2]
@@ -385,15 +365,48 @@ class NowPlayingManager: ObservableObject {
             let currString = components[4]
             let durString = components[5]
             
+            var playlistString = ""
+            if components.count >= 7 { playlistString = components[6] }
+            
             if browser == "SpotifyNative" {
                 self.lastActiveBrowser = "SpotifyNative"
                 self.lastWindowIndex = nil
                 self.lastTabIndex = nil
-            } else if components.count >= 8 {
+            } else if components.count >= 9 {
                 self.lastActiveBrowser = browser
-                self.lastWindowIndex = Int(components[6])
-                self.lastTabIndex = Int(components[7])
+                self.lastWindowIndex = Int(components[7])
+                self.lastTabIndex = Int(components[8])
             }
+            
+            // ⚡️ FIX 3: ADVANCED FUZZY MATCH DEDUPLICATION
+            let trackStrings = playlistString.components(separatedBy: "&&&")
+            var uniqueTracks: [PlaylistTrack] = []
+            
+            for s in trackStrings {
+                if s.isEmpty { continue }
+                let parts = s.components(separatedBy: "~~~")
+                let t = parts[0]
+                let a = parts.count > 1 ? parts[1] : "Unknown"
+                
+                var img = parts.count > 2 ? parts[2] : ""
+                if img.hasPrefix("http://") { img = img.replacingOccurrences(of: "http://", with: "https://") }
+                
+                let cleanNewTitle = t.lowercased().components(separatedBy: .alphanumerics.inverted).joined()
+                
+                let isDuplicate = uniqueTracks.contains { existing in
+                    let cleanExistingTitle = existing.title.lowercased().components(separatedBy: .alphanumerics.inverted).joined()
+                    
+                    if cleanNewTitle.isEmpty || cleanExistingTitle.isEmpty { return false }
+                    
+                    // If one title string completely swallows the other (e.g. "으르렁 growl" vs "으르렁")
+                    return cleanExistingTitle.contains(cleanNewTitle) || cleanNewTitle.contains(cleanExistingTitle)
+                }
+                
+                if !isDuplicate {
+                    uniqueTracks.append(PlaylistTrack(title: t, artist: a, imageURL: img))
+                }
+            }
+            self.playlist = uniqueTracks
             
             let identifier = rawTitle + rawArtist
             if self.internalSongIdentifier != identifier {
@@ -406,10 +419,7 @@ class NowPlayingManager: ObservableObject {
             if self.currentSong != displayString { self.currentSong = displayString }
             
             if imgString != "NO_IMAGE", let url = URL(string: imgString) {
-                if self.artworkURL != url {
-                    self.artworkURL = url
-                    self.fetchDominantColor(from: url)
-                }
+                if self.artworkURL != url { self.artworkURL = url; self.fetchDominantColor(from: url) }
             } else {
                 self.artworkURL = nil
                 self.artworkDominantColor = .green
