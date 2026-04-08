@@ -2,70 +2,6 @@ import SwiftUI
 import Combine
 import AppKit
 
-// ⚡️ NSIMAGE EXTENSION: Extracts the dominant color from the album artwork
-extension NSImage {
-    var averageColor: Color {
-        guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return .green }
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        var rgba = [UInt8](repeating: 0, count: 4)
-        guard let context = CGContext(data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return .green }
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-        
-        // Boost brightness slightly so dark albums don't create an invisible black waveform
-        var r = CGFloat(rgba[0]) / 255.0
-        var g = CGFloat(rgba[1]) / 255.0
-        var b = CGFloat(rgba[2]) / 255.0
-        let maxColor = max(r, max(g, b))
-        if maxColor < 0.4 {
-            let boost = 0.4 - maxColor
-            r += boost; g += boost; b += boost
-        }
-        return Color(red: Double(r), green: Double(g), blue: Double(b))
-    }
-}
-
-// ⚡️ THE SECRET SAUCE: Custom S-Curve Notch Shape
-struct DynamicNotchShape: Shape {
-    var cornerRadius: CGFloat
-    var blendRadius: CGFloat = 16 // The size of the concave "swoop" at the top
-    
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: 0, y: 0))
-        path.addQuadCurve(to: CGPoint(x: blendRadius, y: blendRadius), control: CGPoint(x: blendRadius, y: 0))
-        path.addLine(to: CGPoint(x: blendRadius, y: rect.maxY - cornerRadius))
-        path.addQuadCurve(to: CGPoint(x: blendRadius + cornerRadius, y: rect.maxY), control: CGPoint(x: blendRadius, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.maxX - blendRadius - cornerRadius, y: rect.maxY))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX - blendRadius, y: rect.maxY - cornerRadius), control: CGPoint(x: rect.maxX - blendRadius, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.maxX - blendRadius, y: blendRadius))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: 0), control: CGPoint(x: rect.maxX - blendRadius, y: 0))
-        path.addLine(to: CGPoint(x: 0, y: 0))
-        return path
-    }
-}
-
-struct WaveformView: View {
-    var isPlaying: Bool
-    var color: Color // ⚡️ Now accepts the dynamically extracted color
-    @State private var isAnimating = false
-    
-    var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<4) { index in
-                Capsule()
-                    .fill(isPlaying ? color : Color.gray.opacity(0.5))
-                    .frame(width: 3, height: isPlaying ? (isAnimating ? .random(in: 6...14) : 4) : 4)
-                    .animation(
-                        isPlaying ? Animation.easeInOut(duration: 0.3).repeatForever().delay(Double(index) * 0.1) : .easeOut(duration: 0.2),
-                        value: isAnimating
-                    )
-            }
-        }
-        .onChange(of: isPlaying) { playing in isAnimating = playing }
-        .onAppear { if isPlaying { isAnimating = true } }
-    }
-}
-
 struct LRCTrack: Codable {
     let trackName: String?
     let artistName: String?
@@ -82,7 +18,7 @@ class NowPlayingManager: ObservableObject {
     private var internalSongIdentifier: String = ""
     
     @Published var artworkURL: URL? = nil
-    @Published var artworkDominantColor: Color = .green // ⚡️ Stores the extracted color
+    @Published var artworkDominantColor: Color = .green
     @Published var isPlaying: Bool = false
     @Published var loopMode: Int = 0
     @Published var currentTime: Double = 0.0
@@ -108,7 +44,6 @@ class NowPlayingManager: ObservableObject {
         }
     }
     
-    // ⚡️ Fetches the image behind the scenes and calculates the average color
     private func fetchDominantColor(from url: URL) {
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data = data, let image = NSImage(data: data) else { return }
@@ -184,7 +119,7 @@ class NowPlayingManager: ObservableObject {
     
     func updateActiveLyric() {
         guard !lyrics.isEmpty else { return }
-        if let idx = lyrics.lastIndex(where: { $0.time <= self.currentTime }), self.activeLyricIndex != idx { self.activeLyricIndex = idx }
+        if let idx = lyrics.lastIndex(where: { $0.time <= self.currentTime + 0.2 }), self.activeLyricIndex != idx { self.activeLyricIndex = idx }
     }
     
     // MARK: - MEDIA CONTROLS
@@ -192,25 +127,72 @@ class NowPlayingManager: ObservableObject {
     let NX_KEYTYPE_NEXT: Int32 = 17
     let NX_KEYTYPE_PREVIOUS: Int32 = 18
     
-    func skipBackward() { sendMediaKey(key: NX_KEYTYPE_PREVIOUS); DispatchQueue.main.async { self.currentTime = 0.0 }; triggerFastFetch() }
-    func togglePlayPause() { sendMediaKey(key: NX_KEYTYPE_PLAY); DispatchQueue.main.async { self.isPlaying.toggle() }; triggerFastFetch() }
-    func skipForward() { sendMediaKey(key: NX_KEYTYPE_NEXT); DispatchQueue.main.async { self.currentTime = 0.0 }; triggerFastFetch() }
+    func skipBackward() {
+        // ⚡️ THE RESTART OVERRIDE: If song is in progress OR reached the end, force restart + play via JS
+        if self.currentTime > 3.0 || (self.duration > 5.0 && self.currentTime >= self.duration - 2.0) {
+            DispatchQueue.main.async { self.currentTime = 0.0; self.isPlaying = true; self.updateActiveLyric() }
+            
+            if lastActiveBrowser == "SpotifyNative" {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    _ = NSAppleScript(source: "tell application \"Spotify\"\nset player position to 0\nplay\nend tell")?.executeAndReturnError(nil)
+                    self.triggerFastFetch()
+                }
+                return
+            }
+            
+            DispatchQueue.global(qos: .userInitiated).async {
+                let jsCode = "(function() { var active = null; var host = window.location.hostname; if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (media[i].duration > 1) { active = media[i]; break; } } } if (active) { active.currentTime = 0; active.play(); return 'SEEKED_AND_PLAYED'; } return 'NOT_FOUND'; })();"
+                if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
+                    let fastScript = browser == "Safari" ? "tell application \"Safari\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return do JavaScript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return execute javascript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\""
+                    _ = NSAppleScript(source: fastScript)?.executeAndReturnError(nil)
+                }
+                self.triggerFastFetch()
+            }
+        } else {
+            // Otherwise, genuinely go to the previous track
+            if lastActiveBrowser == "SpotifyNative" {
+                _ = NSAppleScript(source: "tell application \"Spotify\" to previous track")?.executeAndReturnError(nil)
+            } else {
+                sendMediaKey(key: NX_KEYTYPE_PREVIOUS)
+            }
+            DispatchQueue.main.async { self.currentTime = 0.0 }
+            triggerFastFetch()
+        }
+    }
+    
+    func togglePlayPause() {
+        if lastActiveBrowser == "SpotifyNative" { _ = NSAppleScript(source: "tell application \"Spotify\" to playpause")?.executeAndReturnError(nil); DispatchQueue.main.async { self.isPlaying.toggle() }; triggerFastFetch(); return }
+        sendMediaKey(key: NX_KEYTYPE_PLAY); DispatchQueue.main.async { self.isPlaying.toggle() }; triggerFastFetch()
+    }
+    
+    func skipForward() {
+        if lastActiveBrowser == "SpotifyNative" { _ = NSAppleScript(source: "tell application \"Spotify\" to next track")?.executeAndReturnError(nil); DispatchQueue.main.async { self.currentTime = 0.0 }; triggerFastFetch(); return }
+        sendMediaKey(key: NX_KEYTYPE_NEXT); DispatchQueue.main.async { self.currentTime = 0.0 }; triggerFastFetch()
+    }
     
     private func triggerFastFetch() { DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.isFetching = false; self.fetchTitle() } }
     
     private func sendMediaKey(key: Int32) {
-        let dataDown = Int((key << 16) | 0xa00)
-        let dataUp = Int((key << 16) | 0xb00)
+        let dataDown = Int((key << 16) | 0xa00); let dataUp = Int((key << 16) | 0xb00)
         let evDown = NSEvent.otherEvent(with: .systemDefined, location: .zero, modifierFlags: .init(rawValue: 0xa00), timestamp: 0, windowNumber: 0, context: nil, subtype: 8, data1: dataDown, data2: -1)
         let evUp = NSEvent.otherEvent(with: .systemDefined, location: .zero, modifierFlags: .init(rawValue: 0xb00), timestamp: 0, windowNumber: 0, context: nil, subtype: 8, data1: dataUp, data2: -1)
-        evDown?.cgEvent?.post(tap: .cghidEventTap)
-        evUp?.cgEvent?.post(tap: .cghidEventTap)
+        evDown?.cgEvent?.post(tap: .cghidEventTap); evUp?.cgEvent?.post(tap: .cghidEventTap)
     }
     
     func seek(to percentage: Double) {
         DispatchQueue.main.async { self.currentTime = self.duration * percentage; self.updateActiveLyric() }
+        
+        if lastActiveBrowser == "SpotifyNative" {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let script = "tell application \"Spotify\"\nset dur to (duration of current track) / 1000\nset player position to dur * \(percentage)\nend tell"
+                _ = NSAppleScript(source: script)?.executeAndReturnError(nil); self.triggerFastFetch()
+            }
+            return
+        }
+        
         DispatchQueue.global(qos: .userInitiated).async {
-            let jsCode = "(function() { var percentage = \(percentage); var host = window.location.hostname; var active = null; if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { active = media[i]; break; } } } if (active && active.duration) { active.currentTime = active.duration * percentage; return 'SEEKED'; } return 'NOT_FOUND'; })();"
+            // ⚡️ THE PAUSE FIX: Removed the `!media[i].paused` check so you can seek perfectly even while paused
+            let jsCode = "(function() { var percentage = \(percentage); var host = window.location.hostname; var active = null; if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (media[i].duration > 1) { active = media[i]; break; } } } if (active && active.duration) { active.currentTime = active.duration * percentage; return 'SEEKED'; } return 'NOT_FOUND'; })();"
             if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
                 let fastScript = browser == "Safari" ? "tell application \"Safari\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return do JavaScript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return execute javascript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\""
                 if let res = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue, res == "SEEKED" { self.triggerFastFetch(); return }
@@ -221,8 +203,19 @@ class NowPlayingManager: ObservableObject {
     
     func toggleLoop() {
         DispatchQueue.main.async { self.lastLoopToggleTime = Date(); self.loopMode = (self.loopMode + 1) % 3 }
+        
+        if lastActiveBrowser == "SpotifyNative" {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let script = "tell application \"Spotify\"\nset repeating to not repeating\nif repeating then\nreturn \"ALL\"\nelse\nreturn \"NONE\"\nend if\nend tell"
+                if let result = NSAppleScript(source: script)?.executeAndReturnError(nil).stringValue {
+                    DispatchQueue.main.async { if result == "ALL" { self.loopMode = 1 } else { self.loopMode = 0 } }
+                }
+            }
+            return
+        }
+        
         DispatchQueue.global(qos: .userInitiated).async {
-            let jsCode = "(function() { var host = window.location.hostname; if (host.includes('music.youtube.com')) { var btns = document.querySelectorAll('ytmusic-player-bar button'); var repeatBtn = null; for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { repeatBtn = btns[i]; break; } } if (repeatBtn) { repeatBtn.click(); return 'TOGGLED'; } return 'NOT_FOUND'; } else if (host.includes('spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-repeat]'); if (spotBtn) { spotBtn.click(); return 'TOGGLED'; } } else if (host.includes('music.apple.com')) { var appleBtn = document.querySelector('.button-repeat') || document.querySelector('[data-testid=repeat-button]'); if (appleBtn) { appleBtn.click(); return 'TOGGLED'; } } else if (host.includes('youtube.com')) { var yt = document.querySelector('.html5-main-video'); if (yt && !yt.paused && yt.currentTime > 0) { yt.loop = !yt.loop; if(yt.loop) yt.setAttribute('loop', ''); else yt.removeAttribute('loop'); return yt.loop ? 'ALL' : 'NONE'; } } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { media[i].loop = !media[i].loop; return media[i].loop ? 'ALL' : 'NONE'; } } } return 'NOT_FOUND'; })();"
+            let jsCode = "(function() { var host = window.location.hostname; if (host.includes('music.youtube.com')) { var btns = document.querySelectorAll('ytmusic-player-bar button'); var repeatBtn = null; for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { repeatBtn = btns[i]; break; } } if (repeatBtn) { repeatBtn.click(); return 'TOGGLED'; } return 'NOT_FOUND'; } else if (host.includes('http://googleusercontent.com/spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-repeat]'); if (spotBtn) { spotBtn.click(); return 'TOGGLED'; } } else if (host.includes('music.apple.com')) { var appleBtn = document.querySelector('.button-repeat') || document.querySelector('[data-testid=repeat-button]'); if (appleBtn) { appleBtn.click(); return 'TOGGLED'; } } else if (host.includes('youtube.com')) { var yt = document.querySelector('.html5-main-video'); if (yt && !yt.paused && yt.currentTime > 0) { yt.loop = !yt.loop; if(yt.loop) yt.setAttribute('loop', ''); else yt.removeAttribute('loop'); return yt.loop ? 'ALL' : 'NONE'; } } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { media[i].loop = !media[i].loop; return media[i].loop ? 'ALL' : 'NONE'; } } } return 'NOT_FOUND'; })();"
             if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
                 let fastScript = browser == "Safari" ? "tell application \"Safari\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return do JavaScript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return execute javascript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\""
                 if let result = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue, result != "NOT_FOUND" {
@@ -234,7 +227,7 @@ class NowPlayingManager: ObservableObject {
         }
     }
     
-    // MARK: - FETCH LOGIC WITH YT METADATA EXTRACTION
+    // MARK: - FETCH LOGIC WITH YT METADATA
     func fetchTitle() {
         guard !isFetching else { return }
         isFetching = true
@@ -242,7 +235,45 @@ class NowPlayingManager: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             let runningApps = NSWorkspace.shared.runningApplications
             var activeBrowsers: [String] = []
-            for app in runningApps { if let name = app.localizedName, self.supportedBrowsers.contains(name) { activeBrowsers.append(name) } }
+            var isSpotifyNativeRunning = false
+            
+            for app in runningApps {
+                if let name = app.localizedName {
+                    if self.supportedBrowsers.contains(name) { activeBrowsers.append(name) }
+                    if name == "Spotify" { isSpotifyNativeRunning = true }
+                }
+            }
+            
+            if isSpotifyNativeRunning {
+                let spotScript = """
+                tell application "Spotify"
+                    if player state is playing then
+                        set tName to name of current track
+                        set tArtist to artist of current track
+                        try
+                            set tArt to artwork url of current track
+                        on error
+                            set tArt to "NO_IMAGE"
+                        end try
+                        set tPos to player position
+                        set tDur to (duration of current track) / 1000
+                        set rep to repeating
+                        if rep then
+                            set loopState to "ALL"
+                        else
+                            set loopState to "NONE"
+                        end if
+                        return tName & "|||" & tArtist & "|||" & tArt & "|||" & loopState & "|||" & tPos & "|||" & tDur
+                    end if
+                end tell
+                return "NOT_PLAYING"
+                """
+                if let res = NSAppleScript(source: spotScript)?.executeAndReturnError(nil).stringValue, res != "NOT_PLAYING", res != "NOT_FOUND" {
+                    self.parseAndApplyResult(result: res, browser: "SpotifyNative")
+                    return
+                }
+            }
+            
             if activeBrowsers.isEmpty { DispatchQueue.main.async { self.isPlaying = false; self.isFetching = false }; return }
             
             if let last = self.lastActiveBrowser, activeBrowsers.contains(last) {
@@ -250,9 +281,9 @@ class NowPlayingManager: ObservableObject {
                 activeBrowsers.insert(last, at: 0)
             }
             
-            let jsCode = "(function() { var host = window.location.hostname; var isPlaying = false; var loopState = 'NONE'; var active = null; var cTitle = ''; var cArtist = ''; if (host.includes('music.youtube.com')) { active = document.querySelector('.html5-main-video'); if (active && !active.paused && active.currentTime > 0) isPlaying = true; var btns = document.querySelectorAll('ytmusic-player-bar button'); for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { if (lbl.includes('1') || lbl.includes('one') || lbl.includes('una') || lbl.includes('곡')) { loopState = 'ONE'; } else if (!lbl.includes('off') && !lbl.includes('안함') && !lbl.includes('desactiv')) { loopState = 'ALL'; } else { loopState = 'NONE'; } break; } } var tEl = document.querySelector('ytmusic-player-bar .title'); var aEl = document.querySelector('ytmusic-player-bar .byline'); if (tEl) cTitle = tEl.innerText; if (aEl) cArtist = aEl.innerText.split('•')[0].trim(); } else if (host.includes('spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-repeat]'); if (spotBtn) { var checked = spotBtn.getAttribute('aria-checked'); if (checked === 'mixed') loopState = 'ONE'; else if (checked === 'true') loopState = 'ALL'; else loopState = 'NONE'; } } else if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); if (active && !active.paused && active.currentTime > 0) { isPlaying = true; loopState = (active.loop || active.hasAttribute('loop')) ? 'ALL' : 'NONE'; var attrTitle = document.querySelector('.ytVideoAttributeViewModelTitle'); var attrArtist = document.querySelector('.ytVideoAttributeViewModelSubtitle'); if (attrTitle) cTitle = attrTitle.innerText.trim(); if (attrArtist) cArtist = attrArtist.innerText.trim(); if (!cTitle) { var rows = document.querySelectorAll('ytd-info-row-renderer, ytd-metadata-row-renderer'); for(var j=0; j<rows.length; j++) { var txt = rows[j].innerText.toLowerCase(); if(txt.includes('song') || txt.includes('노래')) cTitle = rows[j].querySelector('#content')?.innerText || cTitle; if(txt.includes('artist') || txt.includes('아티스트')) cArtist = rows[j].querySelector('#content')?.innerText || cArtist; } } } } else if (!host.includes('music.apple.com')) { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { active = media[i]; isPlaying = true; loopState = active.loop ? 'ALL' : 'NONE'; break; } } } if (!isPlaying && navigator.mediaSession && navigator.mediaSession.playbackState === 'playing') { isPlaying = true; } if (isPlaying) { var title = cTitle || document.title; var artist = cArtist; var img = 'NO_IMAGE'; var curr = 0; var dur = 1; if (active) { curr = active.currentTime; dur = active.duration || 1; } if (navigator.mediaSession && navigator.mediaSession.metadata) { var m = navigator.mediaSession.metadata; if(!cTitle && m.title) title = m.title; if(!cArtist && m.artist) artist = m.artist; if(m.artwork && m.artwork.length > 0) img = m.artwork[m.artwork.length - 1].src; } return title + '|||' + (artist ? artist : 'EMPTY_ARTIST') + '|||' + img + '|||' + loopState + '|||' + curr + '|||' + dur; } return 'NOT_PLAYING'; })();"
+            let jsCode = "(function() { function pt(str) { if(!str) return 0; var p = str.split(':'); var s = 0; var m = 1; while (p.length > 0) { s += m * parseInt(p.pop(), 10); m *= 60; } return s; } var host = window.location.hostname; var isPlaying = false; var loopState = 'NONE'; var active = null; var cTitle = ''; var cArtist = ''; var cCurr = -1; var cDur = -1; if (host.includes('music.youtube.com')) { active = document.querySelector('.html5-main-video'); if (active && !active.paused && active.currentTime > 0) isPlaying = true; var btns = document.querySelectorAll('ytmusic-player-bar button'); for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { if (lbl.includes('1') || lbl.includes('one') || lbl.includes('una') || lbl.includes('곡')) { loopState = 'ONE'; } else if (!lbl.includes('off') && !lbl.includes('안함') && !lbl.includes('desactiv')) { loopState = 'ALL'; } else { loopState = 'NONE'; } break; } } var tEl = document.querySelector('ytmusic-player-bar .title'); var aEl = document.querySelector('ytmusic-player-bar .byline'); if (tEl) cTitle = tEl.innerText; if (aEl) cArtist = aEl.innerText.split('•')[0].trim(); var ytmTime = document.querySelector('.time-info.ytmusic-player-bar'); if (ytmTime) { var p = ytmTime.innerText.split('/'); if(p.length === 2) { cCurr = pt(p[0].trim()); cDur = pt(p[1].trim()); } } } else if (host.includes('http://googleusercontent.com/spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-repeat]'); if (spotBtn) { var checked = spotBtn.getAttribute('aria-checked'); if (checked === 'mixed') loopState = 'ONE'; else if (checked === 'true') loopState = 'ALL'; else loopState = 'NONE'; } var playBtn = document.querySelector('[data-testid=control-button-playpause]'); if (playBtn && playBtn.getAttribute('aria-label') === 'Pause') { isPlaying = true; } var tElSpot = document.querySelector('[data-testid=context-item-info-title]'); var aElSpot = document.querySelector('[data-testid=context-item-info-artist]'); if (tElSpot) cTitle = tElSpot.innerText; if (aElSpot) cArtist = aElSpot.innerText; var posEl = document.querySelector('[data-testid=playback-position]'); var durEl = document.querySelector('[data-testid=playback-duration]'); cCurr = posEl ? pt(posEl.innerText) : -1; cDur = durEl ? pt(durEl.innerText) : -1; } else if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); if (active && !active.paused && active.currentTime > 0) { isPlaying = true; loopState = (active.loop || active.hasAttribute('loop')) ? 'ALL' : 'NONE'; var attrTitle = document.querySelector('.ytVideoAttributeViewModelTitle'); var attrArtist = document.querySelector('.ytVideoAttributeViewModelSubtitle'); if (attrTitle) cTitle = attrTitle.innerText.trim(); if (attrArtist) cArtist = attrArtist.innerText.trim(); if (!cTitle) { var rows = document.querySelectorAll('ytd-info-row-renderer, ytd-metadata-row-renderer'); for(var j=0; j<rows.length; j++) { var txt = rows[j].innerText.toLowerCase(); if(txt.includes('song') || txt.includes('노래')) { var tC = rows[j].querySelector('#content'); if(tC) cTitle = tC.innerText; } if(txt.includes('artist') || txt.includes('아티스트')) { var aC = rows[j].querySelector('#content'); if(aC) cArtist = aC.innerText; } } } var ytpCurr = document.querySelector('.ytp-time-current'); var ytpDur = document.querySelector('.ytp-time-duration'); if (ytpCurr && ytpDur) { cCurr = pt(ytpCurr.innerText); cDur = pt(ytpDur.innerText); } } } else if (!host.includes('music.apple.com')) { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { active = media[i]; isPlaying = true; loopState = active.loop ? 'ALL' : 'NONE'; break; } } } if (!isPlaying && navigator.mediaSession && navigator.mediaSession.playbackState === 'playing') { isPlaying = true; } if (isPlaying) { var title = cTitle || document.title; var artist = cArtist; var img = 'NO_IMAGE'; var curr = 0; var dur = 1; if (active) { curr = cCurr !== -1 ? cCurr : active.currentTime; dur = cDur !== -1 && !isNaN(cDur) && cDur !== 0 ? cDur : (active.duration || 1); } else { curr = cCurr !== -1 ? cCurr : 0; dur = cDur !== -1 && !isNaN(cDur) && cDur !== 0 ? cDur : 1; } if (navigator.mediaSession && navigator.mediaSession.metadata) { var m = navigator.mediaSession.metadata; if(!cTitle && m.title) title = m.title; if(!cArtist && m.artist) artist = m.artist; if(m.artwork && m.artwork.length > 0) img = m.artwork[m.artwork.length - 1].src; } return title + '|||' + (artist ? artist : 'EMPTY_ARTIST') + '|||' + img + '|||' + loopState + '|||' + curr + '|||' + dur; } return 'NOT_PLAYING'; })();"
             
-            if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
+            if let browser = self.lastActiveBrowser, browser != "SpotifyNative", let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
                 let fastScript = browser == "Safari" ? "tell application \"Safari\"\nset tabResult to \"NOT_PLAYING\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to set tabResult to do JavaScript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is not \"NOT_PLAYING\" and tabResult is not \"\" and tabResult is not missing value then\nreturn tabResult as string & \"|||\" & \"\(wIdx)\" & \"|||\" & \"\(tIdx)\"\nend if\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\nset tabResult to \"NOT_PLAYING\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to set tabResult to execute javascript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is not \"NOT_PLAYING\" and tabResult is not \"\" and tabResult is not missing value then\nreturn tabResult as string & \"|||\" & \"\(wIdx)\" & \"|||\" & \"\(tIdx)\"\nend if\nend tell\nreturn \"NOT_FOUND\""
                 
                 if let result = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue, result != "NOT_FOUND", result != "NOT_PLAYING" {
@@ -300,7 +331,11 @@ class NowPlayingManager: ObservableObject {
             let currString = components[4]
             let durString = components[5]
             
-            if components.count >= 8 {
+            if browser == "SpotifyNative" {
+                self.lastActiveBrowser = "SpotifyNative"
+                self.lastWindowIndex = nil
+                self.lastTabIndex = nil
+            } else if components.count >= 8 {
                 self.lastActiveBrowser = browser
                 self.lastWindowIndex = Int(components[6])
                 self.lastTabIndex = Int(components[7])
@@ -326,7 +361,7 @@ class NowPlayingManager: ObservableObject {
             }
             
             let newTime = Double(currString) ?? 0.0
-            if abs(self.currentTime - newTime) > 2.0 { self.currentTime = newTime }
+            if abs(self.currentTime - newTime) > 1.5 { self.currentTime = newTime }
             self.duration = Double(durString) ?? 1.0
             
             if Date().timeIntervalSince(self.lastLoopToggleTime) > 2.0 {
@@ -337,15 +372,76 @@ class NowPlayingManager: ObservableObject {
     }
 }
 
+
+extension NSImage {
+    var averageColor: Color {
+        guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return .green }
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        var rgba = [UInt8](repeating: 0, count: 4)
+        guard let context = CGContext(data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return .green }
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        
+        var r = CGFloat(rgba[0]) / 255.0
+        var g = CGFloat(rgba[1]) / 255.0
+        var b = CGFloat(rgba[2]) / 255.0
+        let maxColor = max(r, max(g, b))
+        if maxColor < 0.4 {
+            let boost = 0.4 - maxColor
+            r += boost; g += boost; b += boost
+        }
+        return Color(red: Double(r), green: Double(g), blue: Double(b))
+    }
+}
+
+struct DynamicNotchShape: Shape {
+    var cornerRadius: CGFloat
+    var blendRadius: CGFloat = 16
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addQuadCurve(to: CGPoint(x: blendRadius, y: blendRadius), control: CGPoint(x: blendRadius, y: 0))
+        path.addLine(to: CGPoint(x: blendRadius, y: rect.maxY - cornerRadius))
+        path.addQuadCurve(to: CGPoint(x: blendRadius + cornerRadius, y: rect.maxY), control: CGPoint(x: blendRadius, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - blendRadius - cornerRadius, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX - blendRadius, y: rect.maxY - cornerRadius), control: CGPoint(x: rect.maxX - blendRadius, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - blendRadius, y: blendRadius))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: 0), control: CGPoint(x: rect.maxX - blendRadius, y: 0))
+        path.addLine(to: CGPoint(x: 0, y: 0))
+        return path
+    }
+}
+
+struct WaveformView: View {
+    var isPlaying: Bool
+    var color: Color
+    @State private var isAnimating = false
+    
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<4) { index in
+                Capsule()
+                    .fill(isPlaying ? color : Color.gray.opacity(0.5))
+                    .frame(width: 3, height: isPlaying ? (isAnimating ? .random(in: 6...14) : 4) : 4)
+                    .animation(
+                        isPlaying ? Animation.easeInOut(duration: 0.3).repeatForever().delay(Double(index) * 0.1) : .easeOut(duration: 0.2),
+                        value: isAnimating
+                    )
+            }
+        }
+        .onChange(of: isPlaying) { playing in isAnimating = playing }
+        .onAppear { if isPlaying { isAnimating = true } }
+    }
+}
+
 struct ContentView: View {
     @State private var isExpanded = false
     @StateObject private var nowPlaying = NowPlayingManager()
     
     @State private var isDragging = false
     @State private var dragProgress: Double = 0.0
-    let localTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+    let localTimer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
     
-    // ⚡️ TUNING CONSTANTS
     let notchHeight: CGFloat = 32
     let collapsedWidth: CGFloat = 300
     let expandedWidth: CGFloat = 380
@@ -366,12 +462,9 @@ struct ContentView: View {
                             .stroke(Color.white.opacity(isExpanded ? 0.1 : 0.0), lineWidth: 1)
                     )
 
-                // CONTENT STACK
                 VStack(spacing: 0) {
                     if !isExpanded {
-                        // ⚡️ COLLAPSED STATE
                         HStack(spacing: 0) {
-                            // LEFT SIDE: Mini Album Art replacing the music note
                             Group {
                                 if hasMedia && nowPlaying.artworkURL != nil {
                                     AsyncImage(url: nowPlaying.artworkURL) { image in
@@ -389,7 +482,6 @@ struct ContentView: View {
                             
                             Spacer()
                             
-                            // RIGHT SIDE: Waveform
                             WaveformView(isPlaying: nowPlaying.isPlaying, color: nowPlaying.artworkDominantColor)
                                 .frame(width: 24, alignment: .trailing)
                         }
@@ -398,12 +490,9 @@ struct ContentView: View {
                         .transition(.opacity)
                         
                     } else {
-                        // ⚡️ EXPANDED STATE
                         VStack(spacing: 8) {
-                            // THE GAP
                             Color.clear.frame(height: notchHeight - 8)
                             
-                            // TOP ROW (Controls)
                             HStack {
                                 Group {
                                     if hasMedia && nowPlaying.artworkURL != nil {
@@ -444,7 +533,6 @@ struct ContentView: View {
                             }
                             .padding(.horizontal, 24)
                             
-                            // PROGRESS BAR
                             if hasMedia {
                                 HStack(spacing: 8) {
                                     Text(formatTime(isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
@@ -459,12 +547,14 @@ struct ContentView: View {
                                             .onEnded { v in nowPlaying.seek(to: min(max(0, v.location.x / geo.size.width), 1)); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDragging = false } }
                                         )
                                     }.frame(height: 6)
-                                    Text("-" + formatTime(nowPlaying.duration - (isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime)))
+                                    
+                                    // ⚡️ THE NEGATIVE TIME FIX: Math.max completely blocks anything below 0
+                                    let remaining = max(0, nowPlaying.duration - (isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
+                                    Text("-" + formatTime(remaining))
                                         .font(.system(size: 10, design: .monospaced)).foregroundColor(.gray)
                                 }.padding(.horizontal, 24)
                             }
                             
-                            // LYRICS
                             if hasMedia && !nowPlaying.lyrics.isEmpty {
                                 GeometryReader { geo in
                                     let itemHeight: CGFloat = 26
@@ -477,7 +567,7 @@ struct ContentView: View {
                                             Text(lyric.text)
                                                 .font(.system(size: 14, weight: distance == 0 ? .bold : .semibold))
                                                 .foregroundColor(distance == 0 ? .white : (distance == 1 ? .white.opacity(0.4) : .clear))
-                                                .multilineTextAlignment(.center) // ⚡️ Forces pure center alignment
+                                                .multilineTextAlignment(.center)
                                                 .frame(maxWidth: expandedWidth - 48, alignment: .center)
                                                 .frame(height: itemHeight)
                                                 .lineLimit(1)
@@ -485,7 +575,7 @@ struct ContentView: View {
                                                 .scaleEffect(distance == 0 ? 1.0 : 0.85).blur(radius: distance == 0 ? 0 : 0.3)
                                         }
                                     }
-                                    .frame(width: geo.size.width, alignment: .center) // ⚡️ THE FIX: Forces VStack to center inside GeometryReader
+                                    .frame(width: geo.size.width, alignment: .center)
                                     .offset(y: -activeOffset + centerAdjustment)
                                     .animation(.spring(response: 0.6, dampingFraction: 0.8), value: nowPlaying.activeLyricIndex)
                                 }
@@ -510,13 +600,17 @@ struct ContentView: View {
         .edgesIgnoringSafeArea(.all)
         .onReceive(localTimer) { _ in
             if nowPlaying.isPlaying && !isDragging {
-                nowPlaying.currentTime += 1.0
+                nowPlaying.currentTime += 0.5
                 nowPlaying.updateActiveLyric()
             }
         }
     }
     
+    // ⚡️ SECONDARY NEGATIVE TIME FIX: Hard drops NaNs or remaining glitch values
     private func formatTime(_ s: Double) -> String {
-        let ts = Int(s); return String(format: "%d:%02d", ts / 60, ts % 60)
+        let safeSecs = max(0, s)
+        if safeSecs.isNaN || safeSecs.isInfinite { return "0:00" }
+        let ts = Int(safeSecs)
+        return String(format: "%d:%02d", ts / 60, ts % 60)
     }
 }
