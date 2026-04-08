@@ -204,14 +204,38 @@ struct ContentView: View {
                                 Spacer()
                                 
                                 if hasMedia {
-                                    HStack(spacing: 12) {
-                                        Button(action: { nowPlaying.skipBackward() }) { Image(systemName: "backward.fill").foregroundColor(.white) }.buttonStyle(.plain)
-                                        Button(action: { nowPlaying.togglePlayPause() }) { Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill").foregroundColor(.white) }.buttonStyle(.plain)
-                                        Button(action: { nowPlaying.skipForward() }) { Image(systemName: "forward.fill").foregroundColor(.white) }.buttonStyle(.plain)
+                                    HStack(spacing: 4) { // Reduced spacing slightly since padding adds width
+                                        Button(action: { nowPlaying.skipBackward() }) {
+                                            Image(systemName: "backward.fill")
+                                                .foregroundColor(.white)
+                                                .padding(8)
+                                                .contentShape(Rectangle()) // Makes the invisible padding clickable!
+                                        }
+                                        .buttonStyle(.plain)
+                                        
+                                        Button(action: { nowPlaying.togglePlayPause() }) {
+                                            Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
+                                                .foregroundColor(.white)
+                                                .padding(8)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        
+                                        Button(action: { nowPlaying.skipForward() }) {
+                                            Image(systemName: "forward.fill")
+                                                .foregroundColor(.white)
+                                                .padding(8)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        
                                         Button(action: { nowPlaying.toggleLoop() }) {
                                             Image(systemName: nowPlaying.loopMode == 2 ? "repeat.1" : "repeat")
                                                 .foregroundColor(nowPlaying.loopMode > 0 ? .green : .white.opacity(0.6))
-                                        }.buttonStyle(.plain)
+                                                .padding(8)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
                                     }
                                 }
                             }
@@ -223,7 +247,7 @@ struct ContentView: View {
                                         .font(.system(size: 10, design: .monospaced)).foregroundColor(.gray)
                                     GeometryReader { geo in
                                         ZStack(alignment: .leading) {
-                                            Capsule().fill(nowPlaying.artworkDominantColor.opacity(0.25)).frame(height: 6)
+                                            Capsule().fill(nowPlaying.artworkDominantColor.opacity(0.50)).frame(height: 6)
                                             
                                             // ⚡️ BUG FIX: Mathematically clamp the ratio to ensure UI never overflows
                                             let progressRatio = min(1.0, max(0.0, isDragging ? dragProgress : (nowPlaying.currentTime / nowPlaying.duration)))
