@@ -63,6 +63,57 @@ struct WaveformView: View {
     }
 }
 
+struct MarqueeText: View {
+    var text: String
+    var font: Font
+    var alignment: Alignment = .leading
+    
+    @State private var textWidth: CGFloat = 0
+    @State private var isAnimating = false
+    private let spacing: CGFloat = 30
+    
+    var body: some View {
+        GeometryReader { proxy in
+            let containerWidth = proxy.size.width
+            
+            if textWidth > containerWidth {
+                HStack(spacing: spacing) {
+                    Text(text).font(font).lineLimit(1).fixedSize()
+                    Text(text).font(font).lineLimit(1).fixedSize()
+                }
+                .offset(x: isAnimating ? -(textWidth + spacing) : 0)
+                .animation(
+                    .linear(duration: Double(textWidth) / 30.0).repeatForever(autoreverses: false),
+                    value: isAnimating
+                )
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        isAnimating = true
+                    }
+                }
+            } else {
+                Text(text)
+                    .font(font)
+                    .lineLimit(1)
+                    .frame(width: containerWidth, alignment: alignment)
+            }
+        }
+        .clipped()
+        .id(text)
+        .background(
+            Text(text)
+                .font(font)
+                .lineLimit(1)
+                .fixedSize()
+                .background(GeometryReader { geo in
+                    Color.clear
+                        .onAppear { textWidth = geo.size.width }
+                })
+                .hidden()
+        )
+    }
+}
+
 struct ContentView: View {
     @State private var isExpanded = false
     @StateObject private var nowPlaying = NowPlayingManager()
@@ -141,8 +192,12 @@ struct ContentView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting...")
                                         .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
-                                    Text(hasMedia ? nowPlaying.currentSong : "Nothing playing")
-                                        .font(.system(size: 14, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                                    MarqueeText(
+                                        text: hasMedia ? nowPlaying.currentSong : "Nothing playing",
+                                        font: .system(size: 14, weight: .bold),
+                                        alignment: .leading
+                                    )
+                                    .foregroundColor(.white)
                                 }
                                 .padding(.leading, 6)
                                 
@@ -168,12 +223,24 @@ struct ContentView: View {
                                         .font(.system(size: 10, design: .monospaced)).foregroundColor(.gray)
                                     GeometryReader { geo in
                                         ZStack(alignment: .leading) {
-                                            Capsule().fill(Color.white.opacity(0.2)).frame(height: 6)
-                                            Capsule().fill(Color.white).frame(width: max(0, geo.size.width * CGFloat(isDragging ? dragProgress : (nowPlaying.currentTime / nowPlaying.duration))), height: 6)
+                                            Capsule().fill(nowPlaying.artworkDominantColor.opacity(0.25)).frame(height: 6)
+                                            
+                                            // ⚡️ BUG FIX: Mathematically clamp the ratio to ensure UI never overflows
+                                            let progressRatio = min(1.0, max(0.0, isDragging ? dragProgress : (nowPlaying.currentTime / nowPlaying.duration)))
+
+                                            Capsule()
+                                                .fill(nowPlaying.artworkDominantColor)
+                                                .frame(width: geo.size.width * CGFloat(progressRatio), height: 6)
+                                                .shadow(color: nowPlaying.artworkDominantColor.opacity(0.4), radius: 4, x: 0, y: 0)
                                         }
                                         .gesture(DragGesture(minimumDistance: 0)
-                                            .onChanged { v in isDragging = true; dragProgress = min(max(0, v.location.x / geo.size.width), 1) }
-                                            .onEnded { v in nowPlaying.seek(to: min(max(0, v.location.x / geo.size.width), 1)); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDragging = false } }
+                                            // ⚡️ BUG FIX: Clamped target max to 0.99 to prevent accidentally sending a "Skip to End" command
+                                            .onChanged { v in isDragging = true; dragProgress = min(max(0, v.location.x / geo.size.width), 0.99) }
+                                            .onEnded { v in
+                                                let dragRatio = min(max(0, v.location.x / geo.size.width), 0.99)
+                                                nowPlaying.seek(to: dragRatio)
+                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDragging = false }
+                                            }
                                         )
                                     }.frame(height: 6)
                                     
@@ -193,7 +260,6 @@ struct ContentView: View {
                                         ForEach(Array(nowPlaying.lyrics.enumerated()), id: \.offset) { index, lyric in
                                             let distance = abs(index - nowPlaying.activeLyricIndex)
                                             Text(lyric.text)
-                                                // ⚡️ JITTER FIX: Constant font weight stops the layout engine from popping
                                                 .font(.system(size: 14, weight: .bold))
                                                 .foregroundColor(distance == 0 ? .white : (distance == 1 ? .white.opacity(0.4) : .clear))
                                                 .multilineTextAlignment(.center)
