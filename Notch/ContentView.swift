@@ -10,6 +10,7 @@ class NowPlayingManager: ObservableObject {
     
     var timer: Timer?
     private var isFetching = false
+    private var lastLoopToggleTime = Date(timeIntervalSince1970: 0)
     
     let supportedBrowsers = ["Google Chrome", "Brave Browser", "Microsoft Edge", "Safari"]
     
@@ -39,11 +40,11 @@ class NowPlayingManager: ObservableObject {
         evUp?.cgEvent?.post(tap: .cghidEventTap)
     }
     
-    // MARK: - THE FIXED LOOP TOGGLE
+    // MARK: - STRICT LOOP TOGGLE
     func toggleLoop() {
         DispatchQueue.global(qos: .userInitiated).async {
-            // FIXED JS: Now works even if the video is currently paused
-            let jsCode = "(function() { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if(media[i].currentTime > 0 || !media[i].paused) { media[i].loop = !media[i].loop; return media[i].loop ? 'TRUE' : 'FALSE'; } } return 'NOT_FOUND'; })();"
+            // FIXED JS: Only targets tabs where the video is actively playing right now
+            let jsCode = "(function() { var active = null; if (window.location.hostname.includes('youtube')) { var yt = document.querySelector('.html5-main-video'); if (yt && !yt.paused && yt.currentTime > 0) active = yt; } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { active = media[i]; break; } } } if (active) { var isCurrentlyLooping = active.loop || active.hasAttribute('loop'); var newState = !isCurrentlyLooping; active.loop = newState; if (newState) { active.setAttribute('loop', ''); } else { active.removeAttribute('loop'); } return newState ? 'TRUE' : 'FALSE'; } return 'NOT_FOUND'; })();"
             
             let runningApps = NSWorkspace.shared.runningApplications
             var activeBrowsers: [String] = []
@@ -53,46 +54,10 @@ class NowPlayingManager: ObservableObject {
             
             for browser in activeBrowsers {
                 let script: String
-                
-                // FIXED APPLESCRIPT: Added safe 'tabResult' variable fallback to prevent internal crashes on sleeping tabs
                 if browser == "Safari" {
-                    script = """
-                    tell application "Safari"
-                        repeat with w in windows
-                            repeat with t in tabs of w
-                                set tabResult to "NOT_FOUND"
-                                try
-                                    with timeout of 1 second
-                                        tell t to set tabResult to do JavaScript "\(jsCode)"
-                                    end timeout
-                                end try
-                                if tabResult is "TRUE" or tabResult is "FALSE" then
-                                    return tabResult as string
-                                end if
-                            end repeat
-                        end repeat
-                    end tell
-                    return "NOT_FOUND"
-                    """
+                    script = "tell application \"Safari\"\nrepeat with w in windows\nrepeat with t in tabs of w\nset tabResult to \"NOT_FOUND\"\ntry\nwith timeout of 1 second\ntell t to set tabResult to do JavaScript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is \"TRUE\" or tabResult is \"FALSE\" then\nreturn tabResult as string\nend if\nend repeat\nend repeat\nend tell\nreturn \"NOT_FOUND\""
                 } else {
-                    script = """
-                    tell application "\(browser)"
-                        repeat with w in windows
-                            repeat with t in tabs of w
-                                set tabResult to "NOT_FOUND"
-                                try
-                                    with timeout of 1 second
-                                        tell t to set tabResult to execute javascript "\(jsCode)"
-                                    end timeout
-                                end try
-                                if tabResult is "TRUE" or tabResult is "FALSE" then
-                                    return tabResult as string
-                                end if
-                            end repeat
-                        end repeat
-                    end tell
-                    return "NOT_FOUND"
-                    """
+                    script = "tell application \"\(browser)\"\nrepeat with w in windows\nrepeat with t in tabs of w\nset tabResult to \"NOT_FOUND\"\ntry\nwith timeout of 1 second\ntell t to set tabResult to execute javascript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is \"TRUE\" or tabResult is \"FALSE\" then\nreturn tabResult as string\nend if\nend repeat\nend repeat\nend tell\nreturn \"NOT_FOUND\""
                 }
                 
                 var error: NSDictionary?
@@ -100,7 +65,7 @@ class NowPlayingManager: ObservableObject {
                     let output = appleScript.executeAndReturnError(&error)
                     if let result = output.stringValue, result == "TRUE" || result == "FALSE" {
                         DispatchQueue.main.async {
-                            // Instantly update the UI color without waiting for the next timer tick
+                            self.lastLoopToggleTime = Date()
                             self.isLooping = (result == "TRUE")
                         }
                         return
@@ -128,7 +93,8 @@ class NowPlayingManager: ObservableObject {
                 return
             }
             
-            let jsCode = "(function() { var media = document.querySelectorAll('video, audio'); var isPlaying = false; var isLooping = false; for(var i=0; i<media.length; i++) { if(!media[i].paused && media[i].currentTime > 0) { isPlaying = true; isLooping = media[i].loop; break; } } if (!isPlaying && navigator.mediaSession && navigator.mediaSession.playbackState === 'playing') { var host = window.location.hostname; if (host.includes('spotify') || host.includes('soundcloud') || host.includes('music.apple')) { isPlaying = true; } } if (isPlaying) { var title = document.title; var img = 'NO_IMAGE'; if (navigator.mediaSession && navigator.mediaSession.metadata) { var m = navigator.mediaSession.metadata; if(m.title) { title = m.title + (m.artist ? ' - ' + m.artist : ''); } if (m.artwork && m.artwork.length > 0) { img = m.artwork[m.artwork.length - 1].src; } } return title + '|||' + img + '|||' + (isLooping ? 'TRUE' : 'FALSE'); } return 'NOT_PLAYING'; })();"
+            // FIXED JS: Returns NOT_PLAYING for paused tabs so AppleScript immediately skips them
+            let jsCode = "(function() { var isPlaying = false; var isLooping = false; var active = null; if (window.location.hostname.includes('youtube')) { active = document.querySelector('.html5-main-video'); if (active && !active.paused && active.currentTime > 0) isPlaying = true; } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { active = media[i]; isPlaying = true; break; } } } if (!isPlaying && navigator.mediaSession && navigator.mediaSession.playbackState === 'playing') { var host = window.location.hostname; if (host.includes('spotify') || host.includes('soundcloud') || host.includes('music.apple')) { isPlaying = true; } } if (isPlaying) { if (active) { isLooping = active.loop || active.hasAttribute('loop'); } var title = document.title; var img = 'NO_IMAGE'; if (navigator.mediaSession && navigator.mediaSession.metadata) { var m = navigator.mediaSession.metadata; if(m.title) { title = m.title + (m.artist ? ' - ' + m.artist : ''); } if(m.artwork && m.artwork.length > 0) { img = m.artwork[m.artwork.length - 1].src; } } return title + '|||' + img + '|||' + (isLooping ? 'TRUE' : 'FALSE'); } return 'NOT_PLAYING'; })();"
             
             for browser in activeBrowsers {
                 let script: String
@@ -158,7 +124,9 @@ class NowPlayingManager: ObservableObject {
                             if self.currentSong != rawTitle { self.currentSong = rawTitle }
                             if imgString != "NO_IMAGE", let url = URL(string: imgString) { self.artworkURL = url } else { self.artworkURL = nil }
                             
-                            self.isLooping = (loopString == "TRUE")
+                            if Date().timeIntervalSince(self.lastLoopToggleTime) > 3.0 {
+                                self.isLooping = (loopString == "TRUE")
+                            }
                             self.isFetching = false
                         }
                         return
@@ -166,7 +134,10 @@ class NowPlayingManager: ObservableObject {
                 }
             }
             
-            DispatchQueue.main.async { self.isPlaying = false; self.isFetching = false }
+            DispatchQueue.main.async {
+                self.isPlaying = false
+                self.isFetching = false
+            }
         }
     }
 }
