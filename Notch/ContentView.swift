@@ -6,7 +6,9 @@ class NowPlayingManager: ObservableObject {
     @Published var currentSong: String = "No Music"
     @Published var artworkURL: URL? = nil
     @Published var isPlaying: Bool = false
-    @Published var isLooping: Bool = false
+    
+    // NEW: 3-State Loop Mode (0: Off, 1: Loop All, 2: Loop One)
+    @Published var loopMode: Int = 0
     
     var timer: Timer?
     private var isFetching = false
@@ -40,11 +42,11 @@ class NowPlayingManager: ObservableObject {
         evUp?.cgEvent?.post(tap: .cghidEventTap)
     }
     
-    // MARK: - STRICT LOOP TOGGLE
+    // MARK: - 3-STATE LOOP TOGGLE
     func toggleLoop() {
         DispatchQueue.global(qos: .userInitiated).async {
-            // FIXED JS: Only targets tabs where the video is actively playing right now
-            let jsCode = "(function() { var active = null; if (window.location.hostname.includes('youtube')) { var yt = document.querySelector('.html5-main-video'); if (yt && !yt.paused && yt.currentTime > 0) active = yt; } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { active = media[i]; break; } } } if (active) { var isCurrentlyLooping = active.loop || active.hasAttribute('loop'); var newState = !isCurrentlyLooping; active.loop = newState; if (newState) { active.setAttribute('loop', ''); } else { active.removeAttribute('loop'); } return newState ? 'TRUE' : 'FALSE'; } return 'NOT_FOUND'; })();"
+            // JS: Finds the UI button and clicks it. Supports YT Music, Spotify, Apple Music.
+            let jsCode = "(function() { var host = window.location.hostname; if (host.includes('music.youtube.com')) { var btns = document.querySelectorAll('ytmusic-player-bar button'); var repeatBtn = null; for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { repeatBtn = btns[i]; break; } } if (repeatBtn) { repeatBtn.click(); return 'TOGGLED'; } return 'NOT_FOUND'; } else if (host.includes('spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-repeat]'); if (spotBtn) { spotBtn.click(); return 'TOGGLED'; } } else if (host.includes('music.apple.com')) { var appleBtn = document.querySelector('.button-repeat') || document.querySelector('[data-testid=repeat-button]'); if (appleBtn) { appleBtn.click(); return 'TOGGLED'; } } else if (host.includes('youtube.com')) { var yt = document.querySelector('.html5-main-video'); if (yt && !yt.paused && yt.currentTime > 0) { yt.loop = !yt.loop; if(yt.loop) yt.setAttribute('loop', ''); else yt.removeAttribute('loop'); return yt.loop ? 'ALL' : 'NONE'; } } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { media[i].loop = !media[i].loop; return media[i].loop ? 'ALL' : 'NONE'; } } } return 'NOT_FOUND'; })();"
             
             let runningApps = NSWorkspace.shared.runningApplications
             var activeBrowsers: [String] = []
@@ -55,20 +57,23 @@ class NowPlayingManager: ObservableObject {
             for browser in activeBrowsers {
                 let script: String
                 if browser == "Safari" {
-                    script = "tell application \"Safari\"\nrepeat with w in windows\nrepeat with t in tabs of w\nset tabResult to \"NOT_FOUND\"\ntry\nwith timeout of 1 second\ntell t to set tabResult to do JavaScript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is \"TRUE\" or tabResult is \"FALSE\" then\nreturn tabResult as string\nend if\nend repeat\nend repeat\nend tell\nreturn \"NOT_FOUND\""
+                    script = "tell application \"Safari\"\nrepeat with w in windows\nrepeat with t in tabs of w\nset tabResult to \"NOT_FOUND\"\ntry\nwith timeout of 1 second\ntell t to set tabResult to do JavaScript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is \"ALL\" or tabResult is \"NONE\" or tabResult is \"TOGGLED\" then\nreturn tabResult as string\nend if\nend repeat\nend repeat\nend tell\nreturn \"NOT_FOUND\""
                 } else {
-                    script = "tell application \"\(browser)\"\nrepeat with w in windows\nrepeat with t in tabs of w\nset tabResult to \"NOT_FOUND\"\ntry\nwith timeout of 1 second\ntell t to set tabResult to execute javascript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is \"TRUE\" or tabResult is \"FALSE\" then\nreturn tabResult as string\nend if\nend repeat\nend repeat\nend tell\nreturn \"NOT_FOUND\""
+                    script = "tell application \"\(browser)\"\nrepeat with w in windows\nrepeat with t in tabs of w\nset tabResult to \"NOT_FOUND\"\ntry\nwith timeout of 1 second\ntell t to set tabResult to execute javascript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is \"ALL\" or tabResult is \"NONE\" or tabResult is \"TOGGLED\" then\nreturn tabResult as string\nend if\nend repeat\nend repeat\nend tell\nreturn \"NOT_FOUND\""
                 }
                 
                 var error: NSDictionary?
                 if let appleScript = NSAppleScript(source: script) {
                     let output = appleScript.executeAndReturnError(&error)
-                    if let result = output.stringValue, result == "TRUE" || result == "FALSE" {
+                    if let result = output.stringValue {
                         DispatchQueue.main.async {
                             self.lastLoopToggleTime = Date()
-                            self.isLooping = (result == "TRUE")
+                            // Cycle through the 3 states locally for instant visual feedback
+                            if result == "TOGGLED" { self.loopMode = (self.loopMode + 1) % 3 }
+                            else if result == "ALL" { self.loopMode = 1 }
+                            else if result == "NONE" { self.loopMode = 0 }
                         }
-                        return
+                        if result != "NOT_FOUND" { return }
                     }
                 }
             }
@@ -93,8 +98,8 @@ class NowPlayingManager: ObservableObject {
                 return
             }
             
-            // FIXED JS: Returns NOT_PLAYING for paused tabs so AppleScript immediately skips them
-            let jsCode = "(function() { var isPlaying = false; var isLooping = false; var active = null; if (window.location.hostname.includes('youtube')) { active = document.querySelector('.html5-main-video'); if (active && !active.paused && active.currentTime > 0) isPlaying = true; } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { active = media[i]; isPlaying = true; break; } } } if (!isPlaying && navigator.mediaSession && navigator.mediaSession.playbackState === 'playing') { var host = window.location.hostname; if (host.includes('spotify') || host.includes('soundcloud') || host.includes('music.apple')) { isPlaying = true; } } if (isPlaying) { if (active) { isLooping = active.loop || active.hasAttribute('loop'); } var title = document.title; var img = 'NO_IMAGE'; if (navigator.mediaSession && navigator.mediaSession.metadata) { var m = navigator.mediaSession.metadata; if(m.title) { title = m.title + (m.artist ? ' - ' + m.artist : ''); } if(m.artwork && m.artwork.length > 0) { img = m.artwork[m.artwork.length - 1].src; } } return title + '|||' + img + '|||' + (isLooping ? 'TRUE' : 'FALSE'); } return 'NOT_PLAYING'; })();"
+            // JS: Understands 'Off', 'All', and 'One' states based on labels or SVG states.
+            let jsCode = "(function() { var host = window.location.hostname; var isPlaying = false; var loopState = 'NONE'; if (host.includes('music.youtube.com')) { var yt = document.querySelector('.html5-main-video'); if (yt && !yt.paused && yt.currentTime > 0) isPlaying = true; var btns = document.querySelectorAll('ytmusic-player-bar button'); for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { if (lbl.includes('1') || lbl.includes('one') || lbl.includes('una') || lbl.includes('곡')) { loopState = 'ONE'; } else if (!lbl.includes('off') && !lbl.includes('안함') && !lbl.includes('desactiv')) { loopState = 'ALL'; } else { loopState = 'NONE'; } break; } } } else if (host.includes('spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-repeat]'); if (spotBtn) { var checked = spotBtn.getAttribute('aria-checked'); if (checked === 'mixed') loopState = 'ONE'; else if (checked === 'true') loopState = 'ALL'; else loopState = 'NONE'; } } else if (host.includes('youtube.com')) { var yt = document.querySelector('.html5-main-video'); if (yt && !yt.paused && yt.currentTime > 0) { isPlaying = true; loopState = (yt.loop || yt.hasAttribute('loop')) ? 'ALL' : 'NONE'; } } else if (!host.includes('music.apple.com')) { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { isPlaying = true; loopState = media[i].loop ? 'ALL' : 'NONE'; break; } } } if (!isPlaying && navigator.mediaSession && navigator.mediaSession.playbackState === 'playing') { isPlaying = true; } if (isPlaying) { var title = document.title; var img = 'NO_IMAGE'; if (navigator.mediaSession && navigator.mediaSession.metadata) { var m = navigator.mediaSession.metadata; if(m.title) title = m.title + (m.artist ? ' - ' + m.artist : ''); if(m.artwork && m.artwork.length > 0) img = m.artwork[m.artwork.length - 1].src; } return title + '|||' + img + '|||' + loopState; } return 'NOT_PLAYING'; })();"
             
             for browser in activeBrowsers {
                 let script: String
@@ -114,7 +119,7 @@ class NowPlayingManager: ObservableObject {
                             let components = result.components(separatedBy: "|||")
                             var rawTitle = components[0]
                             let imgString = components.count > 1 ? components[1] : "NO_IMAGE"
-                            let loopString = components.count > 2 ? components[2] : "FALSE"
+                            let loopString = components.count > 2 ? components[2] : "NONE"
                             
                             rawTitle = rawTitle.replacingOccurrences(of: " - YouTube Music", with: "")
                             rawTitle = rawTitle.replacingOccurrences(of: " - YouTube", with: "")
@@ -124,8 +129,11 @@ class NowPlayingManager: ObservableObject {
                             if self.currentSong != rawTitle { self.currentSong = rawTitle }
                             if imgString != "NO_IMAGE", let url = URL(string: imgString) { self.artworkURL = url } else { self.artworkURL = nil }
                             
+                            // Apply the parsed loop state (0, 1, or 2)
                             if Date().timeIntervalSince(self.lastLoopToggleTime) > 3.0 {
-                                self.isLooping = (loopString == "TRUE")
+                                if loopString == "ALL" { self.loopMode = 1 }
+                                else if loopString == "ONE" { self.loopMode = 2 }
+                                else { self.loopMode = 0 } // Fixes the "bleed" issue!
                             }
                             self.isFetching = false
                         }
@@ -152,7 +160,6 @@ struct ContentView: View {
         ZStack {
             RoundedRectangle(cornerRadius: isExpanded ? 24 : 16, style: .continuous)
                 .fill(Color.black)
-                // Expanded width to 360 to fit the new Loop button
                 .frame(width: isExpanded ? 360 : 150, height: isExpanded ? 70 : 32)
                 .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isExpanded)
                 .overlay(
@@ -223,12 +230,13 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                         
-                        // NEW: THE LOOP BUTTON
+                        // 3-STATE LOOP BUTTON
                         Button(action: { nowPlaying.toggleLoop() }) {
-                            Image(systemName: "repeat")
-                                // Turns neon green when active, just like iOS
-                                .foregroundColor(nowPlaying.isLooping ? .green : .white.opacity(0.6))
-                                .font(.system(size: 16, weight: nowPlaying.isLooping ? .bold : .regular))
+                            // Switches to the "repeat.1" icon when loopMode is 2
+                            Image(systemName: nowPlaying.loopMode == 2 ? "repeat.1" : "repeat")
+                                // Colors green if mode is 1 or 2
+                                .foregroundColor(nowPlaying.loopMode > 0 ? .green : .white.opacity(0.6))
+                                .font(.system(size: 16, weight: nowPlaying.loopMode > 0 ? .bold : .regular))
                         }
                         .buttonStyle(.plain)
                     }
@@ -244,7 +252,6 @@ struct ContentView: View {
         }
     }
 }
-
 #Preview {
     ContentView()
 }
