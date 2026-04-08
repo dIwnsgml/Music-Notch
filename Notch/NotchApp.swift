@@ -1,55 +1,52 @@
 import SwiftUI
+import AppKit
 
 @main
-struct NotchApp: App {
-    // Hide the standard window and use our custom AppDelegate
+struct MacIslandApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
+    
     var body: some Scene {
-        Settings {
-            EmptyView()
-        }
+        Settings { EmptyView() }
     }
 }
-class AppDelegate: NSObject, NSApplicationDelegate {
-    // 1. Change this from NSWindow to NSPanel
-    var window: NSPanel!
 
-    func applicationDidFinishLaunching(_ aNotification: Notification) {
+class InteractionPanel: NSPanel {
+    override var canBecomeKey: Bool { return true }
+    override var canBecomeMain: Bool { return true }
+    override var acceptsFirstResponder: Bool { return true }
+}
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    var notchWindow: InteractionPanel!
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
         let contentView = ContentView()
 
-        // 2. Create the NSPanel with a ".nonactivatingPanel" style.
-        // This is the magic word that tells macOS: "Don't steal focus from Chrome!"
-        window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 100),
+        notchWindow = InteractionPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 200),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.hasShadow = false
-        window.level = .floating
+        notchWindow.isOpaque = false
+        notchWindow.backgroundColor = .clear
+        notchWindow.hasShadow = false
         
-        // Added .ignoresCycle so your Notch doesn't show up when you press Cmd+Tab
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        // Stays permanently above Fullscreen apps, games, and the menu bar
+        notchWindow.level = .screenSaver
+        notchWindow.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         
-        window.contentView = NSHostingView(rootView: contentView)
-
+        notchWindow.contentView = NSHostingView(rootView: contentView)
+        notchWindow.makeKeyAndOrderFront(nil)
+        
         if let screen = NSScreen.main {
-            let screenWidth = screen.visibleFrame.width
-            let screenMaxY = screen.frame.maxY
+            let screenRect = screen.frame
+            let x = screenRect.midX - (notchWindow.frame.width / 2)
             
-            let width: CGFloat = 400
-            let height: CGFloat = 100
-            let x = (screenWidth / 2) - (width / 2)
-            let y = screenMaxY - height + 10
-            
-            window.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
+            // ⚡️ ABSOLUTE TOP PIXEL: Anchors the invisible canvas to the exact top edge of the screen hardware
+            let y = screenRect.maxY - notchWindow.frame.height
+            notchWindow.setFrameOrigin(NSPoint(x: x, y: y))
         }
-
-        // 3. Just order it to the front, don't force it to become the Key window
-        window.orderFront(nil)
     }
 }

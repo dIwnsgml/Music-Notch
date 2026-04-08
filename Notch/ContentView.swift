@@ -2,19 +2,35 @@ import SwiftUI
 import Combine
 import AppKit
 
+struct LRCTrack: Codable {
+    let trackName: String?
+    let artistName: String?
+    let syncedLyrics: String?
+}
+
+struct LyricLine: Equatable {
+    let time: Double
+    let text: String
+}
+
 class NowPlayingManager: ObservableObject {
     @Published var currentSong: String = "No Music"
+    private var internalSongIdentifier: String = ""
+    
     @Published var artworkURL: URL? = nil
     @Published var isPlaying: Bool = false
     @Published var loopMode: Int = 0
     @Published var currentTime: Double = 0.0
     @Published var duration: Double = 1.0
     
+    @Published var lyrics: [LyricLine] = []
+    @Published var activeLyricIndex: Int = 0
+    @Published var isSearchingLyrics: Bool = false
+    
     var timer: Timer?
     private var isFetching = false
     private var lastLoopToggleTime = Date(timeIntervalSince1970: 0)
     
-    // ⚡️ THE GENIUS SPEED HACK: Tab Caching
     private var lastActiveBrowser: String? = nil
     private var lastWindowIndex: Int? = nil
     private var lastTabIndex: Int? = nil
@@ -22,9 +38,103 @@ class NowPlayingManager: ObservableObject {
     let supportedBrowsers = ["Google Chrome", "Brave Browser", "Microsoft Edge", "Safari"]
     
     init() {
-        // Reduced to 1.0s because the cache makes it cost 0% CPU!
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.fetchTitle()
+        }
+    }
+    
+    // MARK: - STRICT LYRICS VERIFICATION ENGINE
+    func fetchLyricsEngine(title: String, artist: String) {
+        DispatchQueue.main.async {
+            self.isSearchingLyrics = true
+            self.lyrics = []
+            self.activeLyricIndex = 0
+        }
+        
+        var cleanTitle = title.replacingOccurrences(of: "(Official Video)", with: "", options: .caseInsensitive)
+        cleanTitle = cleanTitle.replacingOccurrences(of: "[Official Music Video]", with: "", options: .caseInsensitive)
+        cleanTitle = cleanTitle.replacingOccurrences(of: "(Lyrics)", with: "", options: .caseInsensitive)
+        cleanTitle = cleanTitle.trimmingCharacters(in: .whitespaces)
+        
+        if !artist.isEmpty {
+            if let eTitle = cleanTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+               let eArtist = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+               let url = URL(string: "https://lrclib.net/api/get?track_name=\(eTitle)&artist_name=\(eArtist)") {
+                
+                URLSession.shared.dataTask(with: url) { data, _, _ in
+                    if let data = data, let track = try? JSONDecoder().decode(LRCTrack.self, from: data), let synced = track.syncedLyrics {
+                        self.parseLRC(synced)
+                        DispatchQueue.main.async { self.isSearchingLyrics = false }
+                        return
+                    } else {
+                        self.executeSearchFallback(title: cleanTitle, artist: artist)
+                    }
+                }.resume()
+                return
+            }
+        }
+        self.executeSearchFallback(title: cleanTitle, artist: artist)
+    }
+    
+    private func executeSearchFallback(title: String, artist: String) {
+        let query = "\(title) \(artist)".trimmingCharacters(in: .whitespaces)
+        guard let eQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://lrclib.net/api/search?q=\(eQuery)") else {
+            DispatchQueue.main.async { self.isSearchingLyrics = false }
+            return
+        }
+        
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            defer { DispatchQueue.main.async { self.isSearchingLyrics = false } }
+            guard let data = data, let tracks = try? JSONDecoder().decode([LRCTrack].self, from: data) else { return }
+            
+            for track in tracks {
+                guard let synced = track.syncedLyrics else { continue }
+                if self.isStrictMatch(apiTitle: track.trackName ?? "", apiArtist: track.artistName ?? "", targetTitle: title, targetArtist: artist) {
+                    self.parseLRC(synced)
+                    return
+                }
+            }
+        }.resume()
+    }
+    
+    private func isStrictMatch(apiTitle: String, apiArtist: String, targetTitle: String, targetArtist: String) -> Bool {
+        let t1 = apiTitle.lowercased().components(separatedBy: .alphanumerics.inverted).joined()
+        let t2 = targetTitle.lowercased().components(separatedBy: .alphanumerics.inverted).joined()
+        let a1 = apiArtist.lowercased().components(separatedBy: .alphanumerics.inverted).joined()
+        let a2 = targetArtist.lowercased().components(separatedBy: .alphanumerics.inverted).joined()
+        
+        let titleMatch = t1.contains(t2) || t2.contains(t1) || t1 == t2
+        let artistMatch = a1.contains(a2) || a2.contains(a1) || a1 == a2 || a2.isEmpty || a1.isEmpty
+        
+        if targetTitle.lowercased().contains("cover") { return titleMatch }
+        return titleMatch && artistMatch
+    }
+    
+    private func parseLRC(_ lrcData: String) {
+        var parsed: [LyricLine] = []
+        let lines = lrcData.components(separatedBy: .newlines)
+        
+        for line in lines {
+            if line.hasPrefix("["), let bracketEnd = line.firstIndex(of: "]") {
+                let timeString = String(line[line.index(after: line.startIndex)..<bracketEnd])
+                let text = String(line[line.index(after: bracketEnd)...]).trimmingCharacters(in: .whitespaces)
+                let timeParts = timeString.components(separatedBy: ":")
+                
+                if timeParts.count == 2, let min = Double(timeParts[0]), let sec = Double(timeParts[1]) {
+                    if !text.isEmpty {
+                        parsed.append(LyricLine(time: (min * 60) + sec, text: text))
+                    }
+                }
+            }
+        }
+        DispatchQueue.main.async { self.lyrics = parsed }
+    }
+    
+    func updateActiveLyric() {
+        guard !lyrics.isEmpty else { return }
+        if let idx = lyrics.lastIndex(where: { $0.time <= self.currentTime }), self.activeLyricIndex != idx {
+            self.activeLyricIndex = idx
         }
     }
     
@@ -33,29 +143,12 @@ class NowPlayingManager: ObservableObject {
     let NX_KEYTYPE_NEXT: Int32 = 17
     let NX_KEYTYPE_PREVIOUS: Int32 = 18
     
-    func skipBackward() {
-        sendMediaKey(key: NX_KEYTYPE_PREVIOUS)
-        DispatchQueue.main.async { self.currentTime = 0.0 }
-        triggerFastFetch()
-    }
-    
-    func togglePlayPause() {
-        sendMediaKey(key: NX_KEYTYPE_PLAY)
-        DispatchQueue.main.async { self.isPlaying.toggle() }
-        triggerFastFetch()
-    }
-    
-    func skipForward() {
-        sendMediaKey(key: NX_KEYTYPE_NEXT)
-        DispatchQueue.main.async { self.currentTime = 0.0 }
-        triggerFastFetch()
-    }
+    func skipBackward() { sendMediaKey(key: NX_KEYTYPE_PREVIOUS); DispatchQueue.main.async { self.currentTime = 0.0 }; triggerFastFetch() }
+    func togglePlayPause() { sendMediaKey(key: NX_KEYTYPE_PLAY); DispatchQueue.main.async { self.isPlaying.toggle() }; triggerFastFetch() }
+    func skipForward() { sendMediaKey(key: NX_KEYTYPE_NEXT); DispatchQueue.main.async { self.currentTime = 0.0 }; triggerFastFetch() }
     
     private func triggerFastFetch() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            self.isFetching = false
-            self.fetchTitle()
-        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.isFetching = false; self.fetchTitle() }
     }
     
     private func sendMediaKey(key: Int32) {
@@ -67,59 +160,34 @@ class NowPlayingManager: ObservableObject {
         evUp?.cgEvent?.post(tap: .cghidEventTap)
     }
     
-    // MARK: - LIGHTNING FAST SEEK
     func seek(to percentage: Double) {
-        DispatchQueue.main.async { self.currentTime = self.duration * percentage }
-        
+        DispatchQueue.main.async { self.currentTime = self.duration * percentage; self.updateActiveLyric() }
         DispatchQueue.global(qos: .userInitiated).async {
             let jsCode = "(function() { var percentage = \(percentage); var host = window.location.hostname; var active = null; if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { active = media[i]; break; } } } if (active && active.duration) { active.currentTime = active.duration * percentage; return 'SEEKED'; } return 'NOT_FOUND'; })();"
-            
-            // ⚡️ MICRO-SCRIPT: If we know the exact tab, target it directly!
             if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
                 let fastScript = browser == "Safari" ? "tell application \"Safari\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return do JavaScript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return execute javascript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\""
-                
-                if let res = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue, res == "SEEKED" {
-                    self.triggerFastFetch()
-                    return // Done in 0.01 seconds!
-                }
+                if let res = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue, res == "SEEKED" { self.triggerFastFetch(); return }
             }
-            
-            // Fallback to full search if the cached tab was closed
-            self.runFullAppleScriptLoop(jsCode: jsCode) { _ in }
-            self.triggerFastFetch()
+            self.runFullAppleScriptLoop(jsCode: jsCode) { _ in }; self.triggerFastFetch()
         }
     }
     
-    // MARK: - LIGHTNING FAST LOOP TOGGLE
     func toggleLoop() {
-        DispatchQueue.main.async {
-            self.lastLoopToggleTime = Date()
-            self.loopMode = (self.loopMode + 1) % 3
-        }
+        DispatchQueue.main.async { self.lastLoopToggleTime = Date(); self.loopMode = (self.loopMode + 1) % 3 }
         DispatchQueue.global(qos: .userInitiated).async {
             let jsCode = "(function() { var host = window.location.hostname; if (host.includes('music.youtube.com')) { var btns = document.querySelectorAll('ytmusic-player-bar button'); var repeatBtn = null; for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { repeatBtn = btns[i]; break; } } if (repeatBtn) { repeatBtn.click(); return 'TOGGLED'; } return 'NOT_FOUND'; } else if (host.includes('spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-repeat]'); if (spotBtn) { spotBtn.click(); return 'TOGGLED'; } } else if (host.includes('music.apple.com')) { var appleBtn = document.querySelector('.button-repeat') || document.querySelector('[data-testid=repeat-button]'); if (appleBtn) { appleBtn.click(); return 'TOGGLED'; } } else if (host.includes('youtube.com')) { var yt = document.querySelector('.html5-main-video'); if (yt && !yt.paused && yt.currentTime > 0) { yt.loop = !yt.loop; if(yt.loop) yt.setAttribute('loop', ''); else yt.removeAttribute('loop'); return yt.loop ? 'ALL' : 'NONE'; } } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { media[i].loop = !media[i].loop; return media[i].loop ? 'ALL' : 'NONE'; } } } return 'NOT_FOUND'; })();"
-            
-            // ⚡️ MICRO-SCRIPT
             if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
                 let fastScript = browser == "Safari" ? "tell application \"Safari\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return do JavaScript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to return execute javascript \"\(jsCode)\"\nend timeout\nend try\nend tell\nreturn \"NOT_FOUND\""
-                
                 if let result = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue, result != "NOT_FOUND" {
-                    DispatchQueue.main.async {
-                        if result == "ALL" { self.loopMode = 1 } else if result == "NONE" { self.loopMode = 0 }
-                    }
+                    DispatchQueue.main.async { if result == "ALL" { self.loopMode = 1 } else if result == "NONE" { self.loopMode = 0 } }
                     return
                 }
             }
-            
-            self.runFullAppleScriptLoop(jsCode: jsCode) { result in
-                DispatchQueue.main.async {
-                    if result == "ALL" { self.loopMode = 1 } else if result == "NONE" { self.loopMode = 0 }
-                }
-            }
+            self.runFullAppleScriptLoop(jsCode: jsCode) { result in DispatchQueue.main.async { if result == "ALL" { self.loopMode = 1 } else if result == "NONE" { self.loopMode = 0 } } }
         }
     }
     
-    // MARK: - FETCH LOGIC WITH CACHING
+    // MARK: - FETCH LOGIC WITH YT METADATA EXTRACTION
     func fetchTitle() {
         guard !isFetching else { return }
         isFetching = true
@@ -130,32 +198,28 @@ class NowPlayingManager: ObservableObject {
             for app in runningApps { if let name = app.localizedName, self.supportedBrowsers.contains(name) { activeBrowsers.append(name) } }
             if activeBrowsers.isEmpty { DispatchQueue.main.async { self.isPlaying = false; self.isFetching = false }; return }
             
-            let jsCode = "(function() { var host = window.location.hostname; var isPlaying = false; var loopState = 'NONE'; var active = null; if (host.includes('music.youtube.com')) { active = document.querySelector('.html5-main-video'); if (active && !active.paused && active.currentTime > 0) isPlaying = true; var btns = document.querySelectorAll('ytmusic-player-bar button'); for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { if (lbl.includes('1') || lbl.includes('one') || lbl.includes('una') || lbl.includes('곡')) { loopState = 'ONE'; } else if (!lbl.includes('off') && !lbl.includes('안함') && !lbl.includes('desactiv')) { loopState = 'ALL'; } else { loopState = 'NONE'; } break; } } } else if (host.includes('spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-repeat]'); if (spotBtn) { var checked = spotBtn.getAttribute('aria-checked'); if (checked === 'mixed') loopState = 'ONE'; else if (checked === 'true') loopState = 'ALL'; else loopState = 'NONE'; } } else if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); if (active && !active.paused && active.currentTime > 0) { isPlaying = true; loopState = (active.loop || active.hasAttribute('loop')) ? 'ALL' : 'NONE'; } } else if (!host.includes('music.apple.com')) { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { active = media[i]; isPlaying = true; loopState = active.loop ? 'ALL' : 'NONE'; break; } } } if (!isPlaying && navigator.mediaSession && navigator.mediaSession.playbackState === 'playing') { isPlaying = true; } if (isPlaying) { var title = document.title; var img = 'NO_IMAGE'; var curr = 0; var dur = 1; if (active) { curr = active.currentTime; dur = active.duration || 1; } if (navigator.mediaSession && navigator.mediaSession.metadata) { var m = navigator.mediaSession.metadata; if(m.title) title = m.title + (m.artist ? ' - ' + m.artist : ''); if(m.artwork && m.artwork.length > 0) img = m.artwork[m.artwork.length - 1].src; } return title + '|||' + img + '|||' + loopState + '|||' + curr + '|||' + dur; } return 'NOT_PLAYING'; })();"
+            if let last = self.lastActiveBrowser, activeBrowsers.contains(last) {
+                activeBrowsers.removeAll(where: { $0 == last })
+                activeBrowsers.insert(last, at: 0)
+            }
             
-            // ⚡️ MICRO-SCRIPT FAST FETCH
+            // ⚡️ UPGRADED JS: Now explicitly scrapes `.ytVideoAttributeViewModelTitle` and `.ytVideoAttributeViewModelSubtitle`
+            let jsCode = "(function() { var host = window.location.hostname; var isPlaying = false; var loopState = 'NONE'; var active = null; var cTitle = ''; var cArtist = ''; if (host.includes('music.youtube.com')) { active = document.querySelector('.html5-main-video'); if (active && !active.paused && active.currentTime > 0) isPlaying = true; var btns = document.querySelectorAll('ytmusic-player-bar button'); for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { if (lbl.includes('1') || lbl.includes('one') || lbl.includes('una') || lbl.includes('곡')) { loopState = 'ONE'; } else if (!lbl.includes('off') && !lbl.includes('안함') && !lbl.includes('desactiv')) { loopState = 'ALL'; } else { loopState = 'NONE'; } break; } } var tEl = document.querySelector('ytmusic-player-bar .title'); var aEl = document.querySelector('ytmusic-player-bar .byline'); if (tEl) cTitle = tEl.innerText; if (aEl) cArtist = aEl.innerText.split('•')[0].trim(); } else if (host.includes('spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-repeat]'); if (spotBtn) { var checked = spotBtn.getAttribute('aria-checked'); if (checked === 'mixed') loopState = 'ONE'; else if (checked === 'true') loopState = 'ALL'; else loopState = 'NONE'; } } else if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); if (active && !active.paused && active.currentTime > 0) { isPlaying = true; loopState = (active.loop || active.hasAttribute('loop')) ? 'ALL' : 'NONE'; var attrTitle = document.querySelector('.ytVideoAttributeViewModelTitle'); var attrArtist = document.querySelector('.ytVideoAttributeViewModelSubtitle'); if (attrTitle) cTitle = attrTitle.innerText.trim(); if (attrArtist) cArtist = attrArtist.innerText.trim(); if (!cTitle) { var rows = document.querySelectorAll('ytd-info-row-renderer, ytd-metadata-row-renderer'); for(var j=0; j<rows.length; j++) { var txt = rows[j].innerText.toLowerCase(); if(txt.includes('song') || txt.includes('노래')) cTitle = rows[j].querySelector('#content')?.innerText || cTitle; if(txt.includes('artist') || txt.includes('아티스트')) cArtist = rows[j].querySelector('#content')?.innerText || cArtist; } } } } else if (!host.includes('music.apple.com')) { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { active = media[i]; isPlaying = true; loopState = active.loop ? 'ALL' : 'NONE'; break; } } } if (!isPlaying && navigator.mediaSession && navigator.mediaSession.playbackState === 'playing') { isPlaying = true; } if (isPlaying) { var title = cTitle || document.title; var artist = cArtist; var img = 'NO_IMAGE'; var curr = 0; var dur = 1; if (active) { curr = active.currentTime; dur = active.duration || 1; } if (navigator.mediaSession && navigator.mediaSession.metadata) { var m = navigator.mediaSession.metadata; if(!cTitle && m.title) title = m.title; if(!cArtist && m.artist) artist = m.artist; if(m.artwork && m.artwork.length > 0) img = m.artwork[m.artwork.length - 1].src; } return title + '|||' + (artist ? artist : 'EMPTY_ARTIST') + '|||' + img + '|||' + loopState + '|||' + curr + '|||' + dur; } return 'NOT_PLAYING'; })();"
+            
             if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
                 let fastScript = browser == "Safari" ? "tell application \"Safari\"\nset tabResult to \"NOT_PLAYING\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to set tabResult to do JavaScript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is not \"NOT_PLAYING\" and tabResult is not \"\" and tabResult is not missing value then\nreturn tabResult as string & \"|||\" & \"\(wIdx)\" & \"|||\" & \"\(tIdx)\"\nend if\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\nset tabResult to \"NOT_PLAYING\"\ntry\nwith timeout of 1 second\ntell tab \(tIdx) of window \(wIdx) to set tabResult to execute javascript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is not \"NOT_PLAYING\" and tabResult is not \"\" and tabResult is not missing value then\nreturn tabResult as string & \"|||\" & \"\(wIdx)\" & \"|||\" & \"\(tIdx)\"\nend if\nend tell\nreturn \"NOT_FOUND\""
                 
                 if let result = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue, result != "NOT_FOUND", result != "NOT_PLAYING" {
-                    self.parseAndApplyResult(result: result, browser: browser)
-                    return
+                    self.parseAndApplyResult(result: result, browser: browser); return
                 } else {
-                    // IF THE FAST SCRIPT FAILS: They paused the tab or closed it. Clear the cache!
-                    self.lastActiveBrowser = nil
-                    self.lastWindowIndex = nil
-                    self.lastTabIndex = nil
+                    self.lastActiveBrowser = nil; self.lastWindowIndex = nil; self.lastTabIndex = nil
                 }
             }
             
-            // IF NO CACHE: Run the full search, but tell AppleScript to attach the exact coordinates so we can cache them!
             self.runFullAppleScriptLoop(jsCode: jsCode) { result in
                 if let res = result {
                     let parts = res.components(separatedBy: "|||")
-                    // If it succeeded, it attached the Browser name to the very end for our parser
-                    if parts.count >= 8 {
-                        let browserName = parts.last!
-                        self.parseAndApplyResult(result: res, browser: browserName)
-                    }
+                    if parts.count >= 8 { self.parseAndApplyResult(result: res, browser: parts.last!) }
                 } else {
                     DispatchQueue.main.async { self.isPlaying = false; self.isFetching = false }
                 }
@@ -163,7 +227,6 @@ class NowPlayingManager: ObservableObject {
         }
     }
     
-    // MARK: - SHARED FULL LOOP (Finds the tab and reports its exact index coordinates)
     private func runFullAppleScriptLoop(jsCode: String, completion: @escaping (String?) -> Void) {
         let runningApps = NSWorkspace.shared.runningApplications
         var activeBrowsers: [String] = []
@@ -173,38 +236,39 @@ class NowPlayingManager: ObservableObject {
             let script = browser == "Safari" ? "tell application \"Safari\"\nset wCount to count of windows\nrepeat with wIdx from 1 to wCount\nset tCount to count of tabs of window wIdx\nrepeat with tIdx from 1 to tCount\nset tabResult to \"NOT_PLAYING\"\ntry\nwith timeout of 1 second\ntell tab tIdx of window wIdx to set tabResult to do JavaScript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is not \"NOT_PLAYING\" and tabResult is not \"\" and tabResult is not missing value then\nreturn tabResult as string & \"|||\" & wIdx & \"|||\" & tIdx\nend if\nend repeat\nend repeat\nend tell\nreturn \"NOT_FOUND\"" : "tell application \"\(browser)\"\nset wCount to count of windows\nrepeat with wIdx from 1 to wCount\nset tCount to count of tabs of window wIdx\nrepeat with tIdx from 1 to tCount\nset tabResult to \"NOT_PLAYING\"\ntry\nwith timeout of 1 second\ntell tab tIdx of window wIdx to set tabResult to execute javascript \"\(jsCode)\"\nend timeout\nend try\nif tabResult is not \"NOT_PLAYING\" and tabResult is not \"\" and tabResult is not missing value then\nreturn tabResult as string & \"|||\" & wIdx & \"|||\" & tIdx\nend if\nend repeat\nend repeat\nend tell\nreturn \"NOT_FOUND\""
             
             if let result = NSAppleScript(source: script)?.executeAndReturnError(nil).stringValue, result != "NOT_FOUND", result != "NOT_PLAYING" {
-                completion(result + "|||" + browser)
-                return
+                completion(result + "|||" + browser); return
             }
         }
         completion(nil)
     }
     
-    // MARK: - SHARED PARSER
     private func parseAndApplyResult(result: String, browser: String) {
         DispatchQueue.main.async {
             self.isPlaying = true
             let components = result.components(separatedBy: "|||")
             
-            var rawTitle = components[0]
-            let imgString = components.count > 1 ? components[1] : "NO_IMAGE"
-            let loopString = components.count > 2 ? components[2] : "NONE"
-            let currString = components.count > 3 ? components[3] : "0"
-            let durString = components.count > 4 ? components[4] : "1"
+            let rawTitle = components[0].replacingOccurrences(of: " - YouTube Music", with: "").replacingOccurrences(of: " - YouTube", with: "").replacingOccurrences(of: " | Spotify", with: "")
+            let rawArtist = components[1] == "EMPTY_ARTIST" ? "" : components[1]
+            let imgString = components[2]
+            let loopString = components[3]
+            let currString = components[4]
+            let durString = components[5]
             
-            // ⚡️ SAVE THE CACHE!
-            if components.count >= 7 {
+            if components.count >= 8 {
                 self.lastActiveBrowser = browser
-                self.lastWindowIndex = Int(components[5])
-                self.lastTabIndex = Int(components[6])
+                self.lastWindowIndex = Int(components[6])
+                self.lastTabIndex = Int(components[7])
             }
             
-            rawTitle = rawTitle.replacingOccurrences(of: " - YouTube Music", with: "")
-            rawTitle = rawTitle.replacingOccurrences(of: " - YouTube", with: "")
-            rawTitle = rawTitle.replacingOccurrences(of: " | Spotify", with: "")
-            rawTitle = rawTitle.replacingOccurrences(of: " - SoundCloud", with: "")
+            let identifier = rawTitle + rawArtist
+            if self.internalSongIdentifier != identifier {
+                self.internalSongIdentifier = identifier
+                self.fetchLyricsEngine(title: rawTitle, artist: rawArtist)
+            }
             
-            if self.currentSong != rawTitle { self.currentSong = rawTitle }
+            let displayString = rawArtist.isEmpty ? rawTitle : "\(rawTitle) - \(rawArtist)"
+            if self.currentSong != displayString { self.currentSong = displayString }
+            
             if imgString != "NO_IMAGE", let url = URL(string: imgString) { self.artworkURL = url } else { self.artworkURL = nil }
             
             let newTime = Double(currString) ?? 0.0
@@ -220,161 +284,217 @@ class NowPlayingManager: ObservableObject {
 }
 
 
+struct WaveformView: View {
+    var isPlaying: Bool
+    @State private var isAnimating = false
+    
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<4) { index in
+                Capsule()
+                    .fill(isPlaying ? Color.green : Color.gray.opacity(0.5))
+                    .frame(width: 3, height: isPlaying ? (isAnimating ? .random(in: 6...14) : 4) : 4)
+                    .animation(
+                        isPlaying
+                        ? Animation.easeInOut(duration: 0.3).repeatForever().delay(Double(index) * 0.1)
+                        : .easeOut(duration: 0.2),
+                        value: isAnimating
+                    )
+            }
+        }
+        .onChange(of: isPlaying) { playing in
+            isAnimating = playing
+        }
+        .onAppear {
+            if isPlaying { isAnimating = true }
+        }
+    }
+}
+
+// ... Keep your NowPlayingManager class code exactly as it is here ...
+
 struct ContentView: View {
     @State private var isExpanded = false
     @StateObject private var nowPlaying = NowPlayingManager()
     
-    // NEW: Handles smooth slider dragging
     @State private var isDragging = false
     @State private var dragProgress: Double = 0.0
     let localTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+    
+    // ⚡️ TUNING CONSTANTS
+    let notchHeight: CGFloat = 32
+    // Reduced from 300 to 260 to make the collapsed pill tighter and more balanced
+    let collapsedWidth: CGFloat = 260
+    let expandedWidth: CGFloat = 360
 
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
+        let expandedHeight: CGFloat = !nowPlaying.lyrics.isEmpty ? 164 : 100
 
-        ZStack {
-            RoundedRectangle(cornerRadius: isExpanded ? 24 : 16, style: .continuous)
-                .fill(Color.black)
-                // Expanded height is now 96 to fit the progress bar
-                .frame(width: isExpanded ? 360 : 150, height: isExpanded ? 96 : 32)
-                .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isExpanded)
-                .overlay(
-                    RoundedRectangle(cornerRadius: isExpanded ? 24 : 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                )
+        VStack(spacing: 0) {
+            ZStack(alignment: .top) {
+                // ⚡️ THE TRUE DYNAMIC ISLAND BACKGROUND:
+                // Always black. This physically hides the edges of the hardware notch.
+                RoundedRectangle(cornerRadius: isExpanded ? 24 : notchHeight / 2, style: .continuous)
+                    .fill(Color.black)
+                    .frame(width: isExpanded ? expandedWidth : collapsedWidth,
+                           height: isExpanded ? expandedHeight : notchHeight)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: isExpanded ? 24 : notchHeight / 2, style: .continuous)
+                            .stroke(Color.white.opacity(isExpanded ? 0.1 : 0.05), lineWidth: 1)
+                    )
 
-            VStack(spacing: 8) {
-                // TOP ROW: Artwork, Text, Buttons
-                HStack {
-                    if isExpanded && hasMedia && nowPlaying.artworkURL != nil {
-                        AsyncImage(url: nowPlaying.artworkURL) { image in
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Color.gray.opacity(0.3)
-                        }
-                        .frame(width: 44, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                        )
-                        .transition(.scale.combined(with: .opacity))
-                    } else {
-                        Image(systemName: "music.note")
-                            .foregroundColor(nowPlaying.isPlaying ? Color.red : Color.gray)
-                            .font(.system(size: isExpanded ? 20 : 16, weight: .bold))
-                    }
-                    
-                    if isExpanded {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting for Media...")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.gray)
-                            Text(hasMedia ? nowPlaying.currentSong : "Nothing playing")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                        }
-                        .padding(.leading, 6)
-                        .transition(.opacity)
-                    }
-                    
-                    Spacer()
-                    
-                    if isExpanded && hasMedia {
-                        HStack(spacing: 14) {
-                            Button(action: { nowPlaying.skipBackward() }) {
-                                Image(systemName: "backward.fill").foregroundColor(.white).font(.system(size: 16))
-                            }.buttonStyle(.plain)
-                            
-                            Button(action: { nowPlaying.togglePlayPause() }) {
-                                Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill").foregroundColor(.white).font(.system(size: 18))
-                            }.buttonStyle(.plain)
-                            
-                            Button(action: { nowPlaying.skipForward() }) {
-                                Image(systemName: "forward.fill").foregroundColor(.white).font(.system(size: 16))
-                            }.buttonStyle(.plain)
-                            
-                            Button(action: { nowPlaying.toggleLoop() }) {
-                                Image(systemName: nowPlaying.loopMode == 2 ? "repeat.1" : "repeat")
-                                    .foregroundColor(nowPlaying.loopMode > 0 ? .green : .white.opacity(0.6))
-                                    .font(.system(size: 16, weight: nowPlaying.loopMode > 0 ? .bold : .regular))
-                            }.buttonStyle(.plain)
-                        }
-                        .padding(.trailing, 8)
-                        .transition(.opacity)
-                    }
-                }
-                
-                // BOTTOM ROW: Progress Bar
-                if isExpanded && hasMedia {
-                    HStack(spacing: 8) {
-                        // Current Time
-                        Text(formatTime(isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(.gray)
-                            .frame(width: 36, alignment: .trailing)
-
-                        // Interactive Bar
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                // Background Track
-                                Capsule().fill(Color.white.opacity(0.2))
-                                    .frame(height: 6)
-                                
-                                // Filled Track
-                                Capsule().fill(Color.white)
-                                    .frame(width: max(0, geo.size.width * CGFloat(isDragging ? dragProgress : (nowPlaying.currentTime / nowPlaying.duration))), height: 6)
+                // CONTENT STACK
+                VStack(spacing: 0) {
+                    if !isExpanded {
+                        // ⚡️ COLLAPSED STATE
+                        HStack(spacing: 0) {
+                            // LEFT SIDE: Mini Album Art
+                            Group {
+                                if hasMedia && nowPlaying.artworkURL != nil {
+                                    AsyncImage(url: nowPlaying.artworkURL) { image in
+                                        image.resizable().aspectRatio(contentMode: .fill)
+                                    } placeholder: { Color.gray.opacity(0.3) }
+                                    .frame(width: 20, height: 20)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                } else {
+                                    Image(systemName: "music.note")
+                                        .foregroundColor(nowPlaying.isPlaying ? .white : .gray)
+                                        .font(.system(size: 14, weight: .bold))
+                                }
                             }
-                            // Seek functionality
-                            .gesture(DragGesture(minimumDistance: 0)
-                                .onChanged { value in
-                                    isDragging = true
-                                    dragProgress = min(max(0, value.location.x / geo.size.width), 1)
-                                }
-                                .onEnded { value in
-                                    let percentage = min(max(0, value.location.x / geo.size.width), 1)
-                                    nowPlaying.seek(to: percentage)
-                                    // Slight delay before releasing drag to allow the browser to catch up
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDragging = false }
-                                }
-                            )
+                            // Hardcoded width guarantees the left side matches the right side exactly
+                            .frame(width: 24, alignment: .leading)
+                            
+                            // This spacer sits exactly over your hardware notch!
+                            Spacer()
+                            
+                            // RIGHT SIDE: Waveform
+                            WaveformView(isPlaying: nowPlaying.isPlaying)
+                                .frame(width: 24, alignment: .trailing)
                         }
-                        .frame(height: 6)
-
-                        // Time Remaining
-                        Text("-" + formatTime(nowPlaying.duration - (isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime)))
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(.gray)
-                            .frame(width: 36, alignment: .leading)
+                        .padding(.horizontal, 14) // Tight padding for a snug fit
+                        .frame(height: notchHeight)
+                        .transition(.opacity)
+                        
+                    } else {
+                        // ⚡️ EXPANDED STATE
+                        VStack(spacing: 8) {
+                            // THE GAP: Pushes UI down below the physical hardware notch
+                            Color.clear.frame(height: notchHeight)
+                            
+                            // TOP ROW (Controls)
+                            HStack {
+                                Group {
+                                    if hasMedia && nowPlaying.artworkURL != nil {
+                                        AsyncImage(url: nowPlaying.artworkURL) { image in
+                                            image.resizable().aspectRatio(contentMode: .fill)
+                                        } placeholder: { Color.gray.opacity(0.3) }
+                                        .frame(width: 40, height: 40)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    } else {
+                                        Image(systemName: "music.note")
+                                            .foregroundColor(nowPlaying.isPlaying ? Color.red : Color.gray)
+                                            .font(.system(size: 20, weight: .bold))
+                                    }
+                                }
+                                .transition(.scale.combined(with: .opacity))
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting...")
+                                        .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
+                                    Text(hasMedia ? nowPlaying.currentSong : "Nothing playing")
+                                        .font(.system(size: 14, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                                }
+                                .padding(.leading, 6)
+                                
+                                Spacer()
+                                
+                                if hasMedia {
+                                    HStack(spacing: 12) {
+                                        Button(action: { nowPlaying.skipBackward() }) { Image(systemName: "backward.fill").foregroundColor(.white) }.buttonStyle(.plain)
+                                        Button(action: { nowPlaying.togglePlayPause() }) { Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill").foregroundColor(.white) }.buttonStyle(.plain)
+                                        Button(action: { nowPlaying.skipForward() }) { Image(systemName: "forward.fill").foregroundColor(.white) }.buttonStyle(.plain)
+                                        Button(action: { nowPlaying.toggleLoop() }) {
+                                            Image(systemName: nowPlaying.loopMode == 2 ? "repeat.1" : "repeat")
+                                                .foregroundColor(nowPlaying.loopMode > 0 ? .green : .white.opacity(0.6))
+                                        }.buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            
+                            // PROGRESS BAR
+                            if hasMedia {
+                                HStack(spacing: 8) {
+                                    Text(formatTime(isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
+                                        .font(.system(size: 10, design: .monospaced)).foregroundColor(.gray)
+                                    GeometryReader { geo in
+                                        ZStack(alignment: .leading) {
+                                            Capsule().fill(Color.white.opacity(0.2)).frame(height: 6)
+                                            Capsule().fill(Color.white).frame(width: max(0, geo.size.width * CGFloat(isDragging ? dragProgress : (nowPlaying.currentTime / nowPlaying.duration))), height: 6)
+                                        }
+                                        .gesture(DragGesture(minimumDistance: 0)
+                                            .onChanged { v in isDragging = true; dragProgress = min(max(0, v.location.x / geo.size.width), 1) }
+                                            .onEnded { v in nowPlaying.seek(to: min(max(0, v.location.x / geo.size.width), 1)); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDragging = false } }
+                                        )
+                                    }.frame(height: 6)
+                                    Text("-" + formatTime(nowPlaying.duration - (isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime)))
+                                        .font(.system(size: 10, design: .monospaced)).foregroundColor(.gray)
+                                }.padding(.horizontal, 16)
+                            }
+                            
+                            // LYRICS
+                            if hasMedia && !nowPlaying.lyrics.isEmpty {
+                                GeometryReader { geo in
+                                    let itemHeight: CGFloat = 26
+                                    let activeOffset = CGFloat(nowPlaying.activeLyricIndex) * itemHeight
+                                    let centerAdjustment = (geo.size.height - itemHeight) / 2.0
+                                    VStack(spacing: 0) {
+                                        ForEach(Array(nowPlaying.lyrics.enumerated()), id: \.offset) { index, lyric in
+                                            let distance = abs(index - nowPlaying.activeLyricIndex)
+                                            Text(lyric.text)
+                                                .font(.system(size: 14, weight: distance == 0 ? .bold : .semibold))
+                                                .foregroundColor(distance == 0 ? .white : (distance == 1 ? .white.opacity(0.4) : .clear))
+                                                .frame(maxWidth: .infinity, alignment: .center).frame(height: itemHeight)
+                                                .scaleEffect(distance == 0 ? 1.0 : 0.85).blur(radius: distance == 0 ? 0 : 0.3)
+                                        }
+                                    }
+                                    .offset(y: -activeOffset + centerAdjustment)
+                                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: nowPlaying.activeLyricIndex)
+                                }
+                                .frame(height: 52)
+                                .mask(LinearGradient(gradient: Gradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.15), .init(color: .black, location: 0.85), .init(color: .clear, location: 1)]), startPoint: .top, endPoint: .bottom))
+                            }
+                        }
+                        .padding(.top, -8)
+                        .padding(.bottom, 8)
+                        .transition(.opacity)
                     }
-                    .padding(.horizontal, 8)
-                    .transition(.opacity)
                 }
+                .frame(width: isExpanded ? expandedWidth : collapsedWidth,
+                       height: isExpanded ? expandedHeight : notchHeight)
             }
-            .padding(.horizontal, isExpanded ? 16 : 16)
-            .frame(width: isExpanded ? 360 : 150)
+            .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isExpanded)
+            .onHover { h in isExpanded = h }
+            
+            Spacer()
         }
-        .onHover { hovering in
-            isExpanded = hovering
-        }
-        // Smooth Local Timer (Moves the bar naturally between the 2-second background fetches)
+        .frame(width: expandedWidth, height: 200)
+        .edgesIgnoringSafeArea(.all)
         .onReceive(localTimer) { _ in
-            if nowPlaying.isPlaying && !isDragging && nowPlaying.currentTime < nowPlaying.duration {
+            if nowPlaying.isPlaying && !isDragging {
                 nowPlaying.currentTime += 1.0
+                nowPlaying.updateActiveLyric()
             }
         }
     }
     
-    // Helper to turn seconds into "M:SS"
-    private func formatTime(_ seconds: Double) -> String {
-        guard !seconds.isNaN && !seconds.isInfinite else { return "0:00" }
-        let totalSeconds = Int(seconds)
-        let m = totalSeconds / 60
-        let s = totalSeconds % 60
-        return String(format: "%d:%02d", m, s)
+    private func formatTime(_ s: Double) -> String {
+        let ts = Int(s); return String(format: "%d:%02d", ts / 60, ts % 60)
     }
 }
+
 
 #Preview {
     ContentView()
