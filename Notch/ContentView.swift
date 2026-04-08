@@ -2,6 +2,70 @@ import SwiftUI
 import Combine
 import AppKit
 
+// ⚡️ NSIMAGE EXTENSION: Extracts the dominant color from the album artwork
+extension NSImage {
+    var averageColor: Color {
+        guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return .green }
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        var rgba = [UInt8](repeating: 0, count: 4)
+        guard let context = CGContext(data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return .green }
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        
+        // Boost brightness slightly so dark albums don't create an invisible black waveform
+        var r = CGFloat(rgba[0]) / 255.0
+        var g = CGFloat(rgba[1]) / 255.0
+        var b = CGFloat(rgba[2]) / 255.0
+        let maxColor = max(r, max(g, b))
+        if maxColor < 0.4 {
+            let boost = 0.4 - maxColor
+            r += boost; g += boost; b += boost
+        }
+        return Color(red: Double(r), green: Double(g), blue: Double(b))
+    }
+}
+
+// ⚡️ THE SECRET SAUCE: Custom S-Curve Notch Shape
+struct DynamicNotchShape: Shape {
+    var cornerRadius: CGFloat
+    var blendRadius: CGFloat = 16 // The size of the concave "swoop" at the top
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addQuadCurve(to: CGPoint(x: blendRadius, y: blendRadius), control: CGPoint(x: blendRadius, y: 0))
+        path.addLine(to: CGPoint(x: blendRadius, y: rect.maxY - cornerRadius))
+        path.addQuadCurve(to: CGPoint(x: blendRadius + cornerRadius, y: rect.maxY), control: CGPoint(x: blendRadius, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - blendRadius - cornerRadius, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX - blendRadius, y: rect.maxY - cornerRadius), control: CGPoint(x: rect.maxX - blendRadius, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - blendRadius, y: blendRadius))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: 0), control: CGPoint(x: rect.maxX - blendRadius, y: 0))
+        path.addLine(to: CGPoint(x: 0, y: 0))
+        return path
+    }
+}
+
+struct WaveformView: View {
+    var isPlaying: Bool
+    var color: Color // ⚡️ Now accepts the dynamically extracted color
+    @State private var isAnimating = false
+    
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<4) { index in
+                Capsule()
+                    .fill(isPlaying ? color : Color.gray.opacity(0.5))
+                    .frame(width: 3, height: isPlaying ? (isAnimating ? .random(in: 6...14) : 4) : 4)
+                    .animation(
+                        isPlaying ? Animation.easeInOut(duration: 0.3).repeatForever().delay(Double(index) * 0.1) : .easeOut(duration: 0.2),
+                        value: isAnimating
+                    )
+            }
+        }
+        .onChange(of: isPlaying) { playing in isAnimating = playing }
+        .onAppear { if isPlaying { isAnimating = true } }
+    }
+}
+
 struct LRCTrack: Codable {
     let trackName: String?
     let artistName: String?
@@ -18,6 +82,7 @@ class NowPlayingManager: ObservableObject {
     private var internalSongIdentifier: String = ""
     
     @Published var artworkURL: URL? = nil
+    @Published var artworkDominantColor: Color = .green // ⚡️ Stores the extracted color
     @Published var isPlaying: Bool = false
     @Published var loopMode: Int = 0
     @Published var currentTime: Double = 0.0
@@ -43,6 +108,15 @@ class NowPlayingManager: ObservableObject {
         }
     }
     
+    // ⚡️ Fetches the image behind the scenes and calculates the average color
+    private func fetchDominantColor(from url: URL) {
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            guard let data = data, let image = NSImage(data: data) else { return }
+            let color = image.averageColor
+            DispatchQueue.main.async { self.artworkDominantColor = color }
+        }.resume()
+    }
+    
     // MARK: - STRICT LYRICS VERIFICATION ENGINE
     func fetchLyricsEngine(title: String, artist: String) {
         DispatchQueue.main.async {
@@ -50,27 +124,15 @@ class NowPlayingManager: ObservableObject {
             self.lyrics = []
             self.activeLyricIndex = 0
         }
-        
-        var cleanTitle = title.replacingOccurrences(of: "(Official Video)", with: "", options: .caseInsensitive)
-        cleanTitle = cleanTitle.replacingOccurrences(of: "[Official Music Video]", with: "", options: .caseInsensitive)
-        cleanTitle = cleanTitle.replacingOccurrences(of: "(Lyrics)", with: "", options: .caseInsensitive)
-        cleanTitle = cleanTitle.trimmingCharacters(in: .whitespaces)
+        var cleanTitle = title.replacingOccurrences(of: "(Official Video)", with: "", options: .caseInsensitive).replacingOccurrences(of: "[Official Music Video]", with: "", options: .caseInsensitive).replacingOccurrences(of: "(Lyrics)", with: "", options: .caseInsensitive).trimmingCharacters(in: .whitespaces)
         
         if !artist.isEmpty {
-            if let eTitle = cleanTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-               let eArtist = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-               let url = URL(string: "https://lrclib.net/api/get?track_name=\(eTitle)&artist_name=\(eArtist)") {
-                
+            if let eTitle = cleanTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), let eArtist = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), let url = URL(string: "https://lrclib.net/api/get?track_name=\(eTitle)&artist_name=\(eArtist)") {
                 URLSession.shared.dataTask(with: url) { data, _, _ in
                     if let data = data, let track = try? JSONDecoder().decode(LRCTrack.self, from: data), let synced = track.syncedLyrics {
-                        self.parseLRC(synced)
-                        DispatchQueue.main.async { self.isSearchingLyrics = false }
-                        return
-                    } else {
-                        self.executeSearchFallback(title: cleanTitle, artist: artist)
-                    }
-                }.resume()
-                return
+                        self.parseLRC(synced); DispatchQueue.main.async { self.isSearchingLyrics = false }; return
+                    } else { self.executeSearchFallback(title: cleanTitle, artist: artist) }
+                }.resume(); return
             }
         }
         self.executeSearchFallback(title: cleanTitle, artist: artist)
@@ -78,21 +140,16 @@ class NowPlayingManager: ObservableObject {
     
     private func executeSearchFallback(title: String, artist: String) {
         let query = "\(title) \(artist)".trimmingCharacters(in: .whitespaces)
-        guard let eQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://lrclib.net/api/search?q=\(eQuery)") else {
-            DispatchQueue.main.async { self.isSearchingLyrics = false }
-            return
+        guard let eQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), let url = URL(string: "https://lrclib.net/api/search?q=\(eQuery)") else {
+            DispatchQueue.main.async { self.isSearchingLyrics = false }; return
         }
-        
         URLSession.shared.dataTask(with: url) { data, _, _ in
             defer { DispatchQueue.main.async { self.isSearchingLyrics = false } }
             guard let data = data, let tracks = try? JSONDecoder().decode([LRCTrack].self, from: data) else { return }
-            
             for track in tracks {
                 guard let synced = track.syncedLyrics else { continue }
                 if self.isStrictMatch(apiTitle: track.trackName ?? "", apiArtist: track.artistName ?? "", targetTitle: title, targetArtist: artist) {
-                    self.parseLRC(synced)
-                    return
+                    self.parseLRC(synced); return
                 }
             }
         }.resume()
@@ -103,10 +160,8 @@ class NowPlayingManager: ObservableObject {
         let t2 = targetTitle.lowercased().components(separatedBy: .alphanumerics.inverted).joined()
         let a1 = apiArtist.lowercased().components(separatedBy: .alphanumerics.inverted).joined()
         let a2 = targetArtist.lowercased().components(separatedBy: .alphanumerics.inverted).joined()
-        
         let titleMatch = t1.contains(t2) || t2.contains(t1) || t1 == t2
         let artistMatch = a1.contains(a2) || a2.contains(a1) || a1 == a2 || a2.isEmpty || a1.isEmpty
-        
         if targetTitle.lowercased().contains("cover") { return titleMatch }
         return titleMatch && artistMatch
     }
@@ -114,17 +169,13 @@ class NowPlayingManager: ObservableObject {
     private func parseLRC(_ lrcData: String) {
         var parsed: [LyricLine] = []
         let lines = lrcData.components(separatedBy: .newlines)
-        
         for line in lines {
             if line.hasPrefix("["), let bracketEnd = line.firstIndex(of: "]") {
                 let timeString = String(line[line.index(after: line.startIndex)..<bracketEnd])
                 let text = String(line[line.index(after: bracketEnd)...]).trimmingCharacters(in: .whitespaces)
                 let timeParts = timeString.components(separatedBy: ":")
-                
                 if timeParts.count == 2, let min = Double(timeParts[0]), let sec = Double(timeParts[1]) {
-                    if !text.isEmpty {
-                        parsed.append(LyricLine(time: (min * 60) + sec, text: text))
-                    }
+                    if !text.isEmpty { parsed.append(LyricLine(time: (min * 60) + sec, text: text)) }
                 }
             }
         }
@@ -133,9 +184,7 @@ class NowPlayingManager: ObservableObject {
     
     func updateActiveLyric() {
         guard !lyrics.isEmpty else { return }
-        if let idx = lyrics.lastIndex(where: { $0.time <= self.currentTime }), self.activeLyricIndex != idx {
-            self.activeLyricIndex = idx
-        }
+        if let idx = lyrics.lastIndex(where: { $0.time <= self.currentTime }), self.activeLyricIndex != idx { self.activeLyricIndex = idx }
     }
     
     // MARK: - MEDIA CONTROLS
@@ -147,9 +196,7 @@ class NowPlayingManager: ObservableObject {
     func togglePlayPause() { sendMediaKey(key: NX_KEYTYPE_PLAY); DispatchQueue.main.async { self.isPlaying.toggle() }; triggerFastFetch() }
     func skipForward() { sendMediaKey(key: NX_KEYTYPE_NEXT); DispatchQueue.main.async { self.currentTime = 0.0 }; triggerFastFetch() }
     
-    private func triggerFastFetch() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.isFetching = false; self.fetchTitle() }
-    }
+    private func triggerFastFetch() { DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.isFetching = false; self.fetchTitle() } }
     
     private func sendMediaKey(key: Int32) {
         let dataDown = Int((key << 16) | 0xa00)
@@ -203,7 +250,6 @@ class NowPlayingManager: ObservableObject {
                 activeBrowsers.insert(last, at: 0)
             }
             
-            // ⚡️ UPGRADED JS: Now explicitly scrapes `.ytVideoAttributeViewModelTitle` and `.ytVideoAttributeViewModelSubtitle`
             let jsCode = "(function() { var host = window.location.hostname; var isPlaying = false; var loopState = 'NONE'; var active = null; var cTitle = ''; var cArtist = ''; if (host.includes('music.youtube.com')) { active = document.querySelector('.html5-main-video'); if (active && !active.paused && active.currentTime > 0) isPlaying = true; var btns = document.querySelectorAll('ytmusic-player-bar button'); for(var i=0; i<btns.length; i++) { var lbl = (btns[i].getAttribute('aria-label') || '').toLowerCase(); var html = btns[i].innerHTML; if(html.includes('17.293') || html.includes('21 10a1') || html.includes('M7 7h10') || lbl.includes('repeat') || lbl.includes('반복')) { if (lbl.includes('1') || lbl.includes('one') || lbl.includes('una') || lbl.includes('곡')) { loopState = 'ONE'; } else if (!lbl.includes('off') && !lbl.includes('안함') && !lbl.includes('desactiv')) { loopState = 'ALL'; } else { loopState = 'NONE'; } break; } } var tEl = document.querySelector('ytmusic-player-bar .title'); var aEl = document.querySelector('ytmusic-player-bar .byline'); if (tEl) cTitle = tEl.innerText; if (aEl) cArtist = aEl.innerText.split('•')[0].trim(); } else if (host.includes('spotify.com')) { var spotBtn = document.querySelector('[data-testid=control-button-repeat]'); if (spotBtn) { var checked = spotBtn.getAttribute('aria-checked'); if (checked === 'mixed') loopState = 'ONE'; else if (checked === 'true') loopState = 'ALL'; else loopState = 'NONE'; } } else if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); if (active && !active.paused && active.currentTime > 0) { isPlaying = true; loopState = (active.loop || active.hasAttribute('loop')) ? 'ALL' : 'NONE'; var attrTitle = document.querySelector('.ytVideoAttributeViewModelTitle'); var attrArtist = document.querySelector('.ytVideoAttributeViewModelSubtitle'); if (attrTitle) cTitle = attrTitle.innerText.trim(); if (attrArtist) cArtist = attrArtist.innerText.trim(); if (!cTitle) { var rows = document.querySelectorAll('ytd-info-row-renderer, ytd-metadata-row-renderer'); for(var j=0; j<rows.length; j++) { var txt = rows[j].innerText.toLowerCase(); if(txt.includes('song') || txt.includes('노래')) cTitle = rows[j].querySelector('#content')?.innerText || cTitle; if(txt.includes('artist') || txt.includes('아티스트')) cArtist = rows[j].querySelector('#content')?.innerText || cArtist; } } } } else if (!host.includes('music.apple.com')) { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (!media[i].paused && media[i].currentTime > 0) { active = media[i]; isPlaying = true; loopState = active.loop ? 'ALL' : 'NONE'; break; } } } if (!isPlaying && navigator.mediaSession && navigator.mediaSession.playbackState === 'playing') { isPlaying = true; } if (isPlaying) { var title = cTitle || document.title; var artist = cArtist; var img = 'NO_IMAGE'; var curr = 0; var dur = 1; if (active) { curr = active.currentTime; dur = active.duration || 1; } if (navigator.mediaSession && navigator.mediaSession.metadata) { var m = navigator.mediaSession.metadata; if(!cTitle && m.title) title = m.title; if(!cArtist && m.artist) artist = m.artist; if(m.artwork && m.artwork.length > 0) img = m.artwork[m.artwork.length - 1].src; } return title + '|||' + (artist ? artist : 'EMPTY_ARTIST') + '|||' + img + '|||' + loopState + '|||' + curr + '|||' + dur; } return 'NOT_PLAYING'; })();"
             
             if let browser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
@@ -269,7 +315,15 @@ class NowPlayingManager: ObservableObject {
             let displayString = rawArtist.isEmpty ? rawTitle : "\(rawTitle) - \(rawArtist)"
             if self.currentSong != displayString { self.currentSong = displayString }
             
-            if imgString != "NO_IMAGE", let url = URL(string: imgString) { self.artworkURL = url } else { self.artworkURL = nil }
+            if imgString != "NO_IMAGE", let url = URL(string: imgString) {
+                if self.artworkURL != url {
+                    self.artworkURL = url
+                    self.fetchDominantColor(from: url)
+                }
+            } else {
+                self.artworkURL = nil
+                self.artworkDominantColor = .green
+            }
             
             let newTime = Double(currString) ?? 0.0
             if abs(self.currentTime - newTime) > 2.0 { self.currentTime = newTime }
@@ -283,36 +337,6 @@ class NowPlayingManager: ObservableObject {
     }
 }
 
-
-struct WaveformView: View {
-    var isPlaying: Bool
-    @State private var isAnimating = false
-    
-    var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<4) { index in
-                Capsule()
-                    .fill(isPlaying ? Color.green : Color.gray.opacity(0.5))
-                    .frame(width: 3, height: isPlaying ? (isAnimating ? .random(in: 6...14) : 4) : 4)
-                    .animation(
-                        isPlaying
-                        ? Animation.easeInOut(duration: 0.3).repeatForever().delay(Double(index) * 0.1)
-                        : .easeOut(duration: 0.2),
-                        value: isAnimating
-                    )
-            }
-        }
-        .onChange(of: isPlaying) { playing in
-            isAnimating = playing
-        }
-        .onAppear {
-            if isPlaying { isAnimating = true }
-        }
-    }
-}
-
-// ... Keep your NowPlayingManager class code exactly as it is here ...
-
 struct ContentView: View {
     @State private var isExpanded = false
     @StateObject private var nowPlaying = NowPlayingManager()
@@ -323,9 +347,8 @@ struct ContentView: View {
     
     // ⚡️ TUNING CONSTANTS
     let notchHeight: CGFloat = 32
-    // Reduced from 300 to 260 to make the collapsed pill tighter and more balanced
-    let collapsedWidth: CGFloat = 260
-    let expandedWidth: CGFloat = 360
+    let collapsedWidth: CGFloat = 300
+    let expandedWidth: CGFloat = 380
 
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
@@ -333,15 +356,14 @@ struct ContentView: View {
 
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                // ⚡️ THE TRUE DYNAMIC ISLAND BACKGROUND:
-                // Always black. This physically hides the edges of the hardware notch.
-                RoundedRectangle(cornerRadius: isExpanded ? 24 : notchHeight / 2, style: .continuous)
+                
+                DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
                     .fill(Color.black)
                     .frame(width: isExpanded ? expandedWidth : collapsedWidth,
                            height: isExpanded ? expandedHeight : notchHeight)
                     .overlay(
-                        RoundedRectangle(cornerRadius: isExpanded ? 24 : notchHeight / 2, style: .continuous)
-                            .stroke(Color.white.opacity(isExpanded ? 0.1 : 0.05), lineWidth: 1)
+                        DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
+                            .stroke(Color.white.opacity(isExpanded ? 0.1 : 0.0), lineWidth: 1)
                     )
 
                 // CONTENT STACK
@@ -349,7 +371,7 @@ struct ContentView: View {
                     if !isExpanded {
                         // ⚡️ COLLAPSED STATE
                         HStack(spacing: 0) {
-                            // LEFT SIDE: Mini Album Art
+                            // LEFT SIDE: Mini Album Art replacing the music note
                             Group {
                                 if hasMedia && nowPlaying.artworkURL != nil {
                                     AsyncImage(url: nowPlaying.artworkURL) { image in
@@ -363,25 +385,23 @@ struct ContentView: View {
                                         .font(.system(size: 14, weight: .bold))
                                 }
                             }
-                            // Hardcoded width guarantees the left side matches the right side exactly
                             .frame(width: 24, alignment: .leading)
                             
-                            // This spacer sits exactly over your hardware notch!
                             Spacer()
                             
                             // RIGHT SIDE: Waveform
-                            WaveformView(isPlaying: nowPlaying.isPlaying)
+                            WaveformView(isPlaying: nowPlaying.isPlaying, color: nowPlaying.artworkDominantColor)
                                 .frame(width: 24, alignment: .trailing)
                         }
-                        .padding(.horizontal, 14) // Tight padding for a snug fit
+                        .padding(.horizontal, 24)
                         .frame(height: notchHeight)
                         .transition(.opacity)
                         
                     } else {
                         // ⚡️ EXPANDED STATE
                         VStack(spacing: 8) {
-                            // THE GAP: Pushes UI down below the physical hardware notch
-                            Color.clear.frame(height: notchHeight)
+                            // THE GAP
+                            Color.clear.frame(height: notchHeight - 8)
                             
                             // TOP ROW (Controls)
                             HStack {
@@ -422,7 +442,7 @@ struct ContentView: View {
                                     }
                                 }
                             }
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, 24)
                             
                             // PROGRESS BAR
                             if hasMedia {
@@ -441,7 +461,7 @@ struct ContentView: View {
                                     }.frame(height: 6)
                                     Text("-" + formatTime(nowPlaying.duration - (isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime)))
                                         .font(.system(size: 10, design: .monospaced)).foregroundColor(.gray)
-                                }.padding(.horizontal, 16)
+                                }.padding(.horizontal, 24)
                             }
                             
                             // LYRICS
@@ -450,24 +470,30 @@ struct ContentView: View {
                                     let itemHeight: CGFloat = 26
                                     let activeOffset = CGFloat(nowPlaying.activeLyricIndex) * itemHeight
                                     let centerAdjustment = (geo.size.height - itemHeight) / 2.0
+                                    
                                     VStack(spacing: 0) {
                                         ForEach(Array(nowPlaying.lyrics.enumerated()), id: \.offset) { index, lyric in
                                             let distance = abs(index - nowPlaying.activeLyricIndex)
                                             Text(lyric.text)
                                                 .font(.system(size: 14, weight: distance == 0 ? .bold : .semibold))
                                                 .foregroundColor(distance == 0 ? .white : (distance == 1 ? .white.opacity(0.4) : .clear))
-                                                .frame(maxWidth: .infinity, alignment: .center).frame(height: itemHeight)
+                                                .multilineTextAlignment(.center) // ⚡️ Forces pure center alignment
+                                                .frame(maxWidth: expandedWidth - 48, alignment: .center)
+                                                .frame(height: itemHeight)
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
                                                 .scaleEffect(distance == 0 ? 1.0 : 0.85).blur(radius: distance == 0 ? 0 : 0.3)
                                         }
                                     }
+                                    .frame(width: geo.size.width, alignment: .center) // ⚡️ THE FIX: Forces VStack to center inside GeometryReader
                                     .offset(y: -activeOffset + centerAdjustment)
                                     .animation(.spring(response: 0.6, dampingFraction: 0.8), value: nowPlaying.activeLyricIndex)
                                 }
                                 .frame(height: 52)
+                                .clipped()
                                 .mask(LinearGradient(gradient: Gradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.15), .init(color: .black, location: 0.85), .init(color: .clear, location: 1)]), startPoint: .top, endPoint: .bottom))
                             }
                         }
-                        .padding(.top, -8)
                         .padding(.bottom, 8)
                         .transition(.opacity)
                     }
@@ -493,9 +519,4 @@ struct ContentView: View {
     private func formatTime(_ s: Double) -> String {
         let ts = Int(s); return String(format: "%d:%02d", ts / 60, ts % 60)
     }
-}
-
-
-#Preview {
-    ContentView()
 }
