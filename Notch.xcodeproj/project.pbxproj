@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A1E947342F8781B200C0870A /* SkyLightWindow in Frameworks */ = {isa = PBXBuildFile; productRef = A1E947332F8781B200C0870A /* SkyLightWindow */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		A16A17FE2F85BA7D0021EADF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -65,6 +69,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1E947342F8781B200C0870A /* SkyLightWindow in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -91,6 +96,7 @@
 				A16A17F22F85BA7D0021EADF /* Notch */,
 				A16A18002F85BA7D0021EADF /* NotchTests */,
 				A16A180A2F85BA7D0021EADF /* NotchUITests */,
+				A1E947322F87819400C0870A /* Frameworks */,
 				A16A17F12F85BA7D0021EADF /* Products */,
 			);
 			sourceTree = "<group>";
@@ -103,6 +109,13 @@
 				A16A18072F85BA7D0021EADF /* NotchUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A1E947322F87819400C0870A /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -125,6 +138,7 @@
 			);
 			name = Notch;
 			packageProductDependencies = (
+				A1E947332F8781B200C0870A /* SkyLightWindow */,
 			);
 			productName = Notch;
 			productReference = A16A17F02F85BA7D0021EADF /* Notch.app */;
@@ -208,6 +222,9 @@
 			);
 			mainGroup = A16A17E72F85BA7D0021EADF;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A1E947312F87800B00C0870A /* XCRemoteSwiftPackageReference "SkyLightWindow" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A16A17F12F85BA7D0021EADF /* Products */;
 			projectDirPath = "";
@@ -604,6 +621,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A1E947312F87800B00C0870A /* XCRemoteSwiftPackageReference "SkyLightWindow" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Lakr233/SkyLightWindow";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A1E947332F8781B200C0870A /* SkyLightWindow */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1E947312F87800B00C0870A /* XCRemoteSwiftPackageReference "SkyLightWindow" */;
+			productName = SkyLightWindow;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A16A17E82F85BA7D0021EADF /* Project object */;
 }
