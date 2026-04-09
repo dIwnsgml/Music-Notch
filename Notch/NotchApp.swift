@@ -50,6 +50,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
+        panel.isMovable = false
 
         // Anchor Top Center
         if let screen = NSScreen.main {
