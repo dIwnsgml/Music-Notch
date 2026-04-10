@@ -1,11 +1,16 @@
 import SwiftUI
-import ApplicationServices // ⚡️ NEW: Required to check Accessibility permissions
+import ApplicationServices
+import ServiceManagement // ⚡️ NEW: Apple's native Launch at Login framework
 
 struct SettingsView: View {
     // General Settings
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
+    @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
+    @AppStorage("showLyrics") var showLyrics = true
     
-    // ⚡️ NEW: Tracks if the Mac has granted us keystroke permissions
+    // ⚡️ NEW: Tracks if the app is set to launch at login
+    @AppStorage("launchAtLogin") var launchAtLogin = false
+    
     @State private var hasAccessibilityAccess = false
     
     // Integrations
@@ -21,16 +26,69 @@ struct SettingsView: View {
             Form {
                 VStack(alignment: .leading, spacing: 15) {
                     
-                    // ⚡️ NEW: Accessibility Permission Manager
-                    Text("System Permissions")
+                    Text("App Behavior")
                         .font(.headline)
                         .padding(.bottom, 5)
+                    
+                    // ⚡️ NEW: Launch at Login Toggle
+                    Toggle(isOn: $launchAtLogin) {
+                        Text("Launch at Login")
+                        Text("Automatically starts WaveNotch in the background when you turn on your Mac.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .onChange(of: launchAtLogin) { newValue in
+                        toggleLaunchAtLogin(enabled: newValue)
+                    }
+                    
+                    Divider()
+                    
+                    // Banner Control Settings
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle(isOn: $showBannerOnControl) {
+                            Text("Show Banner on Media Control")
+                            Text("Briefly drops down the banner to say 'Resumed' or 'Paused' when you control playback.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Divider().padding(.vertical, 4)
+                        
+                        // Dynamic Duration Slider
+                        HStack {
+                            Text("Song Banner Duration:")
+                            Slider(value: $bannerDuration, in: 1.0...8.0, step: 0.5)
+                            Text(String(format: "%.1f sec", bannerDuration))
+                                .frame(width: 50, alignment: .trailing)
+                                .monospacedDigit()
+                        }
+                        Text("How long the banner stays visible when a new song starts.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Divider()
+                    
+                    // Lyrics Setting
+                    Toggle(isOn: $showLyrics) {
+                        Text("Enable Live Lyrics")
+                        Text("Displays synced lyrics inside the expanded player when available.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Divider()
+                    
+                    // Accessibility Manager
+                    Text("System Permissions")
+                        .font(.headline)
+                        .padding(.top, 5)
                     
                     HStack {
                         VStack(alignment: .leading) {
                             Text("Accessibility Access")
                                 .fontWeight(.medium)
-                            Text("Required for WaveNotch to simulate media keys (Play, Pause, Skip) when a browser integration isn't active.")
+                            Text("Required to simulate media keys when a browser integration isn't active.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -52,19 +110,6 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    
-                    Divider()
-                    
-                    Text("App Behavior")
-                        .font(.headline)
-                        .padding(.bottom, 5)
-                    
-                    Toggle(isOn: $showBannerOnControl) {
-                        Text("Show Banner on Media Control")
-                        Text("Automatically drops down the WaveNotch banner when you play, pause, or skip tracks.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
                 }
                 .padding()
             }
@@ -72,8 +117,10 @@ struct SettingsView: View {
                 Label("General", systemImage: "gearshape")
             }
             .onAppear {
-                // Check status every time they open the General tab
                 hasAccessibilityAccess = AXIsProcessTrusted()
+                // ⚡️ Syncs our toggle with the actual Mac system settings just in case
+                // the user turned it off manually in System Settings > Login Items
+                launchAtLogin = SMAppService.mainApp.status == .enabled
             }
             
             // INTEGRATIONS TAB
@@ -127,14 +174,29 @@ struct SettingsView: View {
                 Label("Integrations", systemImage: "puzzlepiece.extension")
             }
         }
-        .frame(width: 480, height: 450)
-        // ⚡️ NEW: Watch for when the user clicks back into the app from System Settings
+        .frame(width: 480, height: 540) // Made the window slightly taller to fit everything cleanly!
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             hasAccessibilityAccess = AXIsProcessTrusted()
         }
     }
     
-    // Fires a harmless script to trigger the macOS permission popup right when they click
+    // ⚡️ NEW: The function that safely tells macOS to launch the app at login
+    func toggleLaunchAtLogin(enabled: Bool) {
+        do {
+            if enabled {
+                if SMAppService.mainApp.status != .enabled {
+                    try SMAppService.mainApp.register()
+                }
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            print("Failed to update Launch at Login status: \(error)")
+            // If it fails, revert the toggle back to the actual system state
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
+    }
+    
     func triggerPermission(for appName: String) {
         let script = "tell application \"\(appName)\" to running"
         var error: NSDictionary?
@@ -143,14 +205,10 @@ struct SettingsView: View {
         }
     }
     
-    // ⚡️ NEW: The function that handles the Accessibility request
     func requestAccessibilityAccess() {
-        // This dictionary tells macOS to throw the native popup if permission is missing
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         let accessEnabled = AXIsProcessTrustedWithOptions(options)
         
-        // If they previously clicked "Deny", macOS will stubbornly refuse to show the popup again.
-        // We catch that here and force-open their Mac's System Settings directly to the right page!
         if !accessEnabled {
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
                 NSWorkspace.shared.open(url)

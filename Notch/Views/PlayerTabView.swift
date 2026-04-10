@@ -5,6 +5,8 @@ struct PlayerTabView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var expandedWidth: CGFloat
     
+    @AppStorage("showLyrics") var showLyrics = true
+    
     @State private var isDragging = false
     @State private var dragProgress: Double = 0.0
     let localTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
@@ -103,7 +105,7 @@ struct PlayerTabView: View {
                 .padding(.top, 12)
             }
             
-            if hasMedia && !nowPlaying.lyrics.isEmpty {
+            if showLyrics && hasMedia && !nowPlaying.lyrics.isEmpty {
                 GeometryReader { geo in
                     let itemHeight: CGFloat = 26
                     let activeOffset = CGFloat(nowPlaying.activeLyricIndex) * itemHeight

@@ -7,12 +7,18 @@ enum AppTab {
 
 struct ContentView: View {
     @State private var isExpanded = false
-    @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @StateObject private var nowPlaying = NowPlayingManager()
     @State private var currentTab: AppTab = .player
     
-    // ⚡️ Banner State & Timer
+    // ⚡️ USER SETTINGS
+    @AppStorage("showBannerOnControl") var showBannerOnControl = true
+    @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
+    @AppStorage("showLyrics") var showLyrics = true
+    // Note: You can use @AppStorage("showLyrics") in your PlayerTabView to hide/show lyrics!
+    
+    // ⚡️ BANNER STATE
     @State private var isShowingBanner = false
+    @State private var bannerText: String = "" // Holds the dynamic text
     @State private var bannerTask: Task<Void, Never>? = nil
     
     let notchHeight: CGFloat = 32
@@ -22,7 +28,8 @@ struct ContentView: View {
 
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
-        let playerHeight: CGFloat = !nowPlaying.lyrics.isEmpty ? 164 : 100
+        let playerHeight: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? 164 : 100
+                
         let expandedHeight: CGFloat = currentTab == .playlist ? 200 : playerHeight
         
         let currentWidth: CGFloat = isExpanded ? expandedWidth : collapsedWidth
@@ -67,10 +74,10 @@ struct ContentView: View {
                             .padding(.horizontal, 24)
                             .frame(height: notchHeight)
                             
-                            // ⚡️ The Pop-Down Banner Text
+                            // ⚡️ DYNAMIC BANNER TEXT
                             if isShowingBanner && hasMedia {
                                 MarqueeText(
-                                    text: nowPlaying.currentSong,
+                                    text: bannerText, // Uses our new state variable
                                     font: .system(size: 12, weight: .bold),
                                     alignment: .center
                                 )
@@ -84,9 +91,7 @@ struct ContentView: View {
                         
                     } else {
                         VStack(spacing: 8) {
-                            // Top Controls (Tab Switcher & Settings)
                             HStack {
-                                // 1. Tab Switcher
                                 Button(action: {
                                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                                         currentTab = currentTab == .player ? .playlist : .player
@@ -102,7 +107,6 @@ struct ContentView: View {
                                 
                                 Spacer()
                                 
-                                // 2. Custom Settings Trigger
                                 Button(action: {
                                     SettingsWindowManager.shared.showSettings()
                                 }) {
@@ -117,7 +121,6 @@ struct ContentView: View {
                             .frame(height: notchHeight - 8)
                             .padding(.horizontal, 16)
                             
-                            // Content Router
                             if currentTab == .player {
                                 PlayerTabView(nowPlaying: nowPlaying, expandedWidth: expandedWidth)
                                     .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
@@ -150,7 +153,7 @@ struct ContentView: View {
                 if targetRect.contains(location) {
                     if !isExpanded {
                         isExpanded = true
-                        isShowingBanner = false // Auto-hide banner if user manually expands
+                        isShowingBanner = false
                         bannerTask?.cancel()
                     }
                 } else {
@@ -160,30 +163,39 @@ struct ContentView: View {
                 if isExpanded { isExpanded = false }
             }
         }
-        // ⚡️ FIX 1: Watch the song title changing directly
+        // ⚡️ SONG CHANGE TRIGGER: Shows the song title for the user's preferred duration
         .onChange(of: nowPlaying.currentSong) { oldSong, newSong in
             guard newSong != "No Music" && newSong != "NOT_PLAYING" else { return }
-            triggerBanner()
+            triggerBanner(text: newSong, duration: bannerDuration)
         }
-        // ⚡️ FIX 2: Watch the play/pause state changing directly
+        // ⚡️ PLAY/PAUSE TRIGGER: Shows a quick 1.5-second status update
         .onChange(of: nowPlaying.isPlaying) { oldState, newState in
             guard showBannerOnControl else { return }
             guard hasMedia else { return }
-            triggerBanner()
+            
+            let statusText = newState ? "Resumed" : "Paused"
+            triggerBanner(text: statusText, duration: 1.5)
         }
         .edgesIgnoringSafeArea(.all)
     }
     
-    // ⚡️ FIX 3: Centralized Banner Logic
-    private func triggerBanner() {
+    // ⚡️ THE UPGRADED BANNER ENGINE
+    private func triggerBanner(text: String, duration: Double) {
         if !isExpanded {
+            
+            // Set the dynamic text before animating it down
+            bannerText = text
+            
             withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
                 isShowingBanner = true
             }
             
+            // Convert seconds to nanoseconds
+            let sleepTime = UInt64(duration * 1_000_000_000)
+            
             bannerTask?.cancel()
             bannerTask = Task {
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                try? await Task.sleep(nanoseconds: sleepTime)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
