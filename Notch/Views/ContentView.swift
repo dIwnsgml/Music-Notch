@@ -14,11 +14,10 @@ struct ContentView: View {
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
     @AppStorage("showLyrics") var showLyrics = true
-    // Note: You can use @AppStorage("showLyrics") in your PlayerTabView to hide/show lyrics!
     
     // ⚡️ BANNER STATE
     @State private var isShowingBanner = false
-    @State private var bannerText: String = "" // Holds the dynamic text
+    @State private var bannerText: String = ""
     @State private var bannerTask: Task<Void, Never>? = nil
     
     let notchHeight: CGFloat = 32
@@ -77,10 +76,11 @@ struct ContentView: View {
                             // ⚡️ DYNAMIC BANNER TEXT
                             if isShowingBanner && hasMedia {
                                 MarqueeText(
-                                    text: bannerText, // Uses our new state variable
+                                    text: bannerText,
                                     font: .system(size: 12, weight: .bold),
                                     alignment: .center
                                 )
+                                .id(bannerText)
                                 .foregroundColor(nowPlaying.artworkDominantColor)
                                 .frame(height: bannerHeightAddon)
                                 .padding(.horizontal, 24)
@@ -106,6 +106,15 @@ struct ContentView: View {
                                 .buttonStyle(.plain)
                                 
                                 Spacer()
+                                
+                                // ⚡️ NEW: LYRICS LOADING INDICATOR
+                                // Shows a native macOS spinner while the waterfall is running
+                                if nowPlaying.isSearchingLyrics && showLyrics {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .padding(.trailing, 4)
+                                        .transition(.opacity)
+                                }
                                 
                                 Button(action: {
                                     SettingsWindowManager.shared.showSettings()
@@ -163,12 +172,10 @@ struct ContentView: View {
                 if isExpanded { isExpanded = false }
             }
         }
-        // ⚡️ SONG CHANGE TRIGGER: Shows the song title for the user's preferred duration
         .onChange(of: nowPlaying.currentSong) { oldSong, newSong in
             guard newSong != "No Music" && newSong != "NOT_PLAYING" else { return }
             triggerBanner(text: newSong, duration: bannerDuration)
         }
-        // ⚡️ PLAY/PAUSE TRIGGER: Shows a quick 1.5-second status update
         .onChange(of: nowPlaying.isPlaying) { oldState, newState in
             guard showBannerOnControl else { return }
             guard hasMedia else { return }
@@ -179,18 +186,13 @@ struct ContentView: View {
         .edgesIgnoringSafeArea(.all)
     }
     
-    // ⚡️ THE UPGRADED BANNER ENGINE
     private func triggerBanner(text: String, duration: Double) {
         if !isExpanded {
-            
-            // Set the dynamic text before animating it down
             bannerText = text
-            
             withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
                 isShowingBanner = true
             }
             
-            // Convert seconds to nanoseconds
             let sleepTime = UInt64(duration * 1_000_000_000)
             
             bannerTask?.cancel()

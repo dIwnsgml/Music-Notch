@@ -3,6 +3,11 @@ import Combine
 import AppKit
 
 class NowPlayingManager: ObservableObject {
+    // ⚡️ Network Safety & Caching
+    var lyricSearchTask: DispatchWorkItem? = nil
+    var lyricsCache: [String: [LyricLine]] = [:]
+    var currentLyricSearchID: UUID = UUID() // ⚡️ THE TICKET COUNTER
+    
     @Published var currentSong: String = "No Music"
     var internalSongIdentifier: String = ""
     
