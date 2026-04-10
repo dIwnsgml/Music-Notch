@@ -57,6 +57,8 @@ extension NowPlayingManager {
     }
     
     func togglePlayPause() {
+        DispatchQueue.main.async { self.lastControlAction = UUID() }
+        
         if lastActiveBrowser == "SpotifyNative" {
             DispatchQueue.global(qos: .userInitiated).async { _ = NSAppleScript(source: "tell application \"Spotify\" to playpause")?.executeAndReturnError(nil); DispatchQueue.main.async { self.isPlaying.toggle() }; self.triggerFastFetch() }
             return

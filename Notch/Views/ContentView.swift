@@ -7,15 +7,16 @@ enum AppTab {
 
 struct ContentView: View {
     @State private var isExpanded = false
+    @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @StateObject private var nowPlaying = NowPlayingManager()
     @State private var currentTab: AppTab = .player
     
-    // ⚡️ NEW: Banner State & Timer
+    // ⚡️ Banner State & Timer
     @State private var isShowingBanner = false
     @State private var bannerTask: Task<Void, Never>? = nil
     
     let notchHeight: CGFloat = 32
-    let bannerHeightAddon: CGFloat = 24 // How much it expands downwards for the text
+    let bannerHeightAddon: CGFloat = 24
     let collapsedWidth: CGFloat = 300
     let expandedWidth: CGFloat = 380
 
@@ -24,7 +25,6 @@ struct ContentView: View {
         let playerHeight: CGFloat = !nowPlaying.lyrics.isEmpty ? 164 : 100
         let expandedHeight: CGFloat = currentTab == .playlist ? 200 : playerHeight
         
-        // ⚡️ NEW: Dynamic Dimensions
         let currentWidth: CGFloat = isExpanded ? expandedWidth : collapsedWidth
         let currentCollapsedHeight: CGFloat = isShowingBanner ? (notchHeight + bannerHeightAddon) : notchHeight
         let currentHeight: CGFloat = isExpanded ? expandedHeight : currentCollapsedHeight
@@ -42,7 +42,6 @@ struct ContentView: View {
 
                 VStack(spacing: 0) {
                     if !isExpanded {
-                        // ⚡️ UPDATED: Wrapped the collapsed view to hold the banner text
                         VStack(spacing: 0) {
                             HStack(spacing: 0) {
                                 Group {
@@ -68,7 +67,7 @@ struct ContentView: View {
                             .padding(.horizontal, 24)
                             .frame(height: notchHeight)
                             
-                            // ⚡️ NEW: The Pop-Down Banner Text
+                            // ⚡️ The Pop-Down Banner Text
                             if isShowingBanner && hasMedia {
                                 MarqueeText(
                                     text: nowPlaying.currentSong,
@@ -85,8 +84,9 @@ struct ContentView: View {
                         
                     } else {
                         VStack(spacing: 8) {
-                            // Top Left Tab Switcher
+                            // Top Controls (Tab Switcher & Settings)
                             HStack {
+                                // 1. Tab Switcher
                                 Button(action: {
                                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                                         currentTab = currentTab == .player ? .playlist : .player
@@ -101,6 +101,18 @@ struct ContentView: View {
                                 .buttonStyle(.plain)
                                 
                                 Spacer()
+                                
+                                // 2. Custom Settings Trigger
+                                Button(action: {
+                                    SettingsWindowManager.shared.showSettings()
+                                }) {
+                                    Image(systemName: "gearshape.fill")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundColor(.white.opacity(0.6))
+                                        .padding(8)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
                             }
                             .frame(height: notchHeight - 8)
                             .padding(.horizontal, 16)
@@ -138,7 +150,7 @@ struct ContentView: View {
                 if targetRect.contains(location) {
                     if !isExpanded {
                         isExpanded = true
-                        isShowingBanner = false // ⚡️ Auto-hide banner if user manually expands
+                        isShowingBanner = false // Auto-hide banner if user manually expands
                         bannerTask?.cancel()
                     }
                 } else {
@@ -148,29 +160,37 @@ struct ContentView: View {
                 if isExpanded { isExpanded = false }
             }
         }
-        // ⚡️ NEW: Trigger the banner when the song changes
-        .onChange(of: nowPlaying.currentSong) { _, newSong in
+        // ⚡️ FIX 1: Watch the song title changing directly
+        .onChange(of: nowPlaying.currentSong) { oldSong, newSong in
             guard newSong != "No Music" && newSong != "NOT_PLAYING" else { return }
+            triggerBanner()
+        }
+        // ⚡️ FIX 2: Watch the play/pause state changing directly
+        .onChange(of: nowPlaying.isPlaying) { oldState, newState in
+            guard showBannerOnControl else { return }
+            guard hasMedia else { return }
+            triggerBanner()
+        }
+        .edgesIgnoringSafeArea(.all)
+    }
+    
+    // ⚡️ FIX 3: Centralized Banner Logic
+    private func triggerBanner() {
+        if !isExpanded {
+            withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+                isShowingBanner = true
+            }
             
-            // Only show banner if the user isn't already looking at the expanded view
-            if !isExpanded {
-                withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
-                    isShowingBanner = true
-                }
-                
-                // Reset the collapse timer every time the song changes
-                bannerTask?.cancel()
-                bannerTask = Task {
-                    try? await Task.sleep(nanoseconds: 3_500_000_000) // 3.5 seconds
-                    guard !Task.isCancelled else { return }
-                    await MainActor.run {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
-                            isShowingBanner = false
-                        }
+            bannerTask?.cancel()
+            bannerTask = Task {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+                        isShowingBanner = false
                     }
                 }
             }
         }
-        .edgesIgnoringSafeArea(.all)
     }
 }
