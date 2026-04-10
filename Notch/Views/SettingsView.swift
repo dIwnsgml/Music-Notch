@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var hasAccessibilityAccess = false
     
     // Integrations
+    @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
     @AppStorage("enableChrome") var enableChrome = false
     @AppStorage("enableBrave") var enableBrave = false
@@ -20,6 +21,7 @@ struct SettingsView: View {
     @AppStorage("enableSafari") var enableSafari = false
     
     // Installed Checkers
+    @State private var isAppleMusicInstalled = true
     @State private var isSpotifyInstalled = false
     @State private var isChromeInstalled = false
     @State private var isBraveInstalled = false
@@ -90,6 +92,17 @@ struct SettingsView: View {
                     Text("Select which apps WaveNotch is allowed to read and control.")
                         .foregroundColor(.secondary)
                         .padding(.bottom, 5)
+                    
+                    if isAppleMusicInstalled {
+                        Toggle(isOn: $enableAppleMusic) {
+                            Text("Apple Music Native App")
+                            Text("Allows WaveNotch to display and control your Apple Music.").font(.caption).foregroundColor(.secondary)
+                        }
+                        .onChange(of: enableAppleMusic) { newValue in
+                            if newValue { triggerPermission(for: "Music") } // Apple Music's scripting name is just "Music"
+                        }
+                        Divider()
+                    }
                     
                     if isSpotifyInstalled {
                         Toggle(isOn: $enableSpotify) {

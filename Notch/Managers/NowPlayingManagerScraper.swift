@@ -13,6 +13,7 @@ extension NowPlayingManager {
             let runningApps = NSWorkspace.shared.runningApplications
             var activeBrowsers: [String] = []
             var isSpotifyNativeRunning = false
+            var isAppleMusicRunning = false
             
             for app in runningApps {
                 if let name = app.localizedName {
@@ -20,6 +21,40 @@ extension NowPlayingManager {
                     if self.allowedBrowsers.contains(name) { activeBrowsers.append(name) }
                     // ⚡️ FIX: Only scan Spotify if the user has enabled it
                     if name == "Spotify" && self.enableSpotify { isSpotifyNativeRunning = true }
+                    
+                    if name == "Music" && self.enableAppleMusic { isAppleMusicRunning = true }
+                }
+            }
+            
+            // ⚡️ NEW: Apple Music Integration
+            if isAppleMusicRunning {
+                let musicScript = """
+                tell application "Music"
+                    if player state is playing then
+                        set tName to name of current track
+                        set tArtist to artist of current track
+                        set tPos to player position
+                        set tDur to duration of current track
+                        try
+                            set rep to song repeat
+                            if rep is one then
+                                set loopState to "ONE"
+                            else if rep is all then
+                                set loopState to "ALL"
+                            else
+                                set loopState to "NONE"
+                            end if
+                        on error
+                            set loopState to "NONE"
+                        end try
+                        return tName & "|||" & tArtist & "|||APPLE_MUSIC_ART|||" & loopState & "|||" & tPos & "|||" & tDur
+                    end if
+                end tell
+                return "NOT_PLAYING"
+                """
+                if let res = NSAppleScript(source: musicScript)?.executeAndReturnError(nil).stringValue, res != "NOT_PLAYING", res != "NOT_FOUND" {
+                    self.parseAndApplyResult(result: res + "|||Queue unavailable for Apple Music", browser: "AppleMusicNative")
+                    return
                 }
             }
             
@@ -146,16 +181,23 @@ extension NowPlayingManager {
                 self.internalSongIdentifier = identifier
                 self.fetchLyricsEngine(title: rawTitle, artist: rawArtist)
                 self.currentTime = 0.0
+                
+                if browser == "AppleMusicNative" {
+                    self.fetchAppleMusicArtwork(title: rawTitle, artist: rawArtist)
+                }
             }
             
             let displayString = rawArtist.isEmpty ? rawTitle : "\(rawTitle) - \(rawArtist)"
             if self.currentSong != displayString { self.currentSong = displayString }
             
-            if imgString != "NO_IMAGE", let url = URL(string: imgString) {
-                if self.artworkURL != url { self.artworkURL = url; self.fetchDominantColor(from: url) }
-            } else {
-                self.artworkURL = nil
-                self.artworkDominantColor = .green
+            // ⚡️ FIX: Only update normal artwork if it's not Apple Music (because Apple Music fetches it asynchronously)
+            if browser != "AppleMusicNative" {
+                if imgString != "NO_IMAGE", let url = URL(string: imgString) {
+                    if self.artworkURL != url { self.artworkURL = url; self.fetchDominantColor(from: url) }
+                } else {
+                    self.artworkURL = nil
+                    self.artworkDominantColor = .green
+                }
             }
             
             let newTime = Double(currString) ?? 0.0
@@ -167,6 +209,35 @@ extension NowPlayingManager {
             }
             self.isFetching = false
         }
+    }
+    
+    // ⚡️ NEW: The iTunes API Fetcher for High-Res Apple Music Artwork
+    func fetchAppleMusicArtwork(title: String, artist: String) {
+        let query = "\(title) \(artist)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let urlString = "https://itunes.apple.com/search?term=\(query)&entity=song&limit=1"
+        
+        guard let url = URL(string: urlString) else { return }
+        
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let results = json["results"] as? [[String: Any]],
+                  let first = results.first,
+                  let artwork100 = first["artworkUrl100"] as? String else {
+                return
+            }
+            
+            // The API returns a 100x100 image by default.
+            // We use this string replacement trick to force Apple's servers to give us a crisp 600x600 image!
+            let highResUrlString = artwork100.replacingOccurrences(of: "100x100bb", with: "600x600bb")
+            
+            if let highResUrl = URL(string: highResUrlString) {
+                DispatchQueue.main.async {
+                    self.artworkURL = highResUrl
+                    self.fetchDominantColor(from: highResUrl)
+                }
+            }
+        }.resume()
     }
     
     func buildAppleScript(browser: String, jsCode: String, wIdx: Int? = nil, tIdx: Int? = nil) -> String {

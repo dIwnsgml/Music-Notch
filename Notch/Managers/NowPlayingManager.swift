@@ -11,7 +11,9 @@ class NowPlayingManager: ObservableObject {
     @Published var currentSong: String = "No Music"
     var internalSongIdentifier: String = ""
     
-    // ⚡️ NEW: Opt-in toggles linked to macOS User Defaults
+        
+    // ⚡️ ADD THIS LINE RIGHT HERE:
+    @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
     @AppStorage("enableChrome") var enableChrome = false
     @AppStorage("enableBrave") var enableBrave = false
