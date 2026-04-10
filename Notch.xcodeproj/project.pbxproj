@@ -28,18 +28,19 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		A16A17F02F85BA7D0021EADF /* Notch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Notch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A13A03782F884A1A00D8FD3F /* WaveNotch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WaveNotch.entitlements; sourceTree = "<group>"; };
+		A16A17F02F85BA7D0021EADF /* WaveNotch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WaveNotch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A16A17FD2F85BA7D0021EADF /* NotchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NotchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A16A18072F85BA7D0021EADF /* NotchUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NotchUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		A16A181B2F85BE230021EADF /* Exceptions for "Notch" folder in "Notch" target */ = {
+		A16A181B2F85BE230021EADF /* Exceptions for "Notch" folder in "WaveNotch" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = A16A17EF2F85BA7D0021EADF /* Notch */;
+			target = A16A17EF2F85BA7D0021EADF /* WaveNotch */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -47,7 +48,7 @@
 		A16A17F22F85BA7D0021EADF /* Notch */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				A16A181B2F85BE230021EADF /* Exceptions for "Notch" folder in "Notch" target */,
+				A16A181B2F85BE230021EADF /* Exceptions for "Notch" folder in "WaveNotch" target */,
 			);
 			path = Notch;
 			sourceTree = "<group>";
@@ -93,6 +94,7 @@
 		A16A17E72F85BA7D0021EADF = {
 			isa = PBXGroup;
 			children = (
+				A13A03782F884A1A00D8FD3F /* WaveNotch.entitlements */,
 				A16A17F22F85BA7D0021EADF /* Notch */,
 				A16A18002F85BA7D0021EADF /* NotchTests */,
 				A16A180A2F85BA7D0021EADF /* NotchUITests */,
@@ -104,7 +106,7 @@
 		A16A17F12F85BA7D0021EADF /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A16A17F02F85BA7D0021EADF /* Notch.app */,
+				A16A17F02F85BA7D0021EADF /* WaveNotch.app */,
 				A16A17FD2F85BA7D0021EADF /* NotchTests.xctest */,
 				A16A18072F85BA7D0021EADF /* NotchUITests.xctest */,
 			);
@@ -121,9 +123,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A16A17EF2F85BA7D0021EADF /* Notch */ = {
+		A16A17EF2F85BA7D0021EADF /* WaveNotch */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A16A18112F85BA7D0021EADF /* Build configuration list for PBXNativeTarget "Notch" */;
+			buildConfigurationList = A16A18112F85BA7D0021EADF /* Build configuration list for PBXNativeTarget "WaveNotch" */;
 			buildPhases = (
 				A16A17EC2F85BA7D0021EADF /* Sources */,
 				A16A17ED2F85BA7D0021EADF /* Frameworks */,
@@ -136,12 +138,12 @@
 			fileSystemSynchronizedGroups = (
 				A16A17F22F85BA7D0021EADF /* Notch */,
 			);
-			name = Notch;
+			name = WaveNotch;
 			packageProductDependencies = (
 				A1E947332F8781B200C0870A /* SkyLightWindow */,
 			);
 			productName = Notch;
-			productReference = A16A17F02F85BA7D0021EADF /* Notch.app */;
+			productReference = A16A17F02F85BA7D0021EADF /* WaveNotch.app */;
 			productType = "com.apple.product-type.application";
 		};
 		A16A17FC2F85BA7D0021EADF /* NotchTests */ = {
@@ -230,7 +232,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A16A17EF2F85BA7D0021EADF /* Notch */,
+				A16A17EF2F85BA7D0021EADF /* WaveNotch */,
 				A16A17FC2F85BA7D0021EADF /* NotchTests */,
 				A16A18062F85BA7D0021EADF /* NotchUITests */,
 			);
@@ -288,12 +290,12 @@
 /* Begin PBXTargetDependency section */
 		A16A17FF2F85BA7D0021EADF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = A16A17EF2F85BA7D0021EADF /* Notch */;
+			target = A16A17EF2F85BA7D0021EADF /* WaveNotch */;
 			targetProxy = A16A17FE2F85BA7D0021EADF /* PBXContainerItemProxy */;
 		};
 		A16A18092F85BA7D0021EADF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = A16A17EF2F85BA7D0021EADF /* Notch */;
+			target = A16A17EF2F85BA7D0021EADF /* WaveNotch */;
 			targetProxy = A16A18082F85BA7D0021EADF /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -425,6 +427,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = YES;
+				CODE_SIGN_ENTITLEMENTS = WaveNotch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -435,15 +438,18 @@
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Notch/Info.plist;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Notch needs to see what tab is playing in Chrome.";
+				INFOPLIST_KEY_CFBundleDisplayName = WaveNotch;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "WaveNotch needs to see what song is playing";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = FLOZABLE.Notch;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.jason.WaveNotch;
+				PRODUCT_NAME = WaveNotch;
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
@@ -466,6 +472,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = YES;
+				CODE_SIGN_ENTITLEMENTS = WaveNotch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -476,15 +483,18 @@
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Notch/Info.plist;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Notch needs to see what tab is playing in Chrome.";
+				INFOPLIST_KEY_CFBundleDisplayName = WaveNotch;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "WaveNotch needs to see what song is playing";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = FLOZABLE.Notch;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.jason.WaveNotch;
+				PRODUCT_NAME = WaveNotch;
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
@@ -593,7 +603,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A16A18112F85BA7D0021EADF /* Build configuration list for PBXNativeTarget "Notch" */ = {
+		A16A18112F85BA7D0021EADF /* Build configuration list for PBXNativeTarget "WaveNotch" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A16A18122F85BA7D0021EADF /* Debug */,
