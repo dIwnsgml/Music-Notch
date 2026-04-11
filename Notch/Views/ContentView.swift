@@ -27,10 +27,17 @@ struct ContentView: View {
     @State private var isShowingLyricBanner = false
     @State private var currentLyricText: String = ""
     
-    // ⚡️ GESTURE STATE
+    // ⚡️ GESTURE & ANIMATION STATE
     @State private var lastSwipeTime: Date = Date()
     @State private var localEventMonitor: Any?
     @State private var globalEventMonitor: Any?
+    
+    // ⚡️ HARDWARE KEYBOARD STATE
+    @State private var localMediaKeyMonitor: Any?
+    @State private var globalMediaKeyMonitor: Any?
+    
+    // ⚡️ 1 = Next Song (Right to Left), -1 = Previous Song (Left to Right)
+    @State private var skipDirection: Int = 1
     
     let lyricTimer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
     
@@ -73,20 +80,32 @@ struct ContentView: View {
                 // ---------------------------------------------------------
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
-                        Group {
+                        
+                        // ⚡️ THE ALBUM ARTWORK CONTAINER
+                        ZStack {
                             if hasMedia && nowPlaying.artworkURL != nil {
                                 AsyncImage(url: nowPlaying.artworkURL) { image in
                                     image.resizable().aspectRatio(contentMode: .fill)
                                 } placeholder: { Color.gray.opacity(0.3) }
                                 .frame(width: 20, height: 20)
                                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                
+                                // ⚡️ Forces SwiftUI to redraw the image when the song changes
+                                .id(nowPlaying.currentSong)
+                                // ⚡️ Applies our custom 3D Pan & Rotate transition!
+                                .transition(.panRotate(direction: skipDirection))
+                                
                             } else {
                                 Image(systemName: "music.note")
                                     .foregroundColor(nowPlaying.isPlaying ? .white : .gray)
                                     .font(.system(size: 14, weight: .bold))
+                                    .id("placeholder")
+                                    .transition(.opacity)
                             }
                         }
                         .frame(width: 24, alignment: .leading)
+                        // Drives the buttery smooth 3D flip animation
+                        .animation(.spring(response: 0.45, dampingFraction: 0.8), value: nowPlaying.currentSong)
                         
                         Spacer()
                         
@@ -159,7 +178,8 @@ struct ContentView: View {
                     .padding(.horizontal, 16)
                     
                     if currentTab == .player {
-                        PlayerTabView(nowPlaying: nowPlaying, expandedWidth: expandedWidth)
+                        // ⚡️ We pass skipDirection as a BINDING so the buttons can update it!
+                        PlayerTabView(nowPlaying: nowPlaying, expandedWidth: expandedWidth, skipDirection: $skipDirection)
                             .padding(.bottom, 16)
                     } else {
                         PlaylistTabView(nowPlaying: nowPlaying)
@@ -184,33 +204,44 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
         
-        // ⚡️ THE SOLUTION: Wake up the Global Monitors!
+        // ⚡️ GLOBAL TRACKPAD & HARDWARE KEYBOARD MONITORS
         .onAppear {
-            // Monitor when the app IS focused (Local)
+            // Trackpad Swipe Monitors
             localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
                 handleScroll(event: event)
                 return event
             }
-            
-            // Monitor when the app IS NOT focused (Global Background Hover)
             globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { event in
                 handleScroll(event: event)
+            }
+            
+            // ⚡️ Hardware F7/F9 Media Key Monitors!
+            localMediaKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { event in
+                handleSystemKey(event: event)
+                return event
+            }
+            globalMediaKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { event in
+                handleSystemKey(event: event)
             }
         }
         .onDisappear {
             if let local = localEventMonitor { NSEvent.removeMonitor(local) }
             if let global = globalEventMonitor { NSEvent.removeMonitor(global) }
+            if let keyLocal = localMediaKeyMonitor { NSEvent.removeMonitor(keyLocal) }
+            if let keyGlobal = globalMediaKeyMonitor { NSEvent.removeMonitor(keyGlobal) }
         }
         
-        // Keeps the click-and-drag gesture intact for physical mouse users!
+        // ⚡️ MOUSE DRAG GESTURE
         .gesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
                     guard hasMedia else { return }
                     if value.translation.width < -30 {
+                        skipDirection = 1
                         simulateMediaKey(keyCode: 20)
                         triggerBanner(text: "Skipped Forward", duration: 1.5)
                     } else if value.translation.width > 30 {
+                        skipDirection = -1
                         simulateMediaKey(keyCode: 19)
                         triggerBanner(text: "Skipped Back", duration: 1.5)
                     }
@@ -248,6 +279,11 @@ struct ContentView: View {
         .onChange(of: nowPlaying.currentSong) { oldSong, newSong in
             guard newSong != "No Music" && newSong != "NOT_PLAYING" else { return }
             triggerBanner(text: newSong, duration: bannerDuration)
+            
+            // ⚡️ THE AUTO-RESET: Restores forward direction so auto-playing songs don't animate backwards!
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                skipDirection = 1
+            }
         }
         .onChange(of: nowPlaying.isPlaying) { oldState, newState in
             updateLyricBanner()
@@ -262,16 +298,31 @@ struct ContentView: View {
     // ⚡️ HELPER METHODS
     // ---------------------------------------------------------
     
-    // The Mathematical Trackpad Engine
+    // ⚡️ Catches physical F7 and F9 Mac Keyboard presses!
+    private func handleSystemKey(event: NSEvent) {
+        if event.subtype.rawValue == 8 {
+            let data = event.data1
+            let keyCode = (data & 0xFFFF0000) >> 16
+            let keyFlags = (data & 0x0000FFFF)
+            let keyState = (((keyFlags & 0xFF00) >> 8)) == 0xA
+            
+            if keyState {
+                if keyCode == 19 {
+                    skipDirection = -1 // Previous key pushed!
+                } else if keyCode == 20 {
+                    skipDirection = 1  // Next key pushed!
+                }
+            }
+        }
+    }
+    
     private func handleScroll(event: NSEvent) {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
         guard hasMedia else { return }
         
-        // 1. Check if the mouse is physically over our invisible 400x260 AppKit window
         guard let screen = NSScreen.main else { return }
         let mouseLoc = NSEvent.mouseLocation
         
-        // Recreates the exact bounding box from your AppDelegate
         let panelRect = CGRect(
             x: (screen.frame.width - 400) / 2,
             y: screen.frame.height - 260,
@@ -280,20 +331,16 @@ struct ContentView: View {
         )
         
         guard panelRect.contains(mouseLoc) else { return }
-        
-        // 2. Ensure it's a strong horizontal swipe, ignoring up/down scrolls
         guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }
-        
-        // 3. The Debounce: Prevents firing 50 times a second
         guard Date().timeIntervalSince(lastSwipeTime) > 0.6 else { return }
         
         if event.scrollingDeltaX > 15 {
-            // Swipe Right
+            skipDirection = -1
             simulateMediaKey(keyCode: 19)
             triggerBanner(text: "Skipped Back", duration: 1.5)
             lastSwipeTime = Date()
         } else if event.scrollingDeltaX < -15 {
-            // Swipe Left
+            skipDirection = 1
             simulateMediaKey(keyCode: 20)
             triggerBanner(text: "Skipped Forward", duration: 1.5)
             lastSwipeTime = Date()
@@ -359,8 +406,53 @@ struct ContentView: View {
                 event.cgEvent?.post(tap: .cghidEventTap)
             }
         }
-        
         postKey(down: true)
         postKey(down: false)
+    }
+}
+
+// ---------------------------------------------------------
+// ⚡️ CUSTOM PAN & ROTATE TRANSITIONS
+// ---------------------------------------------------------
+struct PanRotateModifier: ViewModifier {
+    let offset: CGFloat
+    let angle: Double
+    let opacity: Double
+    let scale: CGFloat
+    
+    func body(content: Content) -> some View {
+        content
+            .offset(x: offset)
+            .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0))
+            .scaleEffect(scale)
+            .opacity(opacity)
+    }
+}
+
+extension AnyTransition {
+    static func panRotate(direction: Int) -> AnyTransition {
+        return .asymmetric(
+            insertion: .modifier(
+                active: PanRotateModifier(offset: CGFloat(direction * 25), angle: Double(direction * 60), opacity: 0, scale: 0.9),
+                identity: PanRotateModifier(offset: 0, angle: 0, opacity: 1, scale: 1.0)
+            ),
+            removal: .modifier(
+                active: PanRotateModifier(offset: CGFloat(direction * -25), angle: Double(direction * -60), opacity: 0, scale: 0.9),
+                identity: PanRotateModifier(offset: 0, angle: 0, opacity: 1, scale: 1.0)
+            )
+        )
+    }
+    
+    static func dynamicPanRotate(direction: Int) -> AnyTransition {
+        return .asymmetric(
+            insertion: .modifier(
+                active: PanRotateModifier(offset: CGFloat(direction * 80), angle: Double(direction * 90), opacity: 0, scale: 0.75),
+                identity: PanRotateModifier(offset: 0, angle: 0, opacity: 1, scale: 1.0)
+            ),
+            removal: .modifier(
+                active: PanRotateModifier(offset: CGFloat(direction * -80), angle: Double(direction * -90), opacity: 0, scale: 0.75),
+                identity: PanRotateModifier(offset: 0, angle: 0, opacity: 1, scale: 1.0)
+            )
+        )
     }
 }

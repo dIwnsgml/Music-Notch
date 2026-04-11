@@ -5,6 +5,9 @@ struct PlayerTabView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var expandedWidth: CGFloat
     
+    // ⚡️ THE FIX: This is now a Binding so the buttons can push the direction back to ContentView!
+    @Binding var skipDirection: Int
+    
     @AppStorage("showLyrics") var showLyrics = true
     
     @State private var isDragging = false
@@ -16,20 +19,27 @@ struct PlayerTabView: View {
         
         VStack(spacing: 0) {
             HStack {
-                Group {
+                ZStack {
                     if hasMedia && nowPlaying.artworkURL != nil {
                         AsyncImage(url: nowPlaying.artworkURL) { image in
                             image.resizable().aspectRatio(contentMode: .fill)
                         } placeholder: { Color.gray.opacity(0.3) }
                         .frame(width: 40, height: 40)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        
+                        .id(nowPlaying.currentSong)
+                        .transition(.dynamicPanRotate(direction: skipDirection))
+                        
                     } else {
                         Image(systemName: "music.note")
                             .foregroundColor(nowPlaying.isPlaying ? Color.red : Color.gray)
                             .font(.system(size: 20, weight: .bold))
+                            .id("placeholder")
+                            .transition(.opacity)
                     }
                 }
-                .transition(.scale.combined(with: .opacity))
+                .frame(width: 40, height: 40)
+                .animation(.spring(response: 0.5, dampingFraction: 0.72), value: nowPlaying.currentSong)
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting...")
@@ -47,7 +57,10 @@ struct PlayerTabView: View {
                 
                 if hasMedia {
                     HStack(spacing: 4) {
-                        Button(action: { nowPlaying.skipBackward() }) {
+                        Button(action: {
+                            skipDirection = -1 // ⚡️ Forces backwards animation
+                            nowPlaying.skipBackward()
+                        }) {
                             Image(systemName: "backward.fill")
                                 .foregroundColor(.white).padding(8).contentShape(Rectangle())
                         }.buttonStyle(.plain)
@@ -57,7 +70,10 @@ struct PlayerTabView: View {
                                 .foregroundColor(.white).padding(8).contentShape(Rectangle())
                         }.buttonStyle(.plain)
                         
-                        Button(action: { nowPlaying.skipForward() }) {
+                        Button(action: {
+                            skipDirection = 1 // ⚡️ Forces forwards animation
+                            nowPlaying.skipForward()
+                        }) {
                             Image(systemName: "forward.fill")
                                 .foregroundColor(.white).padding(8).contentShape(Rectangle())
                         }.buttonStyle(.plain)
