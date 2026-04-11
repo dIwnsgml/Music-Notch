@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 enum AppTab {
     case player
@@ -15,10 +16,20 @@ struct ContentView: View {
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
     @AppStorage("showLyrics") var showLyrics = true
     
-    // ⚡️ BANNER STATE
-    @State private var isShowingBanner = false
+    // ⚡️ NEW: Setting to toggle continuous banner lyrics
+    @AppStorage("showBannerLyrics") var showBannerLyrics = false
+    
+    // ⚡️ BANNER STATE (Dual-Layer System)
+    @State private var isShowingBanner = false // Priority Layer (Play/Pause/Song Change)
     @State private var bannerText: String = ""
     @State private var bannerTask: Task<Void, Never>? = nil
+    
+    // ⚡️ NEW: Lyrics Layer State
+    @State private var isShowingLyricBanner = false
+    @State private var currentLyricText: String = ""
+    
+    // ⚡️ THE FIX: A persistent timer that never dies!
+    let lyricTimer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
     
     let notchHeight: CGFloat = 32
     let bannerHeightAddon: CGFloat = 24
@@ -32,7 +43,9 @@ struct ContentView: View {
         let expandedHeight: CGFloat = currentTab == .playlist ? 200 : playerHeight
         
         let currentWidth: CGFloat = isExpanded ? expandedWidth : collapsedWidth
-        let currentCollapsedHeight: CGFloat = isShowingBanner ? (notchHeight + bannerHeightAddon) : notchHeight
+        
+        // ⚡️ FIX: The notch expands if EITHER the priority banner OR the lyric banner is active
+        let currentCollapsedHeight: CGFloat = (isShowingBanner || isShowingLyricBanner) ? (notchHeight + bannerHeightAddon) : notchHeight
         let currentHeight: CGFloat = isExpanded ? expandedHeight : currentCollapsedHeight
 
         VStack(spacing: 0) {
@@ -73,14 +86,18 @@ struct ContentView: View {
                             .padding(.horizontal, 24)
                             .frame(height: notchHeight)
                             
-                            // ⚡️ DYNAMIC BANNER TEXT
-                            if isShowingBanner && hasMedia {
+                            // ⚡️ DYNAMIC DUAL-LAYER BANNER TEXT
+                            let showAnyBanner = (isShowingBanner || isShowingLyricBanner) && hasMedia
+                            // Priority banner always overrides lyrics if it is active!
+                            let activeBannerText = isShowingBanner ? bannerText : currentLyricText
+                            
+                            if showAnyBanner {
                                 MarqueeText(
-                                    text: bannerText,
+                                    text: activeBannerText,
                                     font: .system(size: 12, weight: .bold),
                                     alignment: .center
                                 )
-                                .id(bannerText)
+                                // ⚡️ REMOVED the .id() tag here so the lyrics can flow seamlessly!
                                 .foregroundColor(nowPlaying.artworkDominantColor)
                                 .frame(height: bannerHeightAddon)
                                 .padding(.horizontal, 24)
@@ -107,8 +124,6 @@ struct ContentView: View {
                                 
                                 Spacer()
                                 
-                                // ⚡️ NEW: LYRICS LOADING INDICATOR
-                                // Shows a native macOS spinner while the waterfall is running
                                 if nowPlaying.isSearchingLyrics && showLyrics {
                                     ProgressView()
                                         .controlSize(.small)
@@ -144,7 +159,7 @@ struct ContentView: View {
                 }
                 .frame(width: currentWidth, height: currentHeight)
             }
-            .animation(.spring(response: 0.3, dampingFraction: 1.0), value: isShowingBanner)
+            .animation(.spring(response: 0.3, dampingFraction: 1.0), value: isShowingBanner || isShowingLyricBanner)
             .animation(isExpanded ? .spring(response: 0.4, dampingFraction: 0.7) : .spring(response: 0.3, dampingFraction: 1.0), value: isExpanded)
             
             Spacer()
@@ -163,6 +178,7 @@ struct ContentView: View {
                     if !isExpanded {
                         isExpanded = true
                         isShowingBanner = false
+                        isShowingLyricBanner = false // ⚡️ Instantly hide lyrics when expanding
                         bannerTask?.cancel()
                     }
                 } else {
@@ -172,6 +188,27 @@ struct ContentView: View {
                 if isExpanded { isExpanded = false }
             }
         }
+        // ⚡️ NEW: Re-check if we need to show lyrics when the notch collapses
+        .onChange(of: isExpanded) { _, expanded in
+            if !expanded { updateLyricBanner() }
+        }
+        // ⚡️ NEW: Update banner when a new lyric line hits
+        .onChange(of: nowPlaying.activeLyricIndex) { _, _ in updateLyricBanner() }
+        // ⚡️ NEW: Instantly show/hide if the user flips the setting toggle
+        .onChange(of: showBannerLyrics) { _, _ in updateLyricBanner() }
+        
+        // ⚡️ THE FIX: Force the engine to check the lyrics 4 times a second, even when collapsed!
+        .onReceive(lyricTimer) { _ in
+            if nowPlaying.isPlaying && showBannerLyrics && !isExpanded {
+                nowPlaying.updateActiveLyric()
+            }
+        }
+        
+        // ⚡️ Wakes the engine up the exact millisecond the lyrics finish downloading
+        .onChange(of: nowPlaying.lyrics) { oldLyrics, newLyrics in
+            updateLyricBanner()
+        }
+        
         .onChange(of: nowPlaying.currentSong) { oldSong, newSong in
             guard newSong != "No Music" && newSong != "NOT_PLAYING" else { return }
             triggerBanner(text: newSong, duration: bannerDuration)
@@ -184,6 +221,35 @@ struct ContentView: View {
             triggerBanner(text: statusText, duration: 1.5)
         }
         .edgesIgnoringSafeArea(.all)
+    }
+    
+    // ⚡️ NEW: The Lyric Engine Controller
+    private func updateLyricBanner() {
+        // Safe checks: Only show if setting is ON, notch is collapsed, and we have valid lyrics
+        guard showBannerLyrics,
+              !isExpanded,
+              !nowPlaying.lyrics.isEmpty,
+              nowPlaying.activeLyricIndex >= 0,
+              nowPlaying.activeLyricIndex < nowPlaying.lyrics.count else {
+            withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+                isShowingLyricBanner = false
+            }
+            return
+        }
+        
+        let newLyric = nowPlaying.lyrics[nowPlaying.activeLyricIndex].text
+        
+        // Hide if the lyric line is completely empty (instrumental break)
+        if newLyric.trimmingCharacters(in: .whitespaces).isEmpty {
+            withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+                isShowingLyricBanner = false
+            }
+        } else {
+            currentLyricText = newLyric
+            withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+                isShowingLyricBanner = true
+            }
+        }
     }
     
     private func triggerBanner(text: String, duration: Double) {
@@ -203,6 +269,8 @@ struct ContentView: View {
                     withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
                         isShowingBanner = false
                     }
+                    // ⚡️ FIX 2: Explicitly tells the Lyric Engine it is allowed to take over now!
+                    updateLyricBanner()
                 }
             }
         }

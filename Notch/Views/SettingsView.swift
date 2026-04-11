@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
     @AppStorage("showLyrics") var showLyrics = true
+    @AppStorage("showBannerLyrics") var showBannerLyrics = true
     @AppStorage("launchAtLogin") var launchAtLogin = false
     
     @State private var hasAccessibilityAccess = false
@@ -60,6 +61,17 @@ struct SettingsView: View {
                     
                     Toggle("Enable Live Lyrics", isOn: $showLyrics)
                     Text("Displays synced lyrics inside the expanded player when available.").font(.caption).foregroundColor(.secondary)
+                    Divider()
+                    
+                    
+                        
+                        Toggle(isOn: $showBannerLyrics) {
+                            Text("Show Lyrics in Menu Bar")
+                            Text("Continuously displays the current lyric line in the collapsed notch.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    
                     Divider()
                     
                     Text("System Permissions").font(.headline).padding(.top, 5)
