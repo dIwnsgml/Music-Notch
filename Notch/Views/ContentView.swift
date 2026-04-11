@@ -39,13 +39,16 @@ struct ContentView: View {
     // ⚡️ 1 = Next Song (Right to Left), -1 = Previous Song (Left to Right)
     @State private var skipDirection: Int = 1
     
+    // ⚡️ THE FIX: Tracks exactly when the song changed to prevent banner overwriting
+    @State private var lastSongChangeTime: Date = Date.distantPast
+    
     let lyricTimer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
     
     let notchHeight: CGFloat = 32
     let bannerHeightAddon: CGFloat = 24
     let collapsedWidth: CGFloat = 300
     let expandedWidth: CGFloat = 380
-
+    
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
         
@@ -55,7 +58,7 @@ struct ContentView: View {
         let currentWidth: CGFloat = isExpanded ? expandedWidth : collapsedWidth
         let currentCollapsedHeight: CGFloat = (isShowingBanner || isShowingLyricBanner) ? (notchHeight + bannerHeightAddon) : notchHeight
         let currentHeight: CGFloat = isExpanded ? expandedHeight : currentCollapsedHeight
-
+        
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
                 
@@ -74,7 +77,7 @@ struct ContentView: View {
                             )
                     )
                     .zIndex(1)
-
+                
                 // ---------------------------------------------------------
                 // 🎵 LAYER 2: THE COLLAPSED CONTENT (Fades Out)
                 // ---------------------------------------------------------
@@ -87,13 +90,13 @@ struct ContentView: View {
                                 AsyncImage(url: nowPlaying.artworkURL) { image in
                                     image.resizable().aspectRatio(contentMode: .fill)
                                 } placeholder: { Color.gray.opacity(0.3) }
-                                .frame(width: 20, height: 20)
-                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    .frame(width: 20, height: 20)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 
                                 // ⚡️ Forces SwiftUI to redraw the image when the song changes
-                                .id(nowPlaying.currentSong)
+                                    .id(nowPlaying.currentSong)
                                 // ⚡️ Applies our custom 3D Pan & Rotate transition!
-                                .transition(.panRotate(direction: skipDirection))
+                                    .transition(.panRotate(direction: skipDirection))
                                 
                             } else {
                                 Image(systemName: "music.note")
@@ -122,6 +125,8 @@ struct ContentView: View {
                                 MarqueeText(text: bannerText, font: .system(size: 12, weight: .bold), alignment: .center)
                                     .foregroundColor(nowPlaying.artworkDominantColor)
                                     .transition(.opacity.combined(with: .move(edge: .top)))
+                                // ⚡️ THE FIX: Forces the banner marquee to scroll!
+                                    .id(bannerText)
                             } else if isShowingLyricBanner {
                                 MarqueeText(text: currentLyricText, font: .system(size: 12, weight: .bold), alignment: .center)
                                     .id(currentLyricText)
@@ -140,7 +145,7 @@ struct ContentView: View {
                 .blur(radius: isExpanded ? 5 : 0)
                 .allowsHitTesting(!isExpanded)
                 .zIndex(2)
-
+                
                 // ---------------------------------------------------------
                 // 🎧 LAYER 3: THE EXPANDED CONTENT (Fades In)
                 // ---------------------------------------------------------
@@ -193,7 +198,7 @@ struct ContentView: View {
                 .blur(radius: isExpanded ? 0 : 5)
                 .allowsHitTesting(isExpanded)
                 .zIndex(3)
-
+                
             }
             .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
             .animation(.spring(response: 0.35, dampingFraction: 0.72, blendDuration: 0.1), value: isExpanded)
@@ -206,7 +211,6 @@ struct ContentView: View {
         
         // ⚡️ GLOBAL TRACKPAD & HARDWARE KEYBOARD MONITORS
         .onAppear {
-            // Trackpad Swipe Monitors
             localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
                 handleScroll(event: event)
                 return event
@@ -215,7 +219,6 @@ struct ContentView: View {
                 handleScroll(event: event)
             }
             
-            // ⚡️ Hardware F7/F9 Media Key Monitors!
             localMediaKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { event in
                 handleSystemKey(event: event)
                 return event
@@ -278,9 +281,12 @@ struct ContentView: View {
         .onChange(of: nowPlaying.lyrics) { oldLyrics, newLyrics in updateLyricBanner() }
         .onChange(of: nowPlaying.currentSong) { oldSong, newSong in
             guard newSong != "No Music" && newSong != "NOT_PLAYING" else { return }
+            
+            // ⚡️ THE FIX: We record the exact moment the song changed!
+            lastSongChangeTime = Date()
+            
             triggerBanner(text: newSong, duration: bannerDuration)
             
-            // ⚡️ THE AUTO-RESET: Restores forward direction so auto-playing songs don't animate backwards!
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 skipDirection = 1
             }
@@ -289,6 +295,10 @@ struct ContentView: View {
             updateLyricBanner()
             guard showBannerOnControl else { return }
             guard hasMedia else { return }
+            
+            // ⚡️ THE FIX: If the song JUST changed in the last 0.5 seconds, we skip showing the Resumed/Paused banner so the Title Banner doesn't get squashed!
+            guard Date().timeIntervalSince(lastSongChangeTime) > 0.5 else { return }
+            
             triggerBanner(text: newState ? "Resumed" : "Paused", duration: 1.5)
         }
         .edgesIgnoringSafeArea(.all)
@@ -298,7 +308,6 @@ struct ContentView: View {
     // ⚡️ HELPER METHODS
     // ---------------------------------------------------------
     
-    // ⚡️ Catches physical F7 and F9 Mac Keyboard presses!
     private func handleSystemKey(event: NSEvent) {
         if event.subtype.rawValue == 8 {
             let data = event.data1

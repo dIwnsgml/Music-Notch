@@ -3,70 +3,71 @@ import Foundation
 extension NowPlayingManager {
     
     // ⚡️ THE MASTER ENTRY POINT (Handles Caching & Debouncing)
-        func fetchLyricsEngine(title: String, artist: String) {
-            
-            // 1. Generate a brand new, unique ticket for this specific search request
-            let searchTicket = UUID()
-            self.currentLyricSearchID = searchTicket
-            
-            // 2. Deep clean the title first so our cache keys are perfectly consistent
-            var cleanTitle = title
-                .replacingOccurrences(of: "(Official Video)", with: "", options: .caseInsensitive)
-                .replacingOccurrences(of: "[Official Music Video]", with: "", options: .caseInsensitive)
-                .replacingOccurrences(of: "(Lyrics)", with: "", options: .caseInsensitive)
-            
-            if let regex = try? NSRegularExpression(pattern: "(\\(|-)?\\s*(feat\\.|ft\\.|featuring).*?(\\)|$)", options: .caseInsensitive) {
-                cleanTitle = regex.stringByReplacingMatches(in: cleanTitle, range: NSRange(cleanTitle.startIndex..., in: cleanTitle), withTemplate: "")
+    func fetchLyricsEngine(title: String, artist: String) {
+        
+        // 1. Generate a brand new, unique ticket for this specific search request
+        let searchTicket = UUID()
+        self.currentLyricSearchID = searchTicket
+        
+        // 2. Deep clean the title first so our cache keys are perfectly consistent
+        var cleanTitle = title
+            .replacingOccurrences(of: "(Official Video)", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: "[Official Music Video]", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: "(Lyrics)", with: "", options: .caseInsensitive)
+        
+        if let regex = try? NSRegularExpression(pattern: "(\\(|-)?\\s*(feat\\.|ft\\.|featuring).*?(\\)|$)", options: .caseInsensitive) {
+            cleanTitle = regex.stringByReplacingMatches(in: cleanTitle, range: NSRange(cleanTitle.startIndex..., in: cleanTitle), withTemplate: "")
+        }
+        cleanTitle = cleanTitle.trimmingCharacters(in: .whitespaces)
+        
+        guard !cleanTitle.isEmpty else { return }
+        
+        let cacheKey = "\(cleanTitle.lowercased())-\(artist.lowercased())"
+        
+        // 3. CACHE CHECK
+        if let cachedLyrics = self.lyricsCache[cacheKey] {
+            print("💾 [Lyrics] CACHE HIT: Loaded '\(cleanTitle)' instantly from memory.")
+            DispatchQueue.main.async {
+                self.lyrics = cachedLyrics
+                self.activeLyricIndex = 0
+                self.isSearchingLyrics = false
             }
-            cleanTitle = cleanTitle.trimmingCharacters(in: .whitespaces)
+            return
+        }
+        
+        DispatchQueue.main.async {
+            self.isSearchingLyrics = true
+            self.lyrics = []
+            self.activeLyricIndex = 0
+        }
+        
+        // 4. THE BULLETPROOF TICKET DEBOUNCER
+        lyricSearchTask?.cancel()
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
             
-            guard !cleanTitle.isEmpty else { return }
-            
-            let cacheKey = "\(cleanTitle.lowercased())-\(artist.lowercased())"
-            
-            // 3. CACHE CHECK
-            if let cachedLyrics = self.lyricsCache[cacheKey] {
-                print("💾 [Lyrics] CACHE HIT: Loaded '\(cleanTitle)' instantly from memory.")
-                DispatchQueue.main.async {
-                    self.lyrics = cachedLyrics
-                    self.activeLyricIndex = 0
-                    self.isSearchingLyrics = false
-                }
+            // ⚡️ THE SANITY CHECK: Does this timer hold the newest ticket?
+            guard self.currentLyricSearchID == searchTicket else {
+                print("🛑 [Lyrics] Debouncer: A newer song was played. Aborting old search for '\(cleanTitle)'.")
                 return
             }
             
-            DispatchQueue.main.async {
-                self.isSearchingLyrics = true
-                self.lyrics = []
-                self.activeLyricIndex = 0
-            }
-            
-            // 4. THE BULLETPROOF TICKET DEBOUNCER
-            lyricSearchTask?.cancel()
-            
-            let workItem = DispatchWorkItem { [weak self] in
-                guard let self = self else { return }
-                
-                // ⚡️ THE SANITY CHECK: Does this timer hold the newest ticket?
-                guard self.currentLyricSearchID == searchTicket else {
-                    print("🛑 [Lyrics] Debouncer: A newer song was played. Aborting old search for '\(cleanTitle)'.")
-                    return
-                }
-                
-                print("🔍 [Lyrics] Timer finished! Starting network waterfall for: '\(cleanTitle)' by '\(artist)'")
-                self.fetchLRCLibGet(title: cleanTitle, artist: artist, cacheKey: cacheKey)
-            }
-            
-            lyricSearchTask = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: workItem)
+            print("🔍 [Lyrics] Timer finished! Starting network waterfall for: '\(cleanTitle)' by '\(artist)'")
+            // ⚡️ FIX 1: We pass the ticket down the waterfall!
+            self.fetchLRCLibGet(title: cleanTitle, artist: artist, cacheKey: cacheKey, ticket: searchTicket)
         }
+        
+        lyricSearchTask = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: workItem)
+    }
     
     // ---------------------------------------------------------
     // 🌐 SOURCE 1A: LRCLIB EXACT
     // ---------------------------------------------------------
-    private func fetchLRCLibGet(title: String, artist: String, cacheKey: String) {
+    private func fetchLRCLibGet(title: String, artist: String, cacheKey: String, ticket: UUID) {
         guard !artist.isEmpty else {
-            self.fetchLRCLibSearch(title: title, artist: artist, cacheKey: cacheKey); return
+            self.fetchLRCLibSearch(title: title, artist: artist, cacheKey: cacheKey, ticket: ticket); return
         }
         
         var components = URLComponents(string: "https://lrclib.net/api/get")
@@ -75,22 +76,25 @@ extension NowPlayingManager {
             URLQueryItem(name: "artist_name", value: artist)
         ]
         
-        guard let url = components?.url else { self.fetchLRCLibSearch(title: title, artist: artist, cacheKey: cacheKey); return }
+        guard let url = components?.url else { self.fetchLRCLibSearch(title: title, artist: artist, cacheKey: cacheKey, ticket: ticket); return }
         
         var req = URLRequest(url: url)
         req.timeoutInterval = 3.5
-        req.setValue("WaveNotch v1.0", forHTTPHeaderField: "User-Agent") // Polite API Header
+        req.setValue("WaveNotch v1.0", forHTTPHeaderField: "User-Agent")
         
         URLSession.shared.dataTask(with: req) { data, _, err in
+            // ⚡️ THE KILL SWITCH: Instantly abort if the user skipped the song during the network request
+            guard self.currentLyricSearchID == ticket else { return }
+            
             if err != nil {
-                self.fetchLRCLibSearch(title: title, artist: artist, cacheKey: cacheKey); return
+                self.fetchLRCLibSearch(title: title, artist: artist, cacheKey: cacheKey, ticket: ticket); return
             }
             
             if let data = data, let track = try? JSONDecoder().decode(LRCTrack.self, from: data), let synced = track.syncedLyrics, !synced.isEmpty {
                 print("✅ [Lyrics] SUCCESS: LRCLIB Exact Match!")
-                self.saveAndPublish(lyricsText: synced, isSynced: true, cacheKey: cacheKey)
+                self.saveAndPublish(lyricsText: synced, isSynced: true, cacheKey: cacheKey, ticket: ticket)
             } else {
-                self.fetchLRCLibSearch(title: title, artist: artist, cacheKey: cacheKey)
+                self.fetchLRCLibSearch(title: title, artist: artist, cacheKey: cacheKey, ticket: ticket)
             }
         }.resume()
     }
@@ -98,56 +102,60 @@ extension NowPlayingManager {
     // ---------------------------------------------------------
     // 🌐 SOURCE 1B: LRCLIB SEARCH (Fuzzy Match)
     // ---------------------------------------------------------
-    private func fetchLRCLibSearch(title: String, artist: String, cacheKey: String) {
+    private func fetchLRCLibSearch(title: String, artist: String, cacheKey: String, ticket: UUID) {
         let query = "\(title) \(artist)".trimmingCharacters(in: .whitespaces)
         var components = URLComponents(string: "https://lrclib.net/api/search")
         components?.queryItems = [ URLQueryItem(name: "q", value: query) ]
         
-        guard let url = components?.url else { self.fetchOVH(title: title, artist: artist, cacheKey: cacheKey); return }
+        guard let url = components?.url else { self.fetchOVH(title: title, artist: artist, cacheKey: cacheKey, ticket: ticket); return }
         
         var req = URLRequest(url: url)
         req.timeoutInterval = 4.0
         req.setValue("WaveNotch v1.0", forHTTPHeaderField: "User-Agent")
         
         URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard self.currentLyricSearchID == ticket else { return } // ⚡️ Kill Switch
+            
             if let data = data, let tracks = try? JSONDecoder().decode([LRCTrack].self, from: data) {
                 for track in tracks {
                     if let synced = track.syncedLyrics, !synced.isEmpty, self.isStrictMatch(apiTitle: track.trackName ?? "", apiArtist: track.artistName ?? "", targetTitle: title, targetArtist: artist) {
                         print("✅ [Lyrics] SUCCESS: LRCLIB Search Match!")
-                        self.saveAndPublish(lyricsText: synced, isSynced: true, cacheKey: cacheKey)
+                        self.saveAndPublish(lyricsText: synced, isSynced: true, cacheKey: cacheKey, ticket: ticket)
                         return
                     }
                 }
             }
-            self.fetchOVH(title: title, artist: artist, cacheKey: cacheKey)
+            self.fetchOVH(title: title, artist: artist, cacheKey: cacheKey, ticket: ticket)
         }.resume()
     }
     
     // ---------------------------------------------------------
     // 🌐 SOURCE 2: LYRICS.OVH (Western Pop/Rock)
     // ---------------------------------------------------------
-    private func fetchOVH(title: String, artist: String, cacheKey: String) {
-        guard !artist.isEmpty else { self.fetchNetease(title: title, artist: artist, cacheKey: cacheKey); return }
+    private func fetchOVH(title: String, artist: String, cacheKey: String, ticket: UUID) {
+        guard !artist.isEmpty else { self.fetchNetease(title: title, artist: artist, cacheKey: cacheKey, ticket: ticket); return }
         
         let eArtist = artist.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? artist
         let eTitle = title.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? title
         let urlStr = "https://api.lyrics.ovh/v1/\(eArtist)/\(eTitle)"
         
-        guard let url = URL(string: urlStr) else { self.fetchNetease(title: title, artist: artist, cacheKey: cacheKey); return }
+        guard let url = URL(string: urlStr) else { self.fetchNetease(title: title, artist: artist, cacheKey: cacheKey, ticket: ticket); return }
         
         var req = URLRequest(url: url)
         req.timeoutInterval = 4.0
         
         URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard self.currentLyricSearchID == ticket else { return } // ⚡️ Kill Switch
+            
             if let data = data,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let lyricsText = json["lyrics"] as? String,
                !lyricsText.isEmpty {
                 print("✅ [Lyrics] SUCCESS: OVH Fallback (Teleprompter Mode)")
                 let cleanText = lyricsText.replacingOccurrences(of: "Paroles de la chanson", with: "")
-                self.saveAndPublish(lyricsText: cleanText, isSynced: false, cacheKey: cacheKey)
+                self.saveAndPublish(lyricsText: cleanText, isSynced: false, cacheKey: cacheKey, ticket: ticket)
             } else {
-                self.fetchNetease(title: title, artist: artist, cacheKey: cacheKey)
+                self.fetchNetease(title: title, artist: artist, cacheKey: cacheKey, ticket: ticket)
             }
         }.resume()
     }
@@ -155,7 +163,7 @@ extension NowPlayingManager {
     // ---------------------------------------------------------
     // 🌐 SOURCE 3: NETEASE (Browser Spoofed)
     // ---------------------------------------------------------
-    private func fetchNetease(title: String, artist: String, cacheKey: String) {
+    private func fetchNetease(title: String, artist: String, cacheKey: String, ticket: UUID) {
         let query = "\(title) \(artist)".trimmingCharacters(in: .whitespaces)
         var req = URLRequest(url: URL(string: "https://music.163.com/api/search/pc")!)
         req.httpMethod = "POST"
@@ -169,6 +177,8 @@ extension NowPlayingManager {
         req.httpBody = bodyComponents.query?.data(using: .utf8)
         
         URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard self.currentLyricSearchID == ticket else { return } // ⚡️ Kill Switch
+            
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let result = json["result"] as? [String: Any],
@@ -188,13 +198,15 @@ extension NowPlayingManager {
             lReq.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
             
             URLSession.shared.dataTask(with: lReq) { lData, _, _ in
+                guard self.currentLyricSearchID == ticket else { return } // ⚡️ Kill Switch
+                
                 if let lData = lData,
                    let lJson = try? JSONSerialization.jsonObject(with: lData) as? [String: Any],
                    let lrc = lJson["lrc"] as? [String: Any],
                    let lyricText = lrc["lyric"] as? String,
                    !lyricText.isEmpty {
                     print("✅ [Lyrics] SUCCESS: Netease Cloud Music!")
-                    self.saveAndPublish(lyricsText: lyricText, isSynced: true, cacheKey: cacheKey)
+                    self.saveAndPublish(lyricsText: lyricText, isSynced: true, cacheKey: cacheKey, ticket: ticket)
                 } else {
                     print("❌ [Lyrics] All lyric sources exhausted. No lyrics found.")
                     DispatchQueue.main.async { self.isSearchingLyrics = false }
@@ -208,7 +220,9 @@ extension NowPlayingManager {
     // ---------------------------------------------------------
     
     // ⚡️ Centralized function to parse, save to cache, and push to the UI
-    private func saveAndPublish(lyricsText: String, isSynced: Bool, cacheKey: String) {
+    private func saveAndPublish(lyricsText: String, isSynced: Bool, cacheKey: String, ticket: UUID) {
+        guard self.currentLyricSearchID == ticket else { return } // ⚡️ Final Safety Net
+        
         let parsedArray = isSynced ? parseLRC(lyricsText) : parseUnsynced(lyricsText)
         
         DispatchQueue.main.async {
@@ -263,7 +277,9 @@ extension NowPlayingManager {
     
     func updateActiveLyric() {
         guard !lyrics.isEmpty else { return }
-        if let idx = lyrics.lastIndex(where: { $0.time <= self.currentTime + 0.3 }), self.activeLyricIndex != idx {
+        
+        // ⚡️ FIX 2: Dropped offset from 0.3 to 0.05. It will now track exactly with the audio rather than jumping ahead!
+        if let idx = lyrics.lastIndex(where: { $0.time <= self.currentTime + 0.05 }), self.activeLyricIndex != idx {
             self.activeLyricIndex = idx
         }
     }

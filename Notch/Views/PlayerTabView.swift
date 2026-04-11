@@ -42,16 +42,18 @@ struct PlayerTabView: View {
                 .animation(.spring(response: 0.5, dampingFraction: 0.72), value: nowPlaying.currentSong)
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting...")
-                        .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
-                    MarqueeText(
-                        text: hasMedia ? nowPlaying.currentSong : "Nothing playing",
-                        font: .system(size: 14, weight: .bold),
-                        alignment: .leading
-                    )
-                    .foregroundColor(.white)
-                }
-                .padding(.leading, 6)
+                                    Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting...")
+                                        .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
+                                    MarqueeText(
+                                        text: hasMedia ? nowPlaying.currentSong : "Nothing playing",
+                                        font: .system(size: 14, weight: .bold),
+                                        alignment: .leading
+                                    )
+                                    .foregroundColor(.white)
+                                    // ⚡️ THE FIX: Forces the marquee animation to restart when the song changes!
+                                    .id(nowPlaying.currentSong)
+                                }
+                                .padding(.leading, 6)
                 
                 Spacer()
                 
