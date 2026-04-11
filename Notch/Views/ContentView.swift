@@ -32,6 +32,10 @@ struct ContentView: View {
     @State private var localEventMonitor: Any?
     @State private var globalEventMonitor: Any?
     
+    // ⚡️ RACING BORDER GLOW STATE!
+    @State private var glowRotation: Double = 0.0
+    @State private var glowOpacity: Double = 0.0
+    
     // ⚡️ HARDWARE KEYBOARD STATE
     @State private var localMediaKeyMonitor: Any?
     @State private var globalMediaKeyMonitor: Any?
@@ -76,6 +80,31 @@ struct ContentView: View {
                                 lineWidth: 1.5
                             )
                     )
+                // ⚡️ THE RACING BORDER LIGHT OVERLAY
+                // ⚡️ THE RACING BORDER LIGHT OVERLAY (NOW A THICK STAR-SHINE COMET!)
+                // ⚡️ THE RACING BORDER LIGHT OVERLAY
+                    .overlay(
+                        DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
+                            .stroke(
+                                AngularGradient(
+                                    gradient: Gradient(stops: [
+                                        .init(color: .clear, location: 0.0),
+                                        .init(color: nowPlaying.artworkDominantColor.opacity(0.1), location: 0.02),
+                                        .init(color: nowPlaying.artworkDominantColor, location: 0.1),
+                                        // ⚡️ Kept the intense "star" shine at the front!
+                                        .init(color: .white, location: 0.12),
+                                        .init(color: .white, location: 0.13),
+                                        .init(color: .clear, location: 0.131),
+                                        .init(color: .clear, location: 1.0)
+                                    ]),
+                                    center: .center,
+                                    angle: .degrees(glowRotation)
+                                ),
+                                // ⚡️ THE FIX: Dropped the thickness back down to the sleek 2.5
+                                lineWidth: 2.5
+                            )
+                            .opacity(glowOpacity)
+                    )
                     .zIndex(1)
                 
                 // ---------------------------------------------------------
@@ -93,6 +122,9 @@ struct ContentView: View {
                                     .frame(width: 20, height: 20)
                                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 
+                                // ⚡️ NEW: The thumbnail physically glows when the song changes!
+                                    .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 6, x: 0, y: 0)
+                                
                                 // ⚡️ Forces SwiftUI to redraw the image when the song changes
                                     .id(nowPlaying.currentSong)
                                 // ⚡️ Applies our custom 3D Pan & Rotate transition!
@@ -108,8 +140,8 @@ struct ContentView: View {
                         }
                         .frame(width: 24, alignment: .leading)
                         // Drives the buttery smooth 3D flip animation
-                        .animation(.spring(response: 0.45, dampingFraction: 0.8), value: nowPlaying.currentSong)
-                        
+                        // ⚡️ ULTRA-SMOOTH FLIP: Increased response from 1.2 to 1.5
+                        .animation(.spring(response: 1.5, dampingFraction: 0.82), value: nowPlaying.currentSong)
                         Spacer()
                         
                         WaveformView(isPlaying: nowPlaying.isPlaying, color: nowPlaying.artworkDominantColor)
@@ -183,8 +215,8 @@ struct ContentView: View {
                     .padding(.horizontal, 16)
                     
                     if currentTab == .player {
-                        // ⚡️ We pass skipDirection as a BINDING so the buttons can update it!
-                        PlayerTabView(nowPlaying: nowPlaying, expandedWidth: expandedWidth, skipDirection: $skipDirection)
+                        // ⚡️ We pass skipDirection and glowOpacity so the expanded player reacts too!
+                        PlayerTabView(nowPlaying: nowPlaying, expandedWidth: expandedWidth, skipDirection: $skipDirection, glowOpacity: $glowOpacity)
                             .padding(.bottom, 16)
                     } else {
                         PlaylistTabView(nowPlaying: nowPlaying)
@@ -279,11 +311,30 @@ struct ContentView: View {
             if nowPlaying.isPlaying && showBannerLyrics && !isExpanded { nowPlaying.updateActiveLyric() }
         }
         .onChange(of: nowPlaying.lyrics) { oldLyrics, newLyrics in updateLyricBanner() }
+        
         .onChange(of: nowPlaying.currentSong) { oldSong, newSong in
             guard newSong != "No Music" && newSong != "NOT_PLAYING" else { return }
             
-            // ⚡️ THE FIX: We record the exact moment the song changed!
             lastSongChangeTime = Date()
+            
+            // 🏎️ RESET STATE
+            glowOpacity = 0.0
+            glowRotation = 0.0
+            
+            // 1. A luxurious 1.2-second fade-in
+            withAnimation(.easeIn(duration: 1.2)) {
+                glowOpacity = 1.0
+            }
+            
+            // 2. ULTRA SLOW & SMOOTH SPIN: 1 single lap taking exactly 5 seconds
+            withAnimation(.easeInOut(duration: 5.0)) {
+                glowRotation = 360 // One single, graceful sweep
+            }
+            
+            // 3. A beautiful, lingering fade-out as it finishes the lap
+            withAnimation(.easeOut(duration: 2.0).delay(3.0)) {
+                glowOpacity = 0.0
+            }
             
             triggerBanner(text: newSong, duration: bannerDuration)
             
@@ -291,6 +342,7 @@ struct ContentView: View {
                 skipDirection = 1
             }
         }
+        
         .onChange(of: nowPlaying.isPlaying) { oldState, newState in
             updateLyricBanner()
             guard showBannerOnControl else { return }

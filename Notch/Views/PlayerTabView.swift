@@ -8,6 +8,9 @@ struct PlayerTabView: View {
     // ⚡️ THE FIX: This is now a Binding so the buttons can push the direction back to ContentView!
     @Binding var skipDirection: Int
     
+    // ⚡️ NEW: Receives the exact opacity curve from the racing border animation!
+    @Binding var glowOpacity: Double
+    
     @AppStorage("showLyrics") var showLyrics = true
     
     @State private var isDragging = false
@@ -24,11 +27,14 @@ struct PlayerTabView: View {
                         AsyncImage(url: nowPlaying.artworkURL) { image in
                             image.resizable().aspectRatio(contentMode: .fill)
                         } placeholder: { Color.gray.opacity(0.3) }
-                        .frame(width: 40, height: 40)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .frame(width: 40, height: 40)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         
-                        .id(nowPlaying.currentSong)
-                        .transition(.dynamicPanRotate(direction: skipDirection))
+                        // ⚡️ NEW: The expanded artwork physically glows to match the Notch border!
+                            .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 10, x: 0, y: 0)
+                        
+                            .id(nowPlaying.currentSong)
+                            .transition(.dynamicPanRotate(direction: skipDirection))
                         
                     } else {
                         Image(systemName: "music.note")
@@ -42,18 +48,18 @@ struct PlayerTabView: View {
                 .animation(.spring(response: 0.5, dampingFraction: 0.72), value: nowPlaying.currentSong)
                 
                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting...")
-                                        .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
-                                    MarqueeText(
-                                        text: hasMedia ? nowPlaying.currentSong : "Nothing playing",
-                                        font: .system(size: 14, weight: .bold),
-                                        alignment: .leading
-                                    )
-                                    .foregroundColor(.white)
-                                    // ⚡️ THE FIX: Forces the marquee animation to restart when the song changes!
-                                    .id(nowPlaying.currentSong)
-                                }
-                                .padding(.leading, 6)
+                    Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting...")
+                        .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
+                    MarqueeText(
+                        text: hasMedia ? nowPlaying.currentSong : "Nothing playing",
+                        font: .system(size: 14, weight: .bold),
+                        alignment: .leading
+                    )
+                    .foregroundColor(.white)
+                    // ⚡️ THE FIX: Forces the marquee animation to restart when the song changes!
+                    .id(nowPlaying.currentSong)
+                }
+                .padding(.leading, 6)
                 
                 Spacer()
                 
@@ -99,7 +105,7 @@ struct PlayerTabView: View {
                             Capsule().fill(nowPlaying.artworkDominantColor.opacity(0.50)).frame(height: 6)
                             
                             let progressRatio = min(1.0, max(0.0, isDragging ? dragProgress : (nowPlaying.currentTime / nowPlaying.duration)))
-
+                            
                             Capsule()
                                 .fill(nowPlaying.artworkDominantColor)
                                 .frame(width: geo.size.width * CGFloat(progressRatio), height: 6)
