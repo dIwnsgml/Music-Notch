@@ -87,22 +87,42 @@ struct ContentView: View {
                             .frame(height: notchHeight)
                             
                             // ⚡️ DYNAMIC DUAL-LAYER BANNER TEXT
-                            let showAnyBanner = (isShowingBanner || isShowingLyricBanner) && hasMedia
-                            // Priority banner always overrides lyrics if it is active!
-                            let activeBannerText = isShowingBanner ? bannerText : currentLyricText
-                            
-                            if showAnyBanner {
-                                MarqueeText(
-                                    text: activeBannerText,
-                                    font: .system(size: 12, weight: .bold),
-                                    alignment: .center
-                                )
-                                // ⚡️ REMOVED the .id() tag here so the lyrics can flow seamlessly!
-                                .foregroundColor(nowPlaying.artworkDominantColor)
-                                .frame(height: bannerHeightAddon)
-                                .padding(.horizontal, 24)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
+                            // ⚡️ DYNAMIC DUAL-LAYER BANNER TEXT
+                                                        let showAnyBanner = (isShowingBanner || isShowingLyricBanner) && hasMedia
+                                                        
+                                                        if showAnyBanner {
+                                                            ZStack {
+                                                                // LAYER 1: The Priority Banner (Play/Pause, Song Title)
+                                                                // Drops from the top
+                                                                if isShowingBanner {
+                                                                    MarqueeText(
+                                                                        text: bannerText,
+                                                                        font: .system(size: 12, weight: .bold),
+                                                                        alignment: .center
+                                                                    )
+                                                                    .foregroundColor(nowPlaying.artworkDominantColor)
+                                                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                                                                }
+                                                                // LAYER 2: The Lyric Teleprompter
+                                                                // Scrolls vertically from the bottom
+                                                                else if isShowingLyricBanner {
+                                                                    MarqueeText(
+                                                                        text: currentLyricText,
+                                                                        font: .system(size: 12, weight: .bold),
+                                                                        alignment: .center
+                                                                    )
+                                                                    .id(currentLyricText) // ⚡️ Forces SwiftUI to treat this as a brand new line
+                                                                    .transition(.asymmetric(
+                                                                        insertion: .opacity.combined(with: .move(edge: .bottom)),
+                                                                        removal: .opacity.combined(with: .move(edge: .top))
+                                                                    ))
+                                                                    .foregroundColor(nowPlaying.artworkDominantColor)
+                                                                }
+                                                            }
+                                                            .frame(height: bannerHeightAddon)
+                                                            .padding(.horizontal, 24)
+                                                            .clipped() // ⚡️ THE MAGIC MASK: Hides the text as it scrolls outside the 24px height!
+                                                        }
                         }
                         .transition(.opacity)
                         
@@ -224,33 +244,35 @@ struct ContentView: View {
     }
     
     // ⚡️ NEW: The Lyric Engine Controller
-    private func updateLyricBanner() {
-        // Safe checks: Only show if setting is ON, notch is collapsed, and we have valid lyrics
-        guard showBannerLyrics,
-              !isExpanded,
-              !nowPlaying.lyrics.isEmpty,
-              nowPlaying.activeLyricIndex >= 0,
-              nowPlaying.activeLyricIndex < nowPlaying.lyrics.count else {
-            withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
-                isShowingLyricBanner = false
+        private func updateLyricBanner() {
+            // Safe checks: Only show if setting is ON, notch is collapsed, and we have valid lyrics
+            guard showBannerLyrics,
+                  !isExpanded,
+                  !nowPlaying.lyrics.isEmpty,
+                  nowPlaying.activeLyricIndex >= 0,
+                  nowPlaying.activeLyricIndex < nowPlaying.lyrics.count else {
+                withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+                    isShowingLyricBanner = false
+                }
+                return
             }
-            return
+            
+            let newLyric = nowPlaying.lyrics[nowPlaying.activeLyricIndex].text
+            
+            // Hide if the lyric line is completely empty (instrumental break)
+            if newLyric.trimmingCharacters(in: .whitespaces).isEmpty {
+                withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+                    isShowingLyricBanner = false
+                }
+            } else {
+                // ⚡️ FIX: Assign the text INSIDE the animation block!
+                // This guarantees the vertical scroll transition is triggered.
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+                    currentLyricText = newLyric
+                    isShowingLyricBanner = true
+                }
+            }
         }
-        
-        let newLyric = nowPlaying.lyrics[nowPlaying.activeLyricIndex].text
-        
-        // Hide if the lyric line is completely empty (instrumental break)
-        if newLyric.trimmingCharacters(in: .whitespaces).isEmpty {
-            withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
-                isShowingLyricBanner = false
-            }
-        } else {
-            currentLyricText = newLyric
-            withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
-                isShowingLyricBanner = true
-            }
-        }
-    }
     
     private func triggerBanner(text: String, duration: Double) {
         if !isExpanded {
