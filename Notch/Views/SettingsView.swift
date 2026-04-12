@@ -3,35 +3,46 @@ import ApplicationServices
 import ServiceManagement
 import AppKit
 
-enum SettingsTab: String {
-    case general
-    case integrations
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case general = "General"
+    case lyrics = "Lyrics & Banner"
+    case integrations = "Integrations"
+    
+    var id: String { self.rawValue }
+    
+    var icon: String {
+        switch self {
+        case .general: return "gearshape"
+        case .lyrics: return "text.quote"
+        case .integrations: return "puzzlepiece.extension"
+        }
+    }
 }
 
 struct SettingsView: View {
-    @AppStorage("lastSettingsTab") var selectedTab: SettingsTab = .integrations
+    @AppStorage("lastSettingsTab") var selectedTab: SettingsTab = .general
     
-    // General Settings
+    // ⚡️ CUSTOM SIDEBAR STATE
+    @State private var showSidebar = true
+    
+    // ⚡️ GENERAL
+    @AppStorage("launchAtLogin") var launchAtLogin = false
+    @AppStorage("showGlowEffect") var showGlowEffect = true
+    @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
+    
+    // ⚡️ LYRICS & BANNER
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
     @AppStorage("showLyrics") var showLyrics = true
     @AppStorage("showBannerLyrics") var showBannerLyrics = true
-    @AppStorage("showGlowEffect") var showGlowEffect = true
-    @AppStorage("launchAtLogin") var launchAtLogin = false
-    
-    // Lyrics Customization
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     @AppStorage("lyricDimming") var lyricDimming: Double = 0.3
     @AppStorage("lyricBlurAmount") var lyricBlurAmount: Double = 0.4
-    
-    // ⚡️ NEW: The manual lyrics sync offset
     @AppStorage("lyricOffset") var lyricOffset: Double = 0.0
-    
-    @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
     
     @State private var hasAccessibilityAccess = false
     
-    // Integrations
+    // ⚡️ INTEGRATIONS
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
     @AppStorage("enableChrome") var enableChrome = false
@@ -39,7 +50,6 @@ struct SettingsView: View {
     @AppStorage("enableEdge") var enableEdge = false
     @AppStorage("enableSafari") var enableSafari = false
     
-    // Installed Checkers
     @State private var isAppleMusicInstalled = true
     @State private var isSpotifyInstalled = false
     @State private var isChromeInstalled = false
@@ -47,264 +57,264 @@ struct SettingsView: View {
     @State private var isEdgeInstalled = false
     @State private var isSafariInstalled = true
     
-    // Help Alert State
     @State private var browserNeedingHelp: String? = nil
     @State private var showHelpAlert = false
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            
-            // ---------------------------------------------------------
-            // GENERAL TAB
-            // ---------------------------------------------------------
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 15) {
-                    
-                    Text("System Permissions").font(.headline).padding(.bottom, 2)
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Accessibility Access").fontWeight(.medium)
-                            Text("Required to control media playback and enable trackpad swipe gestures.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        if hasAccessibilityAccess {
-                            Text("Granted")
-                                .font(.subheadline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.green)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(Color.green.opacity(0.1))
-                                .cornerRadius(6)
-                        } else {
-                            Button("Request Access") { requestAccessibilityAccess() }
-                        }
+        // ⚡️ THE FIX: NavigationStack triggers the gorgeous, native macOS glass title bar!
+        NavigationStack {
+            HStack(spacing: 0) {
+                // CUSTOM SIDEBAR
+                if showSidebar {
+                    List(SettingsTab.allCases, selection: $selectedTab) { tab in
+                        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
                     }
-                    
-                    Divider().padding(.vertical, 4)
-                    
-                    // ---------------------------------------------------------
-                    // APP BEHAVIOR
-                    // ---------------------------------------------------------
-                    Text("App Behavior").font(.headline).padding(.bottom, 5)
-                    
-                    Toggle("Launch at Login", isOn: $launchAtLogin)
-                        .onChange(of: launchAtLogin) { newValue in toggleLaunchAtLogin(enabled: newValue) }
-                    Text("Automatically starts WaveNotch in the background when you turn on your Mac.").font(.caption).foregroundColor(.secondary)
+                    .listStyle(.sidebar)
+                    .frame(width: 180)
+                    .transition(.move(edge: .leading))
                     
                     Divider()
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Toggle("Show Banner on Media Control", isOn: $showBannerOnControl)
-                        Text("Briefly drops down the banner to say 'Resumed' or 'Paused' when you control playback.").font(.caption).foregroundColor(.secondary)
-                        
-                        Divider().padding(.vertical, 4)
-                        
-                        Toggle("Show Cinematic Glow on Song Change", isOn: $showGlowEffect)
-                        Text("Draws a slow, glowing border around the notch when a new track plays.").font(.caption).foregroundColor(.secondary)
-                        
-                        Divider().padding(.vertical, 4)
-                        
-                        HStack {
-                            Text("Song Banner Duration:")
-                            Slider(value: $bannerDuration, in: 1.0...8.0, step: 0.5)
-                            Text(String(format: "%.1f sec", bannerDuration)).frame(width: 50, alignment: .trailing).monospacedDigit()
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    Toggle("Invert Swipe Direction", isOn: $invertSwipeDirection)
-                    Text("Reverses the direction for skipping to the next or previous track.")
-                        .font(.caption).foregroundColor(.secondary)
-                    
-                    Divider()
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Toggle("Enable Live Lyrics", isOn: $showLyrics)
-                        Text("Displays synced lyrics inside the expanded player when available.").font(.caption).foregroundColor(.secondary)
-                        
-                        if showLyrics {
-                            HStack {
-                                Text("Visible Lines:")
-                                    .font(.subheadline)
-                                Picker("", selection: $visibleLyricLines) {
-                                    Text("1 Line").tag(1)
-                                    Text("3 Lines").tag(3)
-                                    Text("5 Lines").tag(5)
-                                }
-                                .pickerStyle(.segmented)
-                                .frame(width: 180)
-                            }
-                            .padding(.top, 4)
-                            
-                            if visibleLyricLines > 1 {
-                                Divider().padding(.vertical, 4)
-                                
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Background Lyric Dimming")
-                                        .font(.subheadline)
-                                    Slider(value: $lyricDimming, in: 0.1...0.8, step: 0.1)
-                                    
-                                    Text("Background Lyric Blur")
-                                        .font(.subheadline)
-                                        .padding(.top, 4)
-                                    Slider(value: $lyricBlurAmount, in: 0.0...2.0, step: 0.2)
-                                }
-                                .padding(.horizontal, 4)
-                            }
-                            
-                            // ⚡️ NEW: The Lyrics Sync Offset Slider
-                            Divider().padding(.vertical, 4)
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Lyrics Sync Offset")
-                                    .font(.subheadline)
-                                HStack {
-                                    Text("-8s").font(.caption2).foregroundColor(.secondary)
-                                    Slider(value: $lyricOffset, in: -8.0...8.0, step: 0.5)
-                                    Text("+8s").font(.caption2).foregroundColor(.secondary)
-                                    
-                                    Text(String(format: "%+.1f s", lyricOffset))
-                                        .frame(width: 50, alignment: .trailing)
-                                        .monospacedDigit()
-                                }
-                                Text("Slide left to delay lyrics, right to make them appear earlier.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.horizontal, 4)
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    Toggle(isOn: $showBannerLyrics) {
-                        Text("Show Lyrics in Menu Bar")
-                        Text("Continuously displays the current lyric line in the collapsed notch.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
                 }
-                .padding(20)
-            }
-            .tabItem { Label("General", systemImage: "gearshape") }
-            .tag(SettingsTab.general)
-            .onAppear {
-                hasAccessibilityAccess = AXIsProcessTrusted()
-                launchAtLogin = SMAppService.mainApp.status == .enabled
-            }
-            
-            // ---------------------------------------------------------
-            // INTEGRATIONS TAB
-            // ---------------------------------------------------------
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 15) {
-                    Text("Select which apps WaveNotch is allowed to read and control.")
-                        .foregroundColor(.secondary)
-                        .padding(.bottom, 5)
-                    
-                    if isAppleMusicInstalled {
-                        Toggle(isOn: $enableAppleMusic) {
-                            Text("Apple Music Native App")
-                            Text("Allows WaveNotch to display and control your Apple Music.").font(.caption).foregroundColor(.secondary)
-                        }
-                        .onChange(of: enableAppleMusic) { newValue in
-                            if newValue { triggerPermission(for: "Music") }
-                        }
-                        Divider()
-                    }
-                    
-                    if isSpotifyInstalled {
-                        Toggle(isOn: $enableSpotify) {
-                            Text("Spotify Native App")
-                            Text("Allows WaveNotch to display and control your Spotify music.").font(.caption).foregroundColor(.secondary)
-                        }
-                        .onChange(of: enableSpotify) { newValue in
-                            if newValue { triggerPermission(for: "Spotify") }
-                        }
-                        Divider()
-                    }
-                    
-                    if isChromeInstalled {
-                        browserToggle(title: "Google Chrome", isOn: $enableChrome, internalName: "Google Chrome")
-                        Divider()
-                    }
-                    
-                    if isBraveInstalled {
-                        browserToggle(title: "Brave Browser", isOn: $enableBrave, internalName: "Brave Browser")
-                        Divider()
-                    }
-                    
-                    if isEdgeInstalled {
-                        browserToggle(title: "Microsoft Edge", isOn: $enableEdge, internalName: "Microsoft Edge")
-                        Divider()
-                    }
-                    
-                    if isSafariInstalled {
-                        browserToggle(title: "Safari", isOn: $enableSafari, internalName: "Safari")
-                    }
-                    
-                    if !isSpotifyInstalled && !isChromeInstalled && !isBraveInstalled && !isEdgeInstalled {
-                        Text("No supported third-party browsers or Spotify detected.")
-                            .font(.callout)
-                            .foregroundColor(.orange)
-                            .padding(.top, 10)
-                    }
-                }
-                .padding(20)
-            }
-            .tabItem { Label("Integrations", systemImage: "puzzlepiece.extension") }
-            .tag(SettingsTab.integrations)
-            .onAppear {
-                isSpotifyInstalled = checkAppExists(bundleID: "com.spotify.client")
-                isChromeInstalled = checkAppExists(bundleID: "com.google.Chrome")
-                isBraveInstalled = checkAppExists(bundleID: "com.brave.Browser")
-                isEdgeInstalled = checkAppExists(bundleID: "com.microsoft.edgemac")
-            }
-            .alert(isPresented: $showHelpAlert) {
-                let browser = browserNeedingHelp ?? "Browser"
-                let isSafari = browser == "Safari"
                 
-                return Alert(
-                    title: Text("Action Required for \(browser)"),
-                    message: Text(isSafari ?
-                                  "1. Open Safari\n2. Click 'Safari' in the top menu bar -> 'Settings'\n3. Go to 'Advanced' and check 'Show Develop menu'\n4. Click 'Develop' in the top menu bar\n5. Check 'Allow JavaScript from Apple Events'"
-                                  :
-                                    "1. Open \(browser)\n2. Click 'View' in the top Mac menu bar\n3. Hover over 'Developer'\n4. Click 'Allow JavaScript from Apple Events'"),
-                    dismissButton: .default(Text("I've done this!"))
-                )
+                // CONTENT FORM
+                Form {
+                    switch selectedTab {
+                    case .general: generalContent
+                    case .lyrics: lyricsContent
+                    case .integrations: integrationsContent
+                    }
+                }
+                .formStyle(.grouped)
+            }
+            .navigationTitle(selectedTab.rawValue) // Sets the native title in the glass bar
+            .toolbar {
+                // ⚡️ THE FIX: Anchors the button natively to the top left so it never jumps!
+                ToolbarItem(placement: .navigation) {
+                    Button(action: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            showSidebar.toggle()
+                        }
+                    }) {
+                        Image(systemName: "sidebar.left")
+                    }
+                    .help("Toggle Sidebar")
+                }
             }
         }
-        .frame(width: 480, height: 540)
+        .frame(width: 650, height: 550)
+        .onAppear {
+            hasAccessibilityAccess = AXIsProcessTrusted()
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+            
+            isSpotifyInstalled = checkAppExists(bundleID: "com.spotify.client")
+            isChromeInstalled = checkAppExists(bundleID: "com.google.Chrome")
+            isBraveInstalled = checkAppExists(bundleID: "com.brave.Browser")
+            isEdgeInstalled = checkAppExists(bundleID: "com.microsoft.edgemac")
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             hasAccessibilityAccess = AXIsProcessTrusted()
         }
+        .alert(isPresented: $showHelpAlert) {
+            let browser = browserNeedingHelp ?? "Browser"
+            let isSafari = browser == "Safari"
+            return Alert(
+                title: Text("Action Required for \(browser)"),
+                message: Text(isSafari ?
+                              "1. Open Safari\n2. Click 'Safari' in the top menu bar -> 'Settings'\n3. Go to 'Advanced' and check 'Show Develop menu'\n4. Click 'Develop' in the top menu bar\n5. Check 'Allow JavaScript from Apple Events'"
+                              :
+                                "1. Open \(browser)\n2. Click 'View' in the top Mac menu bar\n3. Hover over 'Developer'\n4. Click 'Allow JavaScript from Apple Events'"),
+                dismissButton: .default(Text("I've done this!"))
+            )
+        }
     }
     
+    // ---------------------------------------------------------
+    // ⚙️ GENERAL TAB
+    // ---------------------------------------------------------
+    private var generalContent: some View {
+        Group {
+            Section {
+                HStack {
+                    Text("Accessibility Access")
+                    Spacer()
+                    if hasAccessibilityAccess {
+                        Text("Granted")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(6)
+                    } else {
+                        Button("Request Access") { requestAccessibilityAccess() }
+                    }
+                }
+            } header: {
+                Text("System Permissions")
+            } footer: {
+                Text("Required to read track data and enable trackpad swipe gestures.")
+            }
+            
+            Section {
+                Toggle("Launch at Login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { newValue in toggleLaunchAtLogin(enabled: newValue) }
+                
+                Toggle("Show Cinematic Glow on Song Change", isOn: $showGlowEffect)
+                
+                Toggle("Invert Swipe Direction", isOn: $invertSwipeDirection)
+            } header: {
+                Text("App Behavior")
+            } footer: {
+                Text("Changes the direction for skipping tracks with your trackpad or mouse.")
+            }
+        }
+    }
+    
+    // ---------------------------------------------------------
+    // 🎵 LYRICS & BANNER TAB
+    // ---------------------------------------------------------
+    private var lyricsContent: some View {
+        Group {
+            Section {
+                Toggle("Show Banner on Media Control", isOn: $showBannerOnControl)
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Banner Duration: \(bannerDuration, specifier: "%.1f") sec")
+                    HStack(spacing: 8) {
+                        Text("1.0s").font(.caption).foregroundColor(.secondary).frame(width: 32, alignment: .leading)
+                        Slider(value: $bannerDuration, in: 1.0...8.0, step: 0.5).labelsHidden()
+                        Text("8.0s").font(.caption).foregroundColor(.secondary).frame(width: 32, alignment: .trailing)
+                    }
+                }
+                .padding(.vertical, 4)
+                
+            } header: {
+                Text("Notch Banner")
+            }
+            
+            Section {
+                Toggle("Enable Live Lyrics in Player", isOn: $showLyrics)
+                Toggle("Show Continuous Lyrics in Menu Bar", isOn: $showBannerLyrics)
+            } header: {
+                Text("Lyrics Display")
+            }
+            
+            if showLyrics {
+                Section {
+                    Picker("Visible Lines", selection: $visibleLyricLines) {
+                        Text("1 Line").tag(1)
+                        Text("3 Lines").tag(3)
+                        Text("5 Lines").tag(5)
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    if visibleLyricLines > 1 {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Background Dimming")
+                            HStack(spacing: 8) {
+                                Text("Light").font(.caption).foregroundColor(.secondary).frame(width: 36, alignment: .leading)
+                                Slider(value: $lyricDimming, in: 0.1...0.8, step: 0.1).labelsHidden()
+                                Text("Dark").font(.caption).foregroundColor(.secondary).frame(width: 36, alignment: .trailing)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Background Blur")
+                            HStack(spacing: 8) {
+                                Text("None").font(.caption).foregroundColor(.secondary).frame(width: 36, alignment: .leading)
+                                Slider(value: $lyricBlurAmount, in: 0.0...2.0, step: 0.2).labelsHidden()
+                                Text("Heavy").font(.caption).foregroundColor(.secondary).frame(width: 36, alignment: .trailing)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } header: {
+                    Text("Lyrics Appearance")
+                }
+                
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        let offsetText = lyricOffset == 0.0 ? "0.0 s" : String(format: "%+.1f s", lyricOffset)
+                        Text("Sync Offset: \(offsetText)")
+                        HStack(spacing: 8) {
+                            Text("-8.0s").font(.caption).foregroundColor(.secondary).frame(width: 36, alignment: .leading)
+                            Slider(value: $lyricOffset, in: -8.0...8.0, step: 0.5).labelsHidden()
+                            Text("+8.0s").font(.caption).foregroundColor(.secondary).frame(width: 36, alignment: .trailing)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                } header: {
+                    Text("Synchronization")
+                } footer: {
+                    Text("Slide left to delay lyrics, right to make them appear earlier.")
+                }
+            }
+        }
+    }
+    
+    // ---------------------------------------------------------
+    // 🧩 INTEGRATIONS TAB
+    // ---------------------------------------------------------
+    private var integrationsContent: some View {
+        Group {
+            Section {
+                if isAppleMusicInstalled {
+                    Toggle("Apple Music App", isOn: $enableAppleMusic)
+                        .onChange(of: enableAppleMusic) { newValue in
+                            if newValue { triggerPermission(for: "Music") }
+                        }
+                }
+                if isSpotifyInstalled {
+                    Toggle("Spotify Native App", isOn: $enableSpotify)
+                        .onChange(of: enableSpotify) { newValue in
+                            if newValue { triggerPermission(for: "Spotify") }
+                        }
+                }
+            } header: {
+                Text("Native Players")
+            } footer: {
+                Text("Select which apps WaveNotch is allowed to control.")
+            }
+            
+            Section {
+                if isSafariInstalled { browserToggle(title: "Safari", isOn: $enableSafari, internalName: "Safari") }
+                if isChromeInstalled { browserToggle(title: "Google Chrome", isOn: $enableChrome, internalName: "Google Chrome") }
+                if isBraveInstalled { browserToggle(title: "Brave Browser", isOn: $enableBrave, internalName: "Brave Browser") }
+                if isEdgeInstalled { browserToggle(title: "Microsoft Edge", isOn: $enableEdge, internalName: "Microsoft Edge") }
+                
+                if !isSpotifyInstalled && !isChromeInstalled && !isBraveInstalled && !isEdgeInstalled && !isSafariInstalled {
+                    Text("No supported third-party browsers detected.")
+                        .foregroundColor(.secondary)
+                }
+            } header: {
+                Text("Web Browsers")
+            } footer: {
+                Text("Required to read media playing in browser tabs.")
+            }
+        }
+    }
+    
+    // ---------------------------------------------------------
+    // ⚡️ HELPER METHODS
+    // ---------------------------------------------------------
     @ViewBuilder
     func browserToggle(title: String, isOn: Binding<Bool>, internalName: String) -> some View {
         HStack {
-            Toggle(isOn: isOn) {
-                Text(title)
-                Text("Allows WaveNotch to read media playing in \(title) tabs.").font(.caption).foregroundColor(.secondary)
-            }
-            .onChange(of: isOn.wrappedValue) { newValue in
-                if newValue {
-                    triggerPermission(for: internalName)
-                    
-                    if !testJavaScriptAccess(for: internalName) {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                            isOn.wrappedValue = false
-                            browserNeedingHelp = title
-                            showHelpAlert = true
+            Toggle(title, isOn: isOn)
+                .onChange(of: isOn.wrappedValue) { newValue in
+                    if newValue {
+                        triggerPermission(for: internalName)
+                        if !testJavaScriptAccess(for: internalName) {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                isOn.wrappedValue = false
+                                browserNeedingHelp = title
+                                showHelpAlert = true
+                            }
                         }
                     }
                 }
-            }
             
             Spacer()
             
@@ -316,7 +326,6 @@ struct SettingsView: View {
                     .foregroundColor(.blue)
             }
             .buttonStyle(.plain)
-            .help("Setup Instructions")
         }
     }
     
