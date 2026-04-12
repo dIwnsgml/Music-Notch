@@ -13,6 +13,8 @@ struct ContentView: View {
     @State private var currentTab: AppTab = .player
     
     // ⚡️ USER SETTINGS
+    @AppStorage("collapsedWidth") var storedCollapsedWidth: Double = 300.0 // NEW!
+    
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
     @AppStorage("showLyrics") var showLyrics = true
@@ -58,8 +60,10 @@ struct ContentView: View {
     
     let notchHeight: CGFloat = 32
     let bannerHeightAddon: CGFloat = 24
-    let collapsedWidth: CGFloat = 300
     let expandedWidth: CGFloat = 400
+    
+    // ⚡️ THE FIX: Dynamically computed width from settings!
+    var collapsedWidth: CGFloat { CGFloat(storedCollapsedWidth) }
     
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
@@ -81,9 +85,8 @@ struct ContentView: View {
             }
             .contentShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
             .contextMenu {
-                // ⚡️ THE FIX: Removed the "..." from Settings
                 Button(action: { SettingsWindowManager.shared.showSettings() }) {
-                    Text("Settings")
+                    Text("Settings...")
                     Image(systemName: "gearshape")
                 }
                 Button(action: { NSApplication.shared.terminate(nil) }) {

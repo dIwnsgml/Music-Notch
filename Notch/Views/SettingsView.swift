@@ -22,10 +22,10 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @AppStorage("lastSettingsTab") var selectedTab: SettingsTab = .general
     
-    // ⚡️ CUSTOM SIDEBAR STATE
     @State private var showSidebar = true
     
     // ⚡️ GENERAL
+    @AppStorage("collapsedWidth") var collapsedWidth: Double = 300.0 // NEW!
     @AppStorage("launchAtLogin") var launchAtLogin = false
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
@@ -61,10 +61,8 @@ struct SettingsView: View {
     @State private var showHelpAlert = false
     
     var body: some View {
-        // ⚡️ THE FIX: NavigationStack triggers the gorgeous, native macOS glass title bar!
         NavigationStack {
             HStack(spacing: 0) {
-                // CUSTOM SIDEBAR
                 if showSidebar {
                     List(SettingsTab.allCases, selection: $selectedTab) { tab in
                         Label(tab.rawValue, systemImage: tab.icon).tag(tab)
@@ -76,7 +74,6 @@ struct SettingsView: View {
                     Divider()
                 }
                 
-                // CONTENT FORM
                 Form {
                     switch selectedTab {
                     case .general: generalContent
@@ -86,9 +83,8 @@ struct SettingsView: View {
                 }
                 .formStyle(.grouped)
             }
-            .navigationTitle(selectedTab.rawValue) // Sets the native title in the glass bar
+            .navigationTitle(selectedTab.rawValue)
             .toolbar {
-                // ⚡️ THE FIX: Anchors the button natively to the top left so it never jumps!
                 ToolbarItem(placement: .navigation) {
                     Button(action: {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -133,6 +129,23 @@ struct SettingsView: View {
     // ---------------------------------------------------------
     private var generalContent: some View {
         Group {
+            // ⚡️ NEW: The collapsed width slider
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Collapsed Notch Width: \(Int(collapsedWidth))px")
+                    HStack(spacing: 8) {
+                        Text("200px").font(.caption).foregroundColor(.secondary).frame(width: 40, alignment: .leading)
+                        Slider(value: $collapsedWidth, in: 200...400, step: 10).labelsHidden()
+                        Text("400px").font(.caption).foregroundColor(.secondary).frame(width: 40, alignment: .trailing)
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Appearance")
+            } footer: {
+                Text("Sets how wide the notch is when it is closed.")
+            }
+            
             Section {
                 HStack {
                     Text("Accessibility Access")
