@@ -69,14 +69,20 @@ struct PlayerTabView: View {
                 HStack(alignment: .center) {
                     ZStack {
                         if hasMedia && nowPlaying.artworkURL != nil {
-                            AsyncImage(url: nowPlaying.artworkURL) { image in
-                                image.resizable().aspectRatio(contentMode: .fill)
-                            } placeholder: { Color.gray.opacity(0.3) }
-                                .frame(width: 40, height: 40)
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 10, x: 0, y: 0)
-                                .id(nowPlaying.currentSong)
-                                .transition(.dynamicPanRotate(direction: skipDirection))
+                            Button(action: {
+                                nowPlaying.openPlayingApp()
+                            }) {
+                                AsyncImage(url: nowPlaying.artworkURL) { image in
+                                    image.resizable().aspectRatio(contentMode: .fill)
+                                } placeholder: { Color.gray.opacity(0.3) }
+                                    .frame(width: 40, height: 40)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 10, x: 0, y: 0)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Open Music Player")
+                            .id(nowPlaying.currentSong)
+                            .transition(.dynamicPanRotate(direction: skipDirection))
                             
                         } else {
                             Image(systemName: "music.note")
@@ -142,7 +148,9 @@ struct PlayerTabView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     
-                    // ⚡️ THE FIX: Buttons restored safely inside a strict firewall frame!
+                    Spacer()
+                    
+                    // ⚡️ THE FIX: Restored your control buttons in their anti-shake firewall!
                     if hasMedia {
                         HStack(spacing: 6) {
                             Button(action: {

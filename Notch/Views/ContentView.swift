@@ -13,7 +13,7 @@ struct ContentView: View {
     @State private var currentTab: AppTab = .player
     
     // ⚡️ USER SETTINGS
-    @AppStorage("collapsedWidth") var storedCollapsedWidth: Double = 300.0 // NEW!
+    @AppStorage("collapsedWidth") var storedCollapsedWidth: Double = 300.0
     
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
@@ -62,7 +62,6 @@ struct ContentView: View {
     let bannerHeightAddon: CGFloat = 24
     let expandedWidth: CGFloat = 400
     
-    // ⚡️ THE FIX: Dynamically computed width from settings!
     var collapsedWidth: CGFloat { CGFloat(storedCollapsedWidth) }
     
     var body: some View {
@@ -83,10 +82,15 @@ struct ContentView: View {
                 collapsedLayer(hasMedia: hasMedia, currentCollapsedHeight: currentCollapsedHeight)
                 expandedLayer(expandedHeight: expandedHeight)
             }
+            // ---------------------------------------------------------
+            // ⚡️ THE FIX: Force the entire container bounds to shrink dynamically!
+            // This prevents the invisible ZStack from holding the clipShape open.
+            // ---------------------------------------------------------
+            .frame(width: currentWidth, height: currentHeight, alignment: .top)
             .contentShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
             .contextMenu {
                 Button(action: { SettingsWindowManager.shared.showSettings() }) {
-                    Text("Settings...")
+                    Text("Settings")
                     Image(systemName: "gearshape")
                 }
                 Button(action: { NSApplication.shared.terminate(nil) }) {
@@ -311,7 +315,6 @@ struct ContentView: View {
         .frame(width: collapsedWidth, height: currentCollapsedHeight)
         .opacity(isExpanded ? 0 : 1)
         .scaleEffect(isExpanded ? 0.95 : 1.0, anchor: .top)
-        .blur(radius: isExpanded ? 5 : 0)
         .allowsHitTesting(!isExpanded)
         .zIndex(2)
     }
@@ -334,7 +337,6 @@ struct ContentView: View {
         .frame(width: expandedWidth, height: expandedHeight)
         .opacity(isExpanded ? 1 : 0)
         .scaleEffect(isExpanded ? 1.0 : 0.95, anchor: .top)
-        .blur(radius: isExpanded ? 0 : 5)
         .allowsHitTesting(isExpanded)
         .zIndex(3)
     }

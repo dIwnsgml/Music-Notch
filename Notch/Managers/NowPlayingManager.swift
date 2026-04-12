@@ -11,7 +11,7 @@ class NowPlayingManager: ObservableObject {
     @Published var currentSong: String = "No Music"
     var internalSongIdentifier: String = ""
     
-        
+    
     // ⚡️ ADD THIS LINE RIGHT HERE:
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
@@ -57,6 +57,54 @@ class NowPlayingManager: ObservableObject {
     init() {
         timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             self?.fetchTitle()
+        }
+    }
+    
+    // ---------------------------------------------------------
+    // ⚡️ THE FIX: Aggressive NSRunningApplication Launcher
+    // ---------------------------------------------------------
+    func openPlayingApp() {
+        DispatchQueue.main.async {
+            let runningApps = NSWorkspace.shared.runningApplications
+            
+            // 1. If Spotify is running, rip it to the front instantly
+            if let spotify = runningApps.first(where: { $0.bundleIdentifier == "com.spotify.client" }) {
+                spotify.activate(options: .activateIgnoringOtherApps)
+                return
+            }
+            
+            // 2. If Apple Music is running, rip it to the front
+            if let music = runningApps.first(where: { $0.bundleIdentifier == "com.apple.Music" }) {
+                music.activate(options: .activateIgnoringOtherApps)
+                return
+            }
+            
+            // 3. Fallback to the active browser
+            if let browser = self.lastActiveBrowser {
+                self.activateApp(appName: browser)
+            }
+        }
+    }
+    
+    private func activateApp(appName: String) {
+        let bundleID: String
+        switch appName {
+        case "Safari": bundleID = "com.apple.Safari"
+        case "Google Chrome": bundleID = "com.google.Chrome"
+        case "Brave Browser": bundleID = "com.brave.Browser"
+        case "Microsoft Edge": bundleID = "com.microsoft.edgemac"
+        default: return
+        }
+        
+        // Aggressively activate the app if it's currently running
+        if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) {
+            app.activate(options: .activateIgnoringOtherApps)
+        }
+        // Fallback if it somehow isn't running
+        else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
+            NSWorkspace.shared.openApplication(at: url, configuration: config, completionHandler: nil)
         }
     }
 }
