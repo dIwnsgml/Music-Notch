@@ -3,13 +3,22 @@ import ApplicationServices
 import ServiceManagement
 import AppKit
 
+enum SettingsTab: String {
+    case general
+    case integrations
+}
+
 struct SettingsView: View {
+    @AppStorage("lastSettingsTab") var selectedTab: SettingsTab = .integrations
+    
     // General Settings
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
     @AppStorage("showLyrics") var showLyrics = true
     @AppStorage("showBannerLyrics") var showBannerLyrics = true
+    @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("launchAtLogin") var launchAtLogin = false
+    @AppStorage("invertSwipeDirection") var invertSwipeDirection = false
     
     @State private var hasAccessibilityAccess = false
     
@@ -29,77 +38,109 @@ struct SettingsView: View {
     @State private var isEdgeInstalled = false
     @State private var isSafariInstalled = true
     
-    // ⚡️ NEW: Help Alert State
+    // Help Alert State
     @State private var browserNeedingHelp: String? = nil
     @State private var showHelpAlert = false
-
+    
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
+            
             // ---------------------------------------------------------
-            // GENERAL TAB (Unchanged)
+            // GENERAL TAB
             // ---------------------------------------------------------
-            Form {
+            ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 15) {
+                    
+                    // ⚡️ MOVED TO TOP: System Permissions
+                    Text("System Permissions").font(.headline).padding(.bottom, 2)
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("Accessibility Access").fontWeight(.medium)
+                            // ⚡️ NEW: Clearer, more user-friendly explanation!
+                            Text("Required to control media playback and enable trackpad swipe gestures.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if hasAccessibilityAccess {
+                            Text("Granted")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.green)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Color.green.opacity(0.1))
+                                .cornerRadius(6)
+                        } else {
+                            Button("Request Access") { requestAccessibilityAccess() }
+                        }
+                    }
+                    
+                    Divider().padding(.vertical, 4)
+                    
+                    // ---------------------------------------------------------
+                    // APP BEHAVIOR
+                    // ---------------------------------------------------------
                     Text("App Behavior").font(.headline).padding(.bottom, 5)
                     
                     Toggle("Launch at Login", isOn: $launchAtLogin)
                         .onChange(of: launchAtLogin) { newValue in toggleLaunchAtLogin(enabled: newValue) }
                     Text("Automatically starts WaveNotch in the background when you turn on your Mac.").font(.caption).foregroundColor(.secondary)
+                    
                     Divider()
                     
                     VStack(alignment: .leading, spacing: 8) {
                         Toggle("Show Banner on Media Control", isOn: $showBannerOnControl)
                         Text("Briefly drops down the banner to say 'Resumed' or 'Paused' when you control playback.").font(.caption).foregroundColor(.secondary)
+                        
                         Divider().padding(.vertical, 4)
+                        
+                        Toggle("Show Cinematic Glow on Song Change", isOn: $showGlowEffect)
+                        Text("Draws a slow, glowing border around the notch when a new track plays.").font(.caption).foregroundColor(.secondary)
+                        
+                        Divider().padding(.vertical, 4)
+                        
                         HStack {
                             Text("Song Banner Duration:")
                             Slider(value: $bannerDuration, in: 1.0...8.0, step: 0.5)
                             Text(String(format: "%.1f sec", bannerDuration)).frame(width: 50, alignment: .trailing).monospacedDigit()
                         }
                     }
+                    
                     Divider()
                     
                     Toggle("Enable Live Lyrics", isOn: $showLyrics)
                     Text("Displays synced lyrics inside the expanded player when available.").font(.caption).foregroundColor(.secondary)
-                    Divider()
-                    
-                    
-                        
-                        Toggle(isOn: $showBannerLyrics) {
-                            Text("Show Lyrics in Menu Bar")
-                            Text("Continuously displays the current lyric line in the collapsed notch.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
                     
                     Divider()
                     
-                    Text("System Permissions").font(.headline).padding(.top, 5)
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Accessibility Access").fontWeight(.medium)
-                            Text("Required to simulate media keys.").font(.caption).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        if hasAccessibilityAccess {
-                            Text("Granted").font(.subheadline).fontWeight(.bold).foregroundColor(.green).padding(.horizontal, 10).padding(.vertical, 4).background(Color.green.opacity(0.1)).cornerRadius(6)
-                        } else {
-                            Button("Request Access") { requestAccessibilityAccess() }
-                        }
+                    Toggle(isOn: $showBannerLyrics) {
+                        Text("Show Lyrics in Menu Bar")
+                        Text("Continuously displays the current lyric line in the collapsed notch.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
+                    
+                    Divider()
+                    
+                    Toggle("Invert Trackpad Swipe Direction", isOn: $invertSwipeDirection)
+                    Text("Reverses the direction for skipping to the next or previous track.")
+                        .font(.caption).foregroundColor(.secondary)
+                    
                 }
-                .padding()
+                .padding(20)
             }
             .tabItem { Label("General", systemImage: "gearshape") }
+            .tag(SettingsTab.general)
             .onAppear {
                 hasAccessibilityAccess = AXIsProcessTrusted()
                 launchAtLogin = SMAppService.mainApp.status == .enabled
             }
             
             // ---------------------------------------------------------
-            // INTEGRATIONS TAB (With Test & Guide UX)
+            // INTEGRATIONS TAB
             // ---------------------------------------------------------
-            Form {
+            ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 15) {
                     Text("Select which apps WaveNotch is allowed to read and control.")
                         .foregroundColor(.secondary)
@@ -111,7 +152,7 @@ struct SettingsView: View {
                             Text("Allows WaveNotch to display and control your Apple Music.").font(.caption).foregroundColor(.secondary)
                         }
                         .onChange(of: enableAppleMusic) { newValue in
-                            if newValue { triggerPermission(for: "Music") } // Apple Music's scripting name is just "Music"
+                            if newValue { triggerPermission(for: "Music") }
                         }
                         Divider()
                     }
@@ -153,16 +194,16 @@ struct SettingsView: View {
                             .padding(.top, 10)
                     }
                 }
-                .padding()
+                .padding(20)
             }
             .tabItem { Label("Integrations", systemImage: "puzzlepiece.extension") }
+            .tag(SettingsTab.integrations)
             .onAppear {
                 isSpotifyInstalled = checkAppExists(bundleID: "com.spotify.client")
                 isChromeInstalled = checkAppExists(bundleID: "com.google.Chrome")
                 isBraveInstalled = checkAppExists(bundleID: "com.brave.Browser")
                 isEdgeInstalled = checkAppExists(bundleID: "com.microsoft.edgemac")
             }
-            // ⚡️ THE SMART HELP ALERT
             .alert(isPresented: $showHelpAlert) {
                 let browser = browserNeedingHelp ?? "Browser"
                 let isSafari = browser == "Safari"
@@ -172,7 +213,7 @@ struct SettingsView: View {
                     message: Text(isSafari ?
                                   "1. Open Safari\n2. Click 'Safari' in the top menu bar -> 'Settings'\n3. Go to 'Advanced' and check 'Show Develop menu'\n4. Click 'Develop' in the top menu bar\n5. Check 'Allow JavaScript from Apple Events'"
                                   :
-                                  "1. Open \(browser)\n2. Click 'View' in the top Mac menu bar\n3. Hover over 'Developer'\n4. Click 'Allow JavaScript from Apple Events'"),
+                                    "1. Open \(browser)\n2. Click 'View' in the top Mac menu bar\n3. Hover over 'Developer'\n4. Click 'Allow JavaScript from Apple Events'"),
                     dismissButton: .default(Text("I've done this!"))
                 )
             }
@@ -183,7 +224,6 @@ struct SettingsView: View {
         }
     }
     
-    // ⚡️ THE SMART BROWSER ROW COMPONENT
     @ViewBuilder
     func browserToggle(title: String, isOn: Binding<Bool>, internalName: String) -> some View {
         HStack {
@@ -193,12 +233,9 @@ struct SettingsView: View {
             }
             .onChange(of: isOn.wrappedValue) { newValue in
                 if newValue {
-                    // First, trigger standard macOS permission
                     triggerPermission(for: internalName)
                     
-                    // Second, test if JavaScript injection is actually allowed
                     if !testJavaScriptAccess(for: internalName) {
-                        // If it fails, turn the toggle back off and show the instructions!
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                             isOn.wrappedValue = false
                             browserNeedingHelp = title
@@ -210,7 +247,6 @@ struct SettingsView: View {
             
             Spacer()
             
-            // Manual Help Button just in case they need the instructions again
             Button(action: {
                 browserNeedingHelp = title
                 showHelpAlert = true
@@ -223,8 +259,6 @@ struct SettingsView: View {
         }
     }
     
-    // ⚡️ THE DIAGNOSTIC ENGINE
-    // This secretly injects "1+1" into the browser. If the browser blocks it, we know the user hasn't flipped the security switch!
     func testJavaScriptAccess(for browser: String) -> Bool {
         let scriptSource: String
         
@@ -255,17 +289,12 @@ struct SettingsView: View {
         var error: NSDictionary?
         if let script = NSAppleScript(source: scriptSource) {
             let result = script.executeAndReturnError(&error).stringValue
-            // If the browser is completely closed, it might return FAIL, but that's okay,
-            // the alert will just remind them to open it and check the setting!
-            if result == "FAIL" || error != nil {
-                return false
-            }
+            if result == "FAIL" || error != nil { return false }
             return true
         }
         return false
     }
     
-    // Helpers
     func checkAppExists(bundleID: String) -> Bool {
         return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
     }

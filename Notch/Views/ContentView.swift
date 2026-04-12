@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import Combine // ⚡️ The crucial import for the lyric timer!
+import Combine
 
 enum AppTab {
     case player
@@ -16,7 +16,18 @@ struct ContentView: View {
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
     @AppStorage("showLyrics") var showLyrics = true
-    @AppStorage("showBannerLyrics") var showBannerLyrics = false
+    @AppStorage("showBannerLyrics") var showBannerLyrics = true
+    @AppStorage("showGlowEffect") var showGlowEffect = true
+    
+    // ⚡️ NEW: Toggle to let users decide which way swiping skips
+    @AppStorage("invertSwipeDirection") var invertSwipeDirection = false
+    
+    @AppStorage("enableAppleMusic") var enableAppleMusic = false
+    @AppStorage("enableSpotify") var enableSpotify = false
+    @AppStorage("enableChrome") var enableChrome = false
+    @AppStorage("enableBrave") var enableBrave = false
+    @AppStorage("enableEdge") var enableEdge = false
+    @AppStorage("enableSafari") var enableSafari = false
     
     // ⚡️ BANNER STATE
     @State private var isShowingBanner = false
@@ -32,7 +43,7 @@ struct ContentView: View {
     @State private var localEventMonitor: Any?
     @State private var globalEventMonitor: Any?
     
-    // ⚡️ RACING BORDER GLOW STATE!
+    // ⚡️ RACING BORDER GLOW STATE
     @State private var glowRotation: Double = 0.0
     @State private var glowOpacity: Double = 0.0
     
@@ -40,10 +51,7 @@ struct ContentView: View {
     @State private var localMediaKeyMonitor: Any?
     @State private var globalMediaKeyMonitor: Any?
     
-    // ⚡️ 1 = Next Song (Right to Left), -1 = Previous Song (Left to Right)
     @State private var skipDirection: Int = 1
-    
-    // ⚡️ THE FIX: Tracks exactly when the song changed to prevent banner overwriting
     @State private var lastSongChangeTime: Date = Date.distantPast
     
     let lyricTimer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
@@ -55,182 +63,17 @@ struct ContentView: View {
     
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
-        
         let playerHeight: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? 180 : 128
         let expandedHeight: CGFloat = currentTab == .playlist ? 216 : playerHeight
-        
         let currentWidth: CGFloat = isExpanded ? expandedWidth : collapsedWidth
         let currentCollapsedHeight: CGFloat = (isShowingBanner || isShowingLyricBanner) ? (notchHeight + bannerHeightAddon) : notchHeight
         let currentHeight: CGFloat = isExpanded ? expandedHeight : currentCollapsedHeight
         
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                
-                // ---------------------------------------------------------
-                // 💎 LAYER 1: THE SOLID BLACK NOTCH
-                // ---------------------------------------------------------
-                DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
-                    .fill(Color.black)
-                    .shadow(color: Color.black.opacity(0.5), radius: 12, y: 6)
-                    .frame(width: currentWidth, height: currentHeight)
-                    .overlay(
-                        DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
-                            .stroke(
-                                LinearGradient(colors: [Color.white.opacity(isExpanded ? 0.2 : 0.0), Color.clear], startPoint: .top, endPoint: .bottom),
-                                lineWidth: 1.5
-                            )
-                    )
-                // ⚡️ THE RACING BORDER LIGHT OVERLAY
-                // ⚡️ THE RACING BORDER LIGHT OVERLAY (NOW A THICK STAR-SHINE COMET!)
-                // ⚡️ THE RACING BORDER LIGHT OVERLAY
-                    .overlay(
-                        DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
-                            .stroke(
-                                AngularGradient(
-                                    gradient: Gradient(stops: [
-                                        .init(color: .clear, location: 0.0),
-                                        .init(color: nowPlaying.artworkDominantColor.opacity(0.1), location: 0.02),
-                                        .init(color: nowPlaying.artworkDominantColor, location: 0.1),
-                                        // ⚡️ Kept the intense "star" shine at the front!
-                                        .init(color: .white, location: 0.12),
-                                        .init(color: .white, location: 0.13),
-                                        .init(color: .clear, location: 0.131),
-                                        .init(color: .clear, location: 1.0)
-                                    ]),
-                                    center: .center,
-                                    angle: .degrees(glowRotation)
-                                ),
-                                // ⚡️ THE FIX: Dropped the thickness back down to the sleek 2.5
-                                lineWidth: 2.5
-                            )
-                            .opacity(glowOpacity)
-                    )
-                    .zIndex(1)
-                
-                // ---------------------------------------------------------
-                // 🎵 LAYER 2: THE COLLAPSED CONTENT (Fades Out)
-                // ---------------------------------------------------------
-                VStack(spacing: 0) {
-                    HStack(spacing: 0) {
-                        
-                        // ⚡️ THE ALBUM ARTWORK CONTAINER
-                        ZStack {
-                            if hasMedia && nowPlaying.artworkURL != nil {
-                                AsyncImage(url: nowPlaying.artworkURL) { image in
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                } placeholder: { Color.gray.opacity(0.3) }
-                                    .frame(width: 20, height: 20)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                
-                                // ⚡️ NEW: The thumbnail physically glows when the song changes!
-                                    .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 6, x: 0, y: 0)
-                                
-                                // ⚡️ Forces SwiftUI to redraw the image when the song changes
-                                    .id(nowPlaying.currentSong)
-                                // ⚡️ Applies our custom 3D Pan & Rotate transition!
-                                    .transition(.panRotate(direction: skipDirection))
-                                
-                            } else {
-                                Image(systemName: "music.note")
-                                    .foregroundColor(nowPlaying.isPlaying ? .white : .gray)
-                                    .font(.system(size: 14, weight: .bold))
-                                    .id("placeholder")
-                                    .transition(.opacity)
-                            }
-                        }
-                        .frame(width: 24, alignment: .leading)
-                        // Drives the buttery smooth 3D flip animation
-                        // ⚡️ ULTRA-SMOOTH FLIP: Increased response from 1.2 to 1.5
-                        .animation(.spring(response: 1.5, dampingFraction: 0.82), value: nowPlaying.currentSong)
-                        Spacer()
-                        
-                        WaveformView(isPlaying: nowPlaying.isPlaying, color: nowPlaying.artworkDominantColor)
-                            .frame(width: 24, alignment: .trailing)
-                    }
-                    .padding(.horizontal, 24)
-                    .frame(height: notchHeight)
-                    
-                    let showAnyBanner = (isShowingBanner || isShowingLyricBanner) && hasMedia
-                    if showAnyBanner {
-                        ZStack {
-                            if isShowingBanner {
-                                MarqueeText(text: bannerText, font: .system(size: 12, weight: .bold), alignment: .center)
-                                    .foregroundColor(nowPlaying.artworkDominantColor)
-                                    .transition(.opacity.combined(with: .move(edge: .top)))
-                                // ⚡️ THE FIX: Forces the banner marquee to scroll!
-                                    .id(bannerText)
-                            } else if isShowingLyricBanner {
-                                MarqueeText(text: currentLyricText, font: .system(size: 12, weight: .bold), alignment: .center)
-                                    .id(currentLyricText)
-                                    .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .bottom)), removal: .opacity.combined(with: .move(edge: .top))))
-                                    .foregroundColor(nowPlaying.artworkDominantColor)
-                            }
-                        }
-                        .frame(height: bannerHeightAddon)
-                        .padding(.horizontal, 24)
-                        .clipped()
-                    }
-                }
-                .frame(width: collapsedWidth, height: currentCollapsedHeight)
-                .opacity(isExpanded ? 0 : 1)
-                .scaleEffect(isExpanded ? 0.95 : 1.0, anchor: .top)
-                .blur(radius: isExpanded ? 5 : 0)
-                .allowsHitTesting(!isExpanded)
-                .zIndex(2)
-                
-                // ---------------------------------------------------------
-                // 🎧 LAYER 3: THE EXPANDED CONTENT (Fades In)
-                // ---------------------------------------------------------
-                VStack(spacing: 8) {
-                    HStack {
-                        Button(action: {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                currentTab = currentTab == .player ? .playlist : .player
-                            }
-                        }) {
-                            Image(systemName: currentTab == .player ? "list.bullet" : "music.note")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white.opacity(0.6))
-                                .padding(8)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        
-                        Spacer()
-                        
-                        if nowPlaying.isSearchingLyrics && showLyrics {
-                            ProgressView().controlSize(.small).padding(.trailing, 4)
-                        }
-                        
-                        Button(action: { SettingsWindowManager.shared.showSettings() }) {
-                            Image(systemName: "gearshape.fill")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white.opacity(0.6))
-                                .padding(8)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .frame(height: notchHeight - 8)
-                    .padding(.horizontal, 16)
-                    
-                    if currentTab == .player {
-                        // ⚡️ We pass skipDirection and glowOpacity so the expanded player reacts too!
-                        PlayerTabView(nowPlaying: nowPlaying, expandedWidth: expandedWidth, skipDirection: $skipDirection, glowOpacity: $glowOpacity)
-                            .padding(.bottom, 16)
-                    } else {
-                        PlaylistTabView(nowPlaying: nowPlaying)
-                            .padding(.bottom, 16)
-                    }
-                }
-                .padding(.top, 6)
-                .frame(width: expandedWidth, height: expandedHeight)
-                .opacity(isExpanded ? 1 : 0)
-                .scaleEffect(isExpanded ? 1.0 : 0.95, anchor: .top)
-                .blur(radius: isExpanded ? 0 : 5)
-                .allowsHitTesting(isExpanded)
-                .zIndex(3)
-                
+                backgroundLayer(currentWidth: currentWidth, currentHeight: currentHeight)
+                collapsedLayer(hasMedia: hasMedia, currentCollapsedHeight: currentCollapsedHeight)
+                expandedLayer(expandedHeight: expandedHeight)
             }
             .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
             .animation(.spring(response: 0.35, dampingFraction: 0.72, blendDuration: 0.1), value: isExpanded)
@@ -241,8 +84,16 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
         
-        // ⚡️ GLOBAL TRACKPAD & HARDWARE KEYBOARD MONITORS
+        // ⚡️ EVENT MONITORS
         .onAppear {
+            let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
+            if !hasAnyAccess {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    SettingsWindowManager.shared.showSettings()
+                    isExpanded = true
+                }
+            }
+            
             localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
                 handleScroll(event: event)
                 return event
@@ -250,7 +101,6 @@ struct ContentView: View {
             globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { event in
                 handleScroll(event: event)
             }
-            
             localMediaKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { event in
                 handleSystemKey(event: event)
                 return event
@@ -266,19 +116,16 @@ struct ContentView: View {
             if let keyGlobal = globalMediaKeyMonitor { NSEvent.removeMonitor(keyGlobal) }
         }
         
-        // ⚡️ MOUSE DRAG GESTURE
+        // ⚡️ GESTURES & HOVERS
         .gesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
                     guard hasMedia else { return }
-                    if value.translation.width < -30 {
-                        skipDirection = 1
-                        simulateMediaKey(keyCode: 20)
-                        triggerBanner(text: "Skipped Forward", duration: 1.5)
-                    } else if value.translation.width > 30 {
-                        skipDirection = -1
-                        simulateMediaKey(keyCode: 19)
-                        triggerBanner(text: "Skipped Back", duration: 1.5)
+                    // ⚡️ THE FIX: Check the swipe distance and evaluate against the user's setting!
+                    if value.translation.width > 30 { // Swiped Right
+                        executeSkip(forward: invertSwipeDirection ? true : false)
+                    } else if value.translation.width < -30 { // Swiped Left
+                        executeSkip(forward: invertSwipeDirection ? false : true)
                     }
                 }
         )
@@ -287,7 +134,6 @@ struct ContentView: View {
             case .active(let location):
                 let collapsedRect = CGRect(x: (400 - collapsedWidth) / 2, y: 0, width: collapsedWidth, height: currentCollapsedHeight)
                 let expandedRect = CGRect(x: (400 - expandedWidth) / 2, y: 0, width: expandedWidth, height: expandedHeight)
-                
                 let targetRect = isExpanded ? expandedRect : collapsedRect
                 
                 if targetRect.contains(location) {
@@ -304,6 +150,8 @@ struct ContentView: View {
                 if isExpanded { isExpanded = false }
             }
         }
+        
+        // ⚡️ STATE OBSERVERS
         .onChange(of: isExpanded) { _, expanded in if !expanded { updateLyricBanner() } }
         .onChange(of: nowPlaying.activeLyricIndex) { _, _ in updateLyricBanner() }
         .onChange(of: showBannerLyrics) { _, _ in updateLyricBanner() }
@@ -311,54 +159,193 @@ struct ContentView: View {
             if nowPlaying.isPlaying && showBannerLyrics && !isExpanded { nowPlaying.updateActiveLyric() }
         }
         .onChange(of: nowPlaying.lyrics) { oldLyrics, newLyrics in updateLyricBanner() }
-        
         .onChange(of: nowPlaying.currentSong) { oldSong, newSong in
             guard newSong != "No Music" && newSong != "NOT_PLAYING" else { return }
-            
             lastSongChangeTime = Date()
             
-            // 🏎️ RESET STATE
-            glowOpacity = 0.0
-            glowRotation = 0.0
-            
-            // 1. A luxurious 1.2-second fade-in
-            withAnimation(.easeIn(duration: 1.2)) {
-                glowOpacity = 1.0
-            }
-            
-            // 2. ULTRA SLOW & SMOOTH SPIN: 1 single lap taking exactly 5 seconds
-            withAnimation(.easeInOut(duration: 5.0)) {
-                glowRotation = 360 // One single, graceful sweep
-            }
-            
-            // 3. A beautiful, lingering fade-out as it finishes the lap
-            withAnimation(.easeOut(duration: 2.0).delay(3.0)) {
+            if showGlowEffect {
                 glowOpacity = 0.0
+                glowRotation = 0.0
+                
+                withAnimation(.easeIn(duration: 1.2)) { glowOpacity = 1.0 }
+                withAnimation(.easeInOut(duration: 5.0)) { glowRotation = 360 }
+                withAnimation(.easeOut(duration: 2.0).delay(3.0)) { glowOpacity = 0.0 }
             }
             
             triggerBanner(text: newSong, duration: bannerDuration)
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                skipDirection = 1
-            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { skipDirection = 1 }
         }
-        
         .onChange(of: nowPlaying.isPlaying) { oldState, newState in
             updateLyricBanner()
             guard showBannerOnControl else { return }
             guard hasMedia else { return }
-            
-            // ⚡️ THE FIX: If the song JUST changed in the last 0.5 seconds, we skip showing the Resumed/Paused banner so the Title Banner doesn't get squashed!
             guard Date().timeIntervalSince(lastSongChangeTime) > 0.5 else { return }
-            
             triggerBanner(text: newState ? "Resumed" : "Paused", duration: 1.5)
         }
         .edgesIgnoringSafeArea(.all)
     }
     
     // ---------------------------------------------------------
+    // 💎 LAYER 1: THE SOLID BLACK NOTCH
+    // ---------------------------------------------------------
+    @ViewBuilder
+    private func backgroundLayer(currentWidth: CGFloat, currentHeight: CGFloat) -> some View {
+        DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
+            .fill(Color.black)
+            .shadow(color: Color.black.opacity(0.5), radius: 12, y: 6)
+            .frame(width: currentWidth, height: currentHeight)
+            .overlay(
+                DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
+                    .stroke(
+                        LinearGradient(colors: [Color.white.opacity(isExpanded ? 0.2 : 0.0), Color.clear], startPoint: .top, endPoint: .bottom),
+                        lineWidth: 1.5
+                    )
+            )
+            .overlay(
+                DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
+                    .stroke(
+                        AngularGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: .clear, location: 0.0),
+                                .init(color: nowPlaying.artworkDominantColor.opacity(0.1), location: 0.02),
+                                .init(color: nowPlaying.artworkDominantColor, location: 0.1),
+                                .init(color: .white, location: 0.12),
+                                .init(color: .white, location: 0.13),
+                                .init(color: .clear, location: 0.131),
+                                .init(color: .clear, location: 1.0)
+                            ]),
+                            center: .center,
+                            angle: .degrees(glowRotation)
+                        ),
+                        lineWidth: 2.5
+                    )
+                    .opacity(glowOpacity)
+            )
+            .zIndex(1)
+    }
+    
+    // ---------------------------------------------------------
+    // 🎵 LAYER 2: THE COLLAPSED CONTENT
+    // ---------------------------------------------------------
+    @ViewBuilder
+    private func collapsedLayer(hasMedia: Bool, currentCollapsedHeight: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                ZStack {
+                    if hasMedia && nowPlaying.artworkURL != nil {
+                        AsyncImage(url: nowPlaying.artworkURL) { image in
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } placeholder: { Color.gray.opacity(0.3) }
+                            .frame(width: 20, height: 20)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 6, x: 0, y: 0)
+                            .id(nowPlaying.currentSong)
+                            .transition(.panRotate(direction: skipDirection))
+                    } else {
+                        Image(systemName: "music.note")
+                            .foregroundColor(nowPlaying.isPlaying ? .white : .gray)
+                            .font(.system(size: 14, weight: .bold))
+                            .id("placeholder")
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: 24, alignment: .leading)
+                .animation(.spring(response: 1.5, dampingFraction: 0.82), value: nowPlaying.currentSong)
+                
+                Spacer()
+                
+                WaveformView(isPlaying: nowPlaying.isPlaying, color: nowPlaying.artworkDominantColor)
+                    .frame(width: 24, alignment: .trailing)
+            }
+            .padding(.horizontal, 24)
+            .frame(height: notchHeight)
+            
+            let showAnyBanner: Bool = (isShowingBanner || isShowingLyricBanner) && hasMedia
+            if showAnyBanner {
+                ZStack {
+                    if isShowingBanner {
+                        MarqueeText(text: bannerText, font: .system(size: 12, weight: .bold), alignment: .center)
+                            .foregroundColor(nowPlaying.artworkDominantColor)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .id(bannerText)
+                    } else if isShowingLyricBanner {
+                        MarqueeText(text: currentLyricText, font: .system(size: 12, weight: .bold), alignment: .center)
+                            .id(currentLyricText)
+                            .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .bottom)), removal: .opacity.combined(with: .move(edge: .top))))
+                            .foregroundColor(nowPlaying.artworkDominantColor)
+                    }
+                }
+                .frame(height: bannerHeightAddon)
+                .padding(.horizontal, 24)
+                .clipped()
+            }
+        }
+        .frame(width: collapsedWidth, height: currentCollapsedHeight)
+        .opacity(isExpanded ? 0 : 1)
+        .scaleEffect(isExpanded ? 0.95 : 1.0, anchor: .top)
+        .blur(radius: isExpanded ? 5 : 0)
+        .allowsHitTesting(!isExpanded)
+        .zIndex(2)
+    }
+    
+    // ---------------------------------------------------------
+    // 🎧 LAYER 3: THE EXPANDED CONTENT
+    // ---------------------------------------------------------
+    @ViewBuilder
+    private func expandedLayer(expandedHeight: CGFloat) -> some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 0) {
+                Spacer()
+                
+                if nowPlaying.isSearchingLyrics && showLyrics {
+                    ProgressView().controlSize(.small).padding(.trailing, 4)
+                }
+                
+                Button(action: { SettingsWindowManager.shared.showSettings() }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white.opacity(0.6))
+                        .padding(8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                
+                Button(action: { NSApplication.shared.terminate(nil) }) {
+                    Image(systemName: "power")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white.opacity(0.6))
+                        .padding(8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(height: notchHeight - 8)
+            .padding(.horizontal, 12)
+            
+            if currentTab == .player {
+                PlayerTabView(nowPlaying: nowPlaying, expandedWidth: expandedWidth, skipDirection: $skipDirection, glowOpacity: $glowOpacity)
+                    .padding(.bottom, 16)
+            }
+        }
+        .padding(.top, 6)
+        .frame(width: expandedWidth, height: expandedHeight)
+        .opacity(isExpanded ? 1 : 0)
+        .scaleEffect(isExpanded ? 1.0 : 0.95, anchor: .top)
+        .blur(radius: isExpanded ? 0 : 5)
+        .allowsHitTesting(isExpanded)
+        .zIndex(3)
+    }
+    
+    // ---------------------------------------------------------
     // ⚡️ HELPER METHODS
     // ---------------------------------------------------------
+    
+    // ⚡️ NEW: Centralized Skip Logic so we don't repeat the code everywhere!
+    private func executeSkip(forward: Bool) {
+        skipDirection = forward ? 1 : -1
+        simulateMediaKey(keyCode: forward ? 20 : 19)
+        triggerBanner(text: forward ? "Skipped Forward" : "Skipped Back", duration: 1.5)
+    }
     
     private func handleSystemKey(event: NSEvent) {
         if event.subtype.rawValue == 8 {
@@ -368,11 +355,8 @@ struct ContentView: View {
             let keyState = (((keyFlags & 0xFF00) >> 8)) == 0xA
             
             if keyState {
-                if keyCode == 19 {
-                    skipDirection = -1 // Previous key pushed!
-                } else if keyCode == 20 {
-                    skipDirection = 1  // Next key pushed!
-                }
+                if keyCode == 19 { skipDirection = -1 }
+                else if keyCode == 20 { skipDirection = 1 }
             }
         }
     }
@@ -383,27 +367,18 @@ struct ContentView: View {
         
         guard let screen = NSScreen.main else { return }
         let mouseLoc = NSEvent.mouseLocation
-        
-        let panelRect = CGRect(
-            x: (screen.frame.width - 400) / 2,
-            y: screen.frame.height - 260,
-            width: 400,
-            height: 260
-        )
+        let panelRect = CGRect(x: (screen.frame.width - 400) / 2, y: screen.frame.height - 260, width: 400, height: 260)
         
         guard panelRect.contains(mouseLoc) else { return }
         guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }
         guard Date().timeIntervalSince(lastSwipeTime) > 0.6 else { return }
         
-        if event.scrollingDeltaX > 15 {
-            skipDirection = -1
-            simulateMediaKey(keyCode: 19)
-            triggerBanner(text: "Skipped Back", duration: 1.5)
+        // ⚡️ THE FIX: Trackpad Natural Scrolling mapped to intuitive defaults
+        if event.scrollingDeltaX > 15 { // Swipe Left (Finger moving left)
+            executeSkip(forward: invertSwipeDirection ? false : true) // Default: Next
             lastSwipeTime = Date()
-        } else if event.scrollingDeltaX < -15 {
-            skipDirection = 1
-            simulateMediaKey(keyCode: 20)
-            triggerBanner(text: "Skipped Forward", duration: 1.5)
+        } else if event.scrollingDeltaX < -15 { // Swipe Right (Finger moving right)
+            executeSkip(forward: invertSwipeDirection ? true : false) // Default: Prev
             lastSwipeTime = Date()
         }
     }
@@ -452,18 +427,7 @@ struct ContentView: View {
         func postKey(down: Bool) {
             let flags: NSEvent.ModifierFlags = down ? NSEvent.ModifierFlags(rawValue: 0xa00) : NSEvent.ModifierFlags(rawValue: 0xb00)
             let data1 = Int((keyCode << 16) | (down ? 0xa00 : 0xb00))
-            
-            if let event = NSEvent.otherEvent(
-                with: .systemDefined,
-                location: .zero,
-                modifierFlags: flags,
-                timestamp: 0,
-                windowNumber: 0,
-                context: nil,
-                subtype: 8,
-                data1: data1,
-                data2: -1
-            ) {
+            if let event = NSEvent.otherEvent(with: .systemDefined, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil, subtype: 8, data1: data1, data2: -1) {
                 event.cgEvent?.post(tap: .cghidEventTap)
             }
         }

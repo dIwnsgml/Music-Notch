@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct DynamicNotchShape: Shape {
     var cornerRadius: CGFloat
@@ -19,25 +20,56 @@ struct DynamicNotchShape: Shape {
     }
 }
 
+
 struct WaveformView: View {
     var isPlaying: Bool
     var color: Color
-    @State private var isAnimating = false
+    
+    @State private var phase = false
+    
+    // ⚡️ Exaggerated heights so it bounces energetically when playing
+    let maxHeights: [CGFloat] = [16, 24, 18, 22]
+    
+    // ⚡️ Desynced durations so it looks like organic, chaotic audio
+    let durations: [Double] = [0.35, 0.42, 0.28, 0.38]
     
     var body: some View {
         HStack(spacing: 3) {
             ForEach(0..<4, id: \.self) { index in
                 Capsule()
                     .fill(isPlaying ? color : Color.gray.opacity(0.5))
-                    .frame(width: 3, height: isPlaying ? (isAnimating ? .random(in: 6...14) : 4) : 4)
+                // 1. If playing & phase is true, bounce up to Max. Otherwise, sit at 4.
+                    .frame(width: 3, height: isPlaying ? (phase ? maxHeights[index] : 4) : 4)
+                
+                // 2. THE FIX: Dynamically swap the physics engine based on playback state!
                     .animation(
-                        isPlaying ? Animation.easeInOut(duration: 0.3).repeatForever().delay(Double(index) * 0.1) : .easeOut(duration: 0.2),
-                        value: isAnimating
+                        isPlaying
+                        ? .easeInOut(duration: durations[index]).repeatForever(autoreverses: true)
+                        : .easeOut(duration: 0.3), // ⚡️ Gracefully coasts to a stop when paused!
+                        value: phase
                     )
+                
+                // 3. Smooth color fading
+                    .animation(.easeOut(duration: 0.3), value: isPlaying)
             }
         }
-        .onChange(of: isPlaying) { playing in isAnimating = playing }
-        .onAppear { if isPlaying { isAnimating = true } }
+        .onChange(of: isPlaying) { playing in
+            if playing {
+                // A tiny 0.05s delay gives SwiftUI enough time to register the new
+                // .repeatForever modifier before we pull the trigger on the 'phase' state.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    phase = true
+                }
+            } else {
+                // Instantly collapses the wave with the .easeOut animation
+                phase = false
+            }
+        }
+        .onAppear {
+            if isPlaying {
+                phase = true
+            }
+        }
     }
 }
 

@@ -17,16 +17,13 @@ extension NowPlayingManager {
             
             for app in runningApps {
                 if let name = app.localizedName {
-                    // ⚡️ FIX: Only scan browsers that the user has explicitly allowed
                     if self.allowedBrowsers.contains(name) { activeBrowsers.append(name) }
-                    // ⚡️ FIX: Only scan Spotify if the user has enabled it
                     if name == "Spotify" && self.enableSpotify { isSpotifyNativeRunning = true }
-                    
                     if name == "Music" && self.enableAppleMusic { isAppleMusicRunning = true }
                 }
             }
             
-            // ⚡️ NEW: Apple Music Integration
+            // ⚡️ Apple Music Integration
             if isAppleMusicRunning {
                 let musicScript = """
                 tell application "Music"
@@ -94,7 +91,8 @@ extension NowPlayingManager {
                 activeBrowsers.insert(last, at: 0)
             }
             
-            let jsCode = "(function(){function pt(str){if(!str)return 0;var p=str.split(':');var s=0,m=1;while(p.length>0){s+=m*parseInt(p.pop(),10);m*=60;}return s;}var host=window.location.hostname;var active=null;var cTitle='',cArtist='',cImg='NO_IMAGE',cCurr=-1,cDur=-1,loopState='NONE',playlist='';if(host.includes('music.youtube.com')){active=document.querySelector('.html5-main-video');var tEl=document.querySelector('ytmusic-player-bar .title');var aEl=document.querySelector('ytmusic-player-bar .byline');if(tEl)cTitle=tEl.innerText;if(aEl)cArtist=aEl.innerText.split('•')[0].trim();var time=document.querySelector('.time-info.ytmusic-player-bar');if(time){var p=time.innerText.split('/');if(p.length===2){cCurr=pt(p[0]);cDur=pt(p[1]);}}try{var qItems=document.querySelectorAll('ytmusic-player-queue-item');var pArr=[];var start=0;for(var i=0;i<qItems.length;i++){if(qItems[i].hasAttribute('selected')||qItems[i].getAttribute('play-button-state')==='playing'){start=i;break;}}for(var j=start;j<qItems.length;j++){var tN=qItems[j].querySelector('.song-title, .title, yt-formatted-string[title]');var aN=qItems[j].querySelector('.byline');var iN=qItems[j].querySelector('img');var tText=tN?(tN.innerText||tN.getAttribute('title')||'').trim():'';var aText=aN?aN.innerText.replace(/\\n/g,'').trim():'Unknown';var iSrc=iN?(iN.src||''):'NO_IMAGE';if(tText){pArr.push(tText+'~~~'+aText+'~~~'+iSrc);}if(pArr.length>=15)break;}playlist=pArr.join('&&&');}catch(e){}}else if(host.includes('open.spotify.com')){active=document.querySelector('video, audio');var tEl=document.querySelector('[data-testid=context-item-info-title]');var aEl=document.querySelector('[data-testid=context-item-info-artist]');if(tEl)cTitle=tEl.innerText;if(aEl)cArtist=aEl.innerText;var cEl=document.querySelector('[data-testid=playback-position]');var dEl=document.querySelector('[data-testid=playback-duration]');if(cEl)cCurr=pt(cEl.innerText);if(dEl)cDur=pt(dEl.innerText);}else if(host.includes('youtube.com')){active=document.querySelector('.html5-main-video');loopState=(active&&(active.loop||active.hasAttribute('loop')))?'ALL':'NONE';if(active&&active.duration>0.05){cDur=active.duration-0.05;}var attrTitle=document.querySelector('.ytVideoAttributeViewModelTitle')||document.querySelector('#title h1 yt-formatted-string');var attrArtist=document.querySelector('.ytVideoAttributeViewModelSubtitle')||document.querySelector('#owner-name a');if(attrTitle)cTitle=attrTitle.innerText.trim();if(attrArtist)cArtist=attrArtist.innerText.trim();try{var ytdItems=document.querySelectorAll('ytd-playlist-panel-video-renderer');var ytdArr=[];var ytdStart=0;for(var k=0;k<ytdItems.length;k++){if(ytdItems[k].hasAttribute('selected')){ytdStart=k;break;}}for(var l=ytdStart;l<ytdItems.length;l++){var yT=ytdItems[l].querySelector('#video-title');var yA=ytdItems[l].querySelector('#byline');var yI=ytdItems[l].querySelector('img');var iSrc=yI?(yI.src||''):'NO_IMAGE';if(yT&&yT.innerText.trim()){ytdArr.push(yT.innerText.trim()+'~~~'+(yA?yA.innerText.trim():'Unknown')+'~~~'+iSrc);}if(ytdArr.length>=15)break;}playlist=ytdArr.join('&&&');}catch(e){}}else{var media=document.querySelectorAll('video, audio');for(var i=0;i<media.length;i++){if(!media[i].paused&&media[i].currentTime>0){active=media[i];break;}}if(!active && media.length > 0) active = media[0];}var isPlaying=(active&&!active.paused&&!active.ended&&active.currentTime>0);if(!isPlaying&&navigator.mediaSession&&navigator.mediaSession.playbackState==='playing')isPlaying=true;if(isPlaying){var title=cTitle||document.title;var artist=cArtist||'EMPTY_ARTIST';var curr=cCurr!==-1?cCurr:(active?active.currentTime:0);var dur=cDur!==-1&&isNaN(cDur)===false&&cDur!==0?cDur:(active?(active.duration||1):1);if(navigator.mediaSession&&navigator.mediaSession.metadata){var m=navigator.mediaSession.metadata;if(!cTitle&&m.title)title=m.title;if(artist==='EMPTY_ARTIST'&&m.artist)artist=m.artist;if(cImg==='NO_IMAGE'&&m.artwork&&m.artwork.length>0)cImg=m.artwork[m.artwork.length-1].src;}return title+'|||'+artist+'|||'+cImg+'|||'+loopState+'|||'+curr+'|||'+dur+'|||'+playlist;}return 'NOT_PLAYING';})();"
+            // ⚡️ FIX: Appended a secret `@@@YOUTUBE_STANDARD` flag to the duration if we are on regular youtube!
+            let jsCode = "(function(){function pt(str){if(!str)return 0;var p=str.split(':');var s=0,m=1;while(p.length>0){s+=m*parseInt(p.pop(),10);m*=60;}return s;}var host=window.location.hostname;var active=null;var cTitle='',cArtist='',cImg='NO_IMAGE',cCurr=-1,cDur=-1,loopState='NONE',playlist='';if(host.includes('music.youtube.com')){active=document.querySelector('.html5-main-video');var tEl=document.querySelector('ytmusic-player-bar .title');var aEl=document.querySelector('ytmusic-player-bar .byline');if(tEl)cTitle=tEl.innerText;if(aEl)cArtist=aEl.innerText.split('•')[0].trim();var time=document.querySelector('.time-info.ytmusic-player-bar');if(time){var p=time.innerText.split('/');if(p.length===2){cCurr=pt(p[0]);cDur=pt(p[1]);}}try{var qItems=document.querySelectorAll('ytmusic-player-queue-item');var pArr=[];var start=0;for(var i=0;i<qItems.length;i++){if(qItems[i].hasAttribute('selected')||qItems[i].getAttribute('play-button-state')==='playing'){start=i;break;}}for(var j=start;j<qItems.length;j++){var tN=qItems[j].querySelector('.song-title, .title, yt-formatted-string[title]');var aN=qItems[j].querySelector('.byline');var iN=qItems[j].querySelector('img');var tText=tN?(tN.innerText||tN.getAttribute('title')||'').trim():'';var aText=aN?aN.innerText.replace(/\\n/g,'').trim():'Unknown';var iSrc=iN?(iN.src||''):'NO_IMAGE';if(tText){pArr.push(tText+'~~~'+aText+'~~~'+iSrc);}if(pArr.length>=15)break;}playlist=pArr.join('&&&');}catch(e){}}else if(host.includes('open.spotify.com')){active=document.querySelector('video, audio');var tEl=document.querySelector('[data-testid=context-item-info-title]');var aEl=document.querySelector('[data-testid=context-item-info-artist]');if(tEl)cTitle=tEl.innerText;if(aEl)cArtist=aEl.innerText;var cEl=document.querySelector('[data-testid=playback-position]');var dEl=document.querySelector('[data-testid=playback-duration]');if(cEl)cCurr=pt(cEl.innerText);if(dEl)cDur=pt(dEl.innerText);}else if(host.includes('youtube.com')){active=document.querySelector('.html5-main-video');loopState=(active&&(active.loop||active.hasAttribute('loop')))?'ALL':'NONE';if(active&&active.duration>0.05){cDur=active.duration-0.05;}var attrTitle=document.querySelector('.ytVideoAttributeViewModelTitle')||document.querySelector('#title h1 yt-formatted-string');var attrArtist=document.querySelector('.ytVideoAttributeViewModelSubtitle')||document.querySelector('#owner-name a');if(attrTitle)cTitle=attrTitle.innerText.trim();if(attrArtist)cArtist=attrArtist.innerText.trim();try{var ytdItems=document.querySelectorAll('ytd-playlist-panel-video-renderer');var ytdArr=[];var ytdStart=0;for(var k=0;k<ytdItems.length;k++){if(ytdItems[k].hasAttribute('selected')){ytdStart=k;break;}}for(var l=ytdStart;l<ytdItems.length;l++){var yT=ytdItems[l].querySelector('#video-title');var yA=ytdItems[l].querySelector('#byline');var yI=ytdItems[l].querySelector('img');var iSrc=yI?(yI.src||''):'NO_IMAGE';if(yT&&yT.innerText.trim()){ytdArr.push(yT.innerText.trim()+'~~~'+(yA?yA.innerText.trim():'Unknown')+'~~~'+iSrc);}if(ytdArr.length>=15)break;}playlist=ytdArr.join('&&&');}catch(e){}}else{var media=document.querySelectorAll('video, audio');for(var i=0;i<media.length;i++){if(!media[i].paused&&media[i].currentTime>0){active=media[i];break;}}if(!active && media.length > 0) active = media[0];}var isPlaying=(active&&!active.paused&&!active.ended&&active.currentTime>0);if(!isPlaying&&navigator.mediaSession&&navigator.mediaSession.playbackState==='playing')isPlaying=true;if(isPlaying){var title=cTitle||document.title;var artist=cArtist||'EMPTY_ARTIST';var curr=cCurr!==-1?cCurr:(active?active.currentTime:0);var dur=cDur!==-1&&isNaN(cDur)===false&&cDur!==0?cDur:(active?(active.duration||1):1);if(navigator.mediaSession&&navigator.mediaSession.metadata){var m=navigator.mediaSession.metadata;if(!cTitle&&m.title)title=m.title;if(artist==='EMPTY_ARTIST'&&m.artist)artist=m.artist;if(cImg==='NO_IMAGE'&&m.artwork&&m.artwork.length>0)cImg=m.artwork[m.artwork.length-1].src;}var hostFlag=(host.includes('youtube.com')&&!host.includes('music.youtube.com'))?'YOUTUBE_STANDARD':'OTHER';return title+'|||'+artist+'|||'+cImg+'|||'+loopState+'|||'+curr+'|||'+dur+'@@@'+hostFlag+'|||'+playlist;}return 'NOT_PLAYING';})();"
             
             self.runFullAppleScriptLoop(jsCode: jsCode) { result in
                 if let res = result {
@@ -105,10 +103,9 @@ extension NowPlayingManager {
             }
         }
     }
-
+    
     func runFullAppleScriptLoop(jsCode: String, completion: @escaping (String?) -> Void) {
         let runningApps = NSWorkspace.shared.runningApplications
-        // ⚡️ FIX: Only loop through allowed browsers
         let browsers = runningApps.filter { self.allowedBrowsers.contains($0.localizedName ?? "") }
         
         for app in browsers {
@@ -123,7 +120,7 @@ extension NowPlayingManager {
         }
         completion(nil)
     }
-
+    
     private func parseAndApplyResult(result: String, browser: String) {
         DispatchQueue.main.async {
             let components = result.components(separatedBy: "|||")
@@ -135,7 +132,11 @@ extension NowPlayingManager {
             let imgString = components[2]
             let loopString = components[3]
             let currString = components[4]
-            let durString = components[5]
+            
+            // ⚡️ FIX: We extract the secret host flag from the duration string!
+            let durParts = components[5].components(separatedBy: "@@@")
+            let durString = durParts[0]
+            let isStandardYT = durParts.count > 1 && durParts[1] == "YOUTUBE_STANDARD"
             
             var playlistString = ""
             if components.count >= 7 { playlistString = components[6] }
@@ -176,10 +177,24 @@ extension NowPlayingManager {
             }
             self.playlist = uniqueTracks
             
+            // Set the duration early so we can use it in our math check
+            self.duration = Double(durString) ?? 1.0
+            
             let identifier = rawTitle + rawArtist
             if self.internalSongIdentifier != identifier {
                 self.internalSongIdentifier = identifier
-                self.fetchLyricsEngine(title: rawTitle, artist: rawArtist)
+                
+                // ⚡️ THE KILL SWITCH: If it's Standard YT and > 6 minutes (360s), kill the lyrics engine!
+                if isStandardYT && self.duration > 360.0 {
+                    DispatchQueue.main.async {
+                        self.lyrics = []
+                        self.activeLyricIndex = 0
+                        self.isSearchingLyrics = false
+                    }
+                } else {
+                    self.fetchLyricsEngine(title: rawTitle, artist: rawArtist)
+                }
+                
                 self.currentTime = 0.0
                 
                 if browser == "AppleMusicNative" {
@@ -190,7 +205,6 @@ extension NowPlayingManager {
             let displayString = rawArtist.isEmpty ? rawTitle : "\(rawTitle) - \(rawArtist)"
             if self.currentSong != displayString { self.currentSong = displayString }
             
-            // ⚡️ FIX: Only update normal artwork if it's not Apple Music (because Apple Music fetches it asynchronously)
             if browser != "AppleMusicNative" {
                 if imgString != "NO_IMAGE", let url = URL(string: imgString) {
                     if self.artworkURL != url { self.artworkURL = url; self.fetchDominantColor(from: url) }
@@ -202,7 +216,6 @@ extension NowPlayingManager {
             
             let newTime = Double(currString) ?? 0.0
             if abs(self.currentTime - newTime) > 1.5 { self.currentTime = newTime }
-            self.duration = Double(durString) ?? 1.0
             
             if Date().timeIntervalSince(self.lastLoopToggleTime) > 2.0 {
                 if loopString == "ALL" { self.loopMode = 1 } else if loopString == "ONE" { self.loopMode = 2 } else { self.loopMode = 0 }
@@ -227,8 +240,6 @@ extension NowPlayingManager {
                 return
             }
             
-            // The API returns a 100x100 image by default.
-            // We use this string replacement trick to force Apple's servers to give us a crisp 600x600 image!
             let highResUrlString = artwork100.replacingOccurrences(of: "100x100bb", with: "600x600bb")
             
             if let highResUrl = URL(string: highResUrlString) {
