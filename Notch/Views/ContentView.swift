@@ -14,6 +14,10 @@ struct ContentView: View {
     
     // ⚡️ USER SETTINGS
     @AppStorage("collapsedWidth") var storedCollapsedWidth: Double = 300.0
+    @AppStorage("showSettingsButton") var showSettingsButton = true
+    
+    @AppStorage("enableHoverToExpand") var enableHoverToExpand = true
+    @AppStorage("hoverDelay") var hoverDelay: Double = 0.0
     
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
@@ -44,6 +48,8 @@ struct ContentView: View {
     @State private var lastSwipeTime: Date = Date()
     @State private var localEventMonitor: Any?
     @State private var globalEventMonitor: Any?
+    
+    @State private var hoverTask: Task<Void, Never>? = nil
     
     // ⚡️ RACING BORDER GLOW STATE
     @State private var glowRotation: Double = 0.0
@@ -81,13 +87,28 @@ struct ContentView: View {
                 backgroundLayer(currentWidth: currentWidth, currentHeight: currentHeight)
                 collapsedLayer(hasMedia: hasMedia, currentCollapsedHeight: currentCollapsedHeight)
                 expandedLayer(expandedHeight: expandedHeight)
+                
+                if isExpanded && showSettingsButton {
+                    HStack {
+                        Spacer()
+                        Button(action: { SettingsWindowManager.shared.showSettings() }) {
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 13))
+                                .foregroundColor(.white.opacity(0.3))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: 24, height: 24)
+                        .help("Open Settings")
+                    }
+                    .padding(.trailing, 20)
+                    .padding(.top, 10)
+                    .zIndex(4)
+                    .transition(.opacity)
+                }
             }
-            // ---------------------------------------------------------
-            // ⚡️ THE FIX: Force the entire container bounds to shrink dynamically!
-            // This prevents the invisible ZStack from holding the clipShape open.
-            // ---------------------------------------------------------
             .frame(width: currentWidth, height: currentHeight, alignment: .top)
-            .contentShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
+            .contentShape(Rectangle())
             .contextMenu {
                 Button(action: { SettingsWindowManager.shared.showSettings() }) {
                     Text("Settings")
@@ -164,16 +185,30 @@ struct ContentView: View {
                 let targetRect = isExpanded ? expandedRect : collapsedRect
                 
                 if targetRect.contains(location) {
-                    if !isExpanded {
-                        isExpanded = true
-                        isShowingBanner = false
-                        isShowingLyricBanner = false
-                        bannerTask?.cancel()
+                    if !isExpanded && enableHoverToExpand {
+                        if hoverTask == nil {
+                            hoverTask = Task {
+                                if hoverDelay > 0 {
+                                    try? await Task.sleep(nanoseconds: UInt64(hoverDelay * 1_000_000_000))
+                                }
+                                guard !Task.isCancelled else { return }
+                                await MainActor.run {
+                                    isExpanded = true
+                                    isShowingBanner = false
+                                    isShowingLyricBanner = false
+                                    bannerTask?.cancel()
+                                }
+                            }
+                        }
                     }
                 } else {
+                    hoverTask?.cancel()
+                    hoverTask = nil
                     if isExpanded { isExpanded = false }
                 }
             case .ended:
+                hoverTask?.cancel()
+                hoverTask = nil
                 if isExpanded { isExpanded = false }
             }
         }
@@ -315,6 +350,15 @@ struct ContentView: View {
         .frame(width: collapsedWidth, height: currentCollapsedHeight)
         .opacity(isExpanded ? 0 : 1)
         .scaleEffect(isExpanded ? 0.95 : 1.0, anchor: .top)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !isExpanded {
+                isExpanded = true
+                isShowingBanner = false
+                isShowingLyricBanner = false
+                bannerTask?.cancel()
+            }
+        }
         .allowsHitTesting(!isExpanded)
         .zIndex(2)
     }

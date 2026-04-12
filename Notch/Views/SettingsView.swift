@@ -25,7 +25,13 @@ struct SettingsView: View {
     @State private var showSidebar = true
     
     // ⚡️ GENERAL
-    @AppStorage("collapsedWidth") var collapsedWidth: Double = 300.0 // NEW!
+    @AppStorage("collapsedWidth") var collapsedWidth: Double = 300.0
+    @AppStorage("showSettingsButton") var showSettingsButton = true
+    
+    // ⚡️ HOVER SETTINGS
+    @AppStorage("enableHoverToExpand") var enableHoverToExpand = true
+    @AppStorage("hoverDelay") var hoverDelay: Double = 0.0
+    
     @AppStorage("launchAtLogin") var launchAtLogin = false
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
@@ -63,11 +69,29 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             HStack(spacing: 0) {
+                
                 if showSidebar {
-                    List(SettingsTab.allCases, selection: $selectedTab) { tab in
-                        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                    VStack(spacing: 0) {
+                        List(SettingsTab.allCases, selection: $selectedTab) { tab in
+                            Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                        }
+                        .listStyle(.sidebar)
+                        
+                        Divider()
+                        
+                        Button(action: { NSApplication.shared.terminate(nil) }) {
+                            HStack {
+                                Image(systemName: "power")
+                                Text("Quit WaveNotch")
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.red)
                     }
-                    .listStyle(.sidebar)
                     .frame(width: 180)
                     .transition(.move(edge: .leading))
                     
@@ -129,7 +153,6 @@ struct SettingsView: View {
     // ---------------------------------------------------------
     private var generalContent: some View {
         Group {
-            // ⚡️ NEW: The collapsed width slider
             Section {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Collapsed Notch Width: \(Int(collapsedWidth))px")
@@ -140,10 +163,40 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
+                
+                Toggle("Show Settings Gear in Expanded View", isOn: $showSettingsButton)
+                
             } header: {
                 Text("Appearance")
             } footer: {
-                Text("Sets how wide the notch is when it is closed.")
+                Text("Customize the visual layout of the notch.")
+            }
+            
+            Section {
+                Toggle("Expand Automatically on Hover", isOn: $enableHoverToExpand)
+                
+                if enableHoverToExpand {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Hover Delay: \(hoverDelay, specifier: "%.1f") sec")
+                        HStack(spacing: 8) {
+                            Text("0.0s").font(.caption).foregroundColor(.secondary).frame(width: 32, alignment: .leading)
+                            Slider(value: $hoverDelay, in: 0.0...3.0, step: 0.1).labelsHidden()
+                            Text("3.0s").font(.caption).foregroundColor(.secondary).frame(width: 32, alignment: .trailing)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                
+                Toggle("Launch at Login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { newValue in toggleLaunchAtLogin(enabled: newValue) }
+                
+                Toggle("Show Cinematic Glow on Song Change", isOn: $showGlowEffect)
+                
+                Toggle("Invert Swipe Direction", isOn: $invertSwipeDirection)
+            } header: {
+                Text("App Behavior")
+            } footer: {
+                Text(enableHoverToExpand ? "If the delay is set above 0s, the notch will wait before expanding." : "When hover is disabled, you must click the collapsed notch to expand it.")
             }
             
             Section {
@@ -167,19 +220,6 @@ struct SettingsView: View {
                 Text("System Permissions")
             } footer: {
                 Text("Required to read track data and enable trackpad swipe gestures.")
-            }
-            
-            Section {
-                Toggle("Launch at Login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { newValue in toggleLaunchAtLogin(enabled: newValue) }
-                
-                Toggle("Show Cinematic Glow on Song Change", isOn: $showGlowEffect)
-                
-                Toggle("Invert Swipe Direction", isOn: $invertSwipeDirection)
-            } header: {
-                Text("App Behavior")
-            } footer: {
-                Text("Changes the direction for skipping tracks with your trackpad or mouse.")
             }
         }
     }
