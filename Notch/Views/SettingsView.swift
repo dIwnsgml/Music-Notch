@@ -27,6 +27,8 @@ struct SettingsView: View {
     // ⚡️ NEW: The manual lyrics sync offset
     @AppStorage("lyricOffset") var lyricOffset: Double = 0.0
     
+    @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
+    
     @State private var hasAccessibilityAccess = false
     
     // Integrations
@@ -111,6 +113,12 @@ struct SettingsView: View {
                             Text(String(format: "%.1f sec", bannerDuration)).frame(width: 50, alignment: .trailing).monospacedDigit()
                         }
                     }
+                    
+                    Divider()
+                    
+                    Toggle("Invert Swipe Direction", isOn: $invertSwipeDirection)
+                    Text("Reverses the direction for skipping to the next or previous track.")
+                        .font(.caption).foregroundColor(.secondary)
                     
                     Divider()
                     

@@ -22,6 +22,8 @@ struct ContentView: View {
     // ⚡️ NEW: Read the required lyric lines
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     
+    @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
+    
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
     @AppStorage("enableChrome") var enableChrome = false
@@ -81,13 +83,20 @@ struct ContentView: View {
                 expandedLayer(expandedHeight: expandedHeight)
             }
             .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
-            .animation(.spring(response: 0.35, dampingFraction: 0.72, blendDuration: 0.1), value: isExpanded)
+            
+            // ---------------------------------------------------------
+            // ⚡️ THE FIX: Dynamic Asymmetric Spring Animations!
+            // ---------------------------------------------------------
+            .animation(
+                isExpanded
+                ? .spring(response: 0.35, dampingFraction: 0.72, blendDuration: 0.1) // Bouncy expand
+                : .spring(response: 0.35, dampingFraction: 1.0, blendDuration: 0.1), // Rigid, perfectly flat collapse
+                value: isExpanded
+            )
             .animation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0.1), value: isShowingBanner || isShowingLyricBanner)
             
             Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .contentShape(Rectangle())
         
         // ⚡️ EVENT MONITORS
         .onAppear {
@@ -126,11 +135,13 @@ struct ContentView: View {
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
                     guard hasMedia else { return }
-                    // ⚡️ REVERTED to Standard Coordinates
-                    if value.translation.width < -30 {
-                        executeSkip(forward: true)
-                    } else if value.translation.width > 30 {
-                        executeSkip(forward: false)
+                    
+                    if value.translation.width > 30 {
+                        // Drag Right
+                        executeSkip(forward: invertSwipeDirection)
+                    } else if value.translation.width < -30 {
+                        // Drag Left
+                        executeSkip(forward: !invertSwipeDirection)
                     }
                 }
         )
@@ -397,12 +408,12 @@ struct ContentView: View {
         guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }
         guard Date().timeIntervalSince(lastSwipeTime) > 0.6 else { return }
         
-        // ⚡️ REVERTED to Standard macOS Behavior
+        // ⚡️ RESTORED: Your original default behavior, properly wired to the Settings toggle!
         if event.scrollingDeltaX > 15 {
-            executeSkip(forward: false) // Swipe Right = Previous
+            executeSkip(forward: invertSwipeDirection)
             lastSwipeTime = Date()
         } else if event.scrollingDeltaX < -15 {
-            executeSkip(forward: true) // Swipe Left = Next
+            executeSkip(forward: !invertSwipeDirection)
             lastSwipeTime = Date()
         }
     }
