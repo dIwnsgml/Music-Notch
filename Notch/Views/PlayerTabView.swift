@@ -5,15 +5,15 @@ struct PlayerTabView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var expandedWidth: CGFloat
     
-    // ⚡️ THE FIX: This is now a Binding so the buttons can push the direction back to ContentView!
     @Binding var skipDirection: Int
-    
-    // ⚡️ NEW: Receives the exact opacity curve from the racing border animation!
     @Binding var glowOpacity: Double
     
     @AppStorage("showLyrics") var showLyrics = true
+    @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     
-    // ⚡️ NEW: Read the integration settings to check if the user has completed setup!
+    @AppStorage("lyricDimming") var lyricDimming: Double = 0.3
+    @AppStorage("lyricBlurAmount") var lyricBlurAmount: Double = 0.4
+    
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
     @AppStorage("enableChrome") var enableChrome = false
@@ -28,7 +28,6 @@ struct PlayerTabView: View {
     var body: some View {
         let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
         
-        // ⚡️ SETUP SCREEN (If no apps are enabled in settings)
         if !hasAnyAccess {
             VStack(spacing: 8) {
                 Image(systemName: "puzzlepiece.extension")
@@ -64,9 +63,6 @@ struct PlayerTabView: View {
             .padding(.bottom, 16)
             
         } else {
-            // ---------------------------------------------------------
-            // 🎵 ORIGINAL PLAYER UI (Runs if access IS granted)
-            // ---------------------------------------------------------
             let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
             
             VStack(spacing: 0) {
@@ -78,10 +74,7 @@ struct PlayerTabView: View {
                             } placeholder: { Color.gray.opacity(0.3) }
                                 .frame(width: 40, height: 40)
                                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            
-                            // ⚡️ The expanded artwork physically glows to match the Notch border!
                                 .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 10, x: 0, y: 0)
-                            
                                 .id(nowPlaying.currentSong)
                                 .transition(.dynamicPanRotate(direction: skipDirection))
                             
@@ -105,7 +98,6 @@ struct PlayerTabView: View {
                             alignment: .leading
                         )
                         .foregroundColor(.white)
-                        // ⚡️ THE FIX: Forces the marquee animation to restart when the song changes!
                         .id(nowPlaying.currentSong)
                     }
                     .padding(.leading, 6)
@@ -115,7 +107,7 @@ struct PlayerTabView: View {
                     if hasMedia {
                         HStack(spacing: 4) {
                             Button(action: {
-                                skipDirection = -1 // ⚡️ Forces backwards animation
+                                skipDirection = -1
                                 nowPlaying.skipBackward()
                             }) {
                                 Image(systemName: "backward.fill")
@@ -128,7 +120,7 @@ struct PlayerTabView: View {
                             }.buttonStyle(.plain)
                             
                             Button(action: {
-                                skipDirection = 1 // ⚡️ Forces forwards animation
+                                skipDirection = 1
                                 nowPlaying.skipForward()
                             }) {
                                 Image(systemName: "forward.fill")
@@ -181,31 +173,51 @@ struct PlayerTabView: View {
                 if showLyrics && hasMedia && !nowPlaying.lyrics.isEmpty {
                     GeometryReader { geo in
                         let itemHeight: CGFloat = 26
+                        let exactFrameHeight: CGFloat = CGFloat(visibleLyricLines) * itemHeight
                         let activeOffset = CGFloat(nowPlaying.activeLyricIndex) * itemHeight
-                        let centerAdjustment = (geo.size.height - itemHeight) / 2.0
+                        let centerAdjustment = (exactFrameHeight - itemHeight) / 2.0
                         
                         VStack(spacing: 0) {
                             ForEach(Array(nowPlaying.lyrics.enumerated()), id: \.offset) { index, lyric in
                                 let distance = abs(index - nowPlaying.activeLyricIndex)
+                                
+                                // ⚡️ THE FIX: Smart Multiplier Math!
+                                // The further away a line is, the more it multiplies the user's setting.
+                                let lyricOpacity: Double = distance == 0 ? 1.0 : max(0.0, 1.0 - (Double(distance) * lyricDimming))
+                                let lyricScale: CGFloat = distance == 0 ? 1.0 : 1.0 - (CGFloat(distance) * 0.05)
+                                let lyricBlur: CGFloat = distance == 0 ? 0.0 : CGFloat(distance) * lyricBlurAmount
+                                
                                 Text(lyric.text)
                                     .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(distance == 0 ? .white : (distance == 1 ? .white.opacity(0.4) : .clear))
+                                    .foregroundColor(.white.opacity(lyricOpacity))
                                     .multilineTextAlignment(.center)
                                     .frame(maxWidth: expandedWidth - 48, alignment: .center)
                                     .frame(height: itemHeight)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
-                                    .scaleEffect(distance == 0 ? 1.0 : 0.85)
-                                    .blur(radius: distance == 0 ? 0 : 0.3)
+                                    .scaleEffect(lyricScale)
+                                    .blur(radius: lyricBlur)
                             }
                         }
                         .frame(width: geo.size.width, alignment: .center)
                         .offset(y: -activeOffset + centerAdjustment)
                         .animation(.spring(response: 0.6, dampingFraction: 0.8), value: nowPlaying.activeLyricIndex)
                     }
-                    .frame(height: 52)
+                    .frame(height: CGFloat(visibleLyricLines) * 26.0)
                     .clipped()
-                    .mask(LinearGradient(gradient: Gradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.15), .init(color: .black, location: 0.85), .init(color: .clear, location: 1)]), startPoint: .top, endPoint: .bottom))
+                    // ⚡️ THE FIX: Pushed the black gradient stops to 0.05 and 0.95 so it barely fades the edges
+                    .mask(
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: visibleLyricLines == 1 ? .black : .clear, location: 0),
+                                .init(color: .black, location: visibleLyricLines == 1 ? 0 : 0.05),
+                                .init(color: .black, location: visibleLyricLines == 1 ? 1 : 0.95),
+                                .init(color: visibleLyricLines == 1 ? .black : .clear, location: 1)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
                     .padding(.top, 12)
                 }
             }

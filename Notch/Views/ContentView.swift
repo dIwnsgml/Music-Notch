@@ -19,8 +19,8 @@ struct ContentView: View {
     @AppStorage("showBannerLyrics") var showBannerLyrics = true
     @AppStorage("showGlowEffect") var showGlowEffect = true
     
-    // ⚡️ NEW: Toggle to let users decide which way swiping skips
-    @AppStorage("invertSwipeDirection") var invertSwipeDirection = false
+    // ⚡️ NEW: Read the required lyric lines
+    @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
@@ -63,7 +63,12 @@ struct ContentView: View {
     
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
-        let playerHeight: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? 180 : 128
+        
+        // ⚡️ THE FIX: Dynamically calculate the height of the Player Tab based on the user's setting!
+        let basePlayerHeight: CGFloat = 128
+        let dynamicLyricsHeight: CGFloat = CGFloat(visibleLyricLines) * 26.0
+        let playerHeight: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (basePlayerHeight + dynamicLyricsHeight + 12) : basePlayerHeight
+        
         let expandedHeight: CGFloat = currentTab == .playlist ? 216 : playerHeight
         let currentWidth: CGFloat = isExpanded ? expandedWidth : collapsedWidth
         let currentCollapsedHeight: CGFloat = (isShowingBanner || isShowingLyricBanner) ? (notchHeight + bannerHeightAddon) : notchHeight
@@ -121,11 +126,11 @@ struct ContentView: View {
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
                     guard hasMedia else { return }
-                    // ⚡️ THE FIX: Check the swipe distance and evaluate against the user's setting!
-                    if value.translation.width > 30 { // Swiped Right
-                        executeSkip(forward: invertSwipeDirection ? true : false)
-                    } else if value.translation.width < -30 { // Swiped Left
-                        executeSkip(forward: invertSwipeDirection ? false : true)
+                    // ⚡️ REVERTED to Standard Coordinates
+                    if value.translation.width < -30 {
+                        executeSkip(forward: true)
+                    } else if value.translation.width > 30 {
+                        executeSkip(forward: false)
                     }
                 }
         )
@@ -152,7 +157,12 @@ struct ContentView: View {
         }
         
         // ⚡️ STATE OBSERVERS
-        .onChange(of: isExpanded) { _, expanded in if !expanded { updateLyricBanner() } }
+        .onChange(of: isExpanded) { _, expanded in
+            if !expanded {
+                updateLyricBanner()
+                currentTab = .player
+            }
+        }
         .onChange(of: nowPlaying.activeLyricIndex) { _, _ in updateLyricBanner() }
         .onChange(of: showBannerLyrics) { _, _ in updateLyricBanner() }
         .onReceive(lyricTimer) { _ in
@@ -295,6 +305,19 @@ struct ContentView: View {
     private func expandedLayer(expandedHeight: CGFloat) -> some View {
         VStack(spacing: 8) {
             HStack(spacing: 0) {
+                Button(action: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        currentTab = currentTab == .player ? .playlist : .player
+                    }
+                }) {
+                    Image(systemName: currentTab == .player ? "list.bullet" : "music.note")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white.opacity(0.6))
+                        .padding(8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                
                 Spacer()
                 
                 if nowPlaying.isSearchingLyrics && showLyrics {
@@ -325,6 +348,9 @@ struct ContentView: View {
             if currentTab == .player {
                 PlayerTabView(nowPlaying: nowPlaying, expandedWidth: expandedWidth, skipDirection: $skipDirection, glowOpacity: $glowOpacity)
                     .padding(.bottom, 16)
+            } else {
+                PlaylistTabView(nowPlaying: nowPlaying)
+                    .padding(.bottom, 16)
             }
         }
         .padding(.top, 6)
@@ -339,8 +365,6 @@ struct ContentView: View {
     // ---------------------------------------------------------
     // ⚡️ HELPER METHODS
     // ---------------------------------------------------------
-    
-    // ⚡️ NEW: Centralized Skip Logic so we don't repeat the code everywhere!
     private func executeSkip(forward: Bool) {
         skipDirection = forward ? 1 : -1
         simulateMediaKey(keyCode: forward ? 20 : 19)
@@ -373,12 +397,12 @@ struct ContentView: View {
         guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }
         guard Date().timeIntervalSince(lastSwipeTime) > 0.6 else { return }
         
-        // ⚡️ THE FIX: Trackpad Natural Scrolling mapped to intuitive defaults
-        if event.scrollingDeltaX > 15 { // Swipe Left (Finger moving left)
-            executeSkip(forward: invertSwipeDirection ? false : true) // Default: Next
+        // ⚡️ REVERTED to Standard macOS Behavior
+        if event.scrollingDeltaX > 15 {
+            executeSkip(forward: false) // Swipe Right = Previous
             lastSwipeTime = Date()
-        } else if event.scrollingDeltaX < -15 { // Swipe Right (Finger moving right)
-            executeSkip(forward: invertSwipeDirection ? true : false) // Default: Prev
+        } else if event.scrollingDeltaX < -15 {
+            executeSkip(forward: true) // Swipe Left = Next
             lastSwipeTime = Date()
         }
     }

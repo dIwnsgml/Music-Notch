@@ -18,7 +18,14 @@ struct SettingsView: View {
     @AppStorage("showBannerLyrics") var showBannerLyrics = true
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("launchAtLogin") var launchAtLogin = false
-    @AppStorage("invertSwipeDirection") var invertSwipeDirection = false
+    
+    // Lyrics Customization
+    @AppStorage("visibleLyricLines") var visibleLyricLines = 3
+    @AppStorage("lyricDimming") var lyricDimming: Double = 0.3
+    @AppStorage("lyricBlurAmount") var lyricBlurAmount: Double = 0.4
+    
+    // ⚡️ NEW: The manual lyrics sync offset
+    @AppStorage("lyricOffset") var lyricOffset: Double = 0.0
     
     @State private var hasAccessibilityAccess = false
     
@@ -51,12 +58,10 @@ struct SettingsView: View {
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 15) {
                     
-                    // ⚡️ MOVED TO TOP: System Permissions
                     Text("System Permissions").font(.headline).padding(.bottom, 2)
                     HStack {
                         VStack(alignment: .leading) {
                             Text("Accessibility Access").fontWeight(.medium)
-                            // ⚡️ NEW: Clearer, more user-friendly explanation!
                             Text("Required to control media playback and enable trackpad swipe gestures.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -109,8 +114,62 @@ struct SettingsView: View {
                     
                     Divider()
                     
-                    Toggle("Enable Live Lyrics", isOn: $showLyrics)
-                    Text("Displays synced lyrics inside the expanded player when available.").font(.caption).foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Enable Live Lyrics", isOn: $showLyrics)
+                        Text("Displays synced lyrics inside the expanded player when available.").font(.caption).foregroundColor(.secondary)
+                        
+                        if showLyrics {
+                            HStack {
+                                Text("Visible Lines:")
+                                    .font(.subheadline)
+                                Picker("", selection: $visibleLyricLines) {
+                                    Text("1 Line").tag(1)
+                                    Text("3 Lines").tag(3)
+                                    Text("5 Lines").tag(5)
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 180)
+                            }
+                            .padding(.top, 4)
+                            
+                            if visibleLyricLines > 1 {
+                                Divider().padding(.vertical, 4)
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Background Lyric Dimming")
+                                        .font(.subheadline)
+                                    Slider(value: $lyricDimming, in: 0.1...0.8, step: 0.1)
+                                    
+                                    Text("Background Lyric Blur")
+                                        .font(.subheadline)
+                                        .padding(.top, 4)
+                                    Slider(value: $lyricBlurAmount, in: 0.0...2.0, step: 0.2)
+                                }
+                                .padding(.horizontal, 4)
+                            }
+                            
+                            // ⚡️ NEW: The Lyrics Sync Offset Slider
+                            Divider().padding(.vertical, 4)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Lyrics Sync Offset")
+                                    .font(.subheadline)
+                                HStack {
+                                    Text("-8s").font(.caption2).foregroundColor(.secondary)
+                                    Slider(value: $lyricOffset, in: -8.0...8.0, step: 0.5)
+                                    Text("+8s").font(.caption2).foregroundColor(.secondary)
+                                    
+                                    Text(String(format: "%+.1f s", lyricOffset))
+                                        .frame(width: 50, alignment: .trailing)
+                                        .monospacedDigit()
+                                }
+                                Text("Slide left to delay lyrics, right to make them appear earlier.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 4)
+                        }
+                    }
                     
                     Divider()
                     
@@ -120,12 +179,6 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                    
-                    Divider()
-                    
-                    Toggle("Invert Trackpad Swipe Direction", isOn: $invertSwipeDirection)
-                    Text("Reverses the direction for skipping to the next or previous track.")
-                        .font(.caption).foregroundColor(.secondary)
                     
                 }
                 .padding(20)
@@ -261,7 +314,6 @@ struct SettingsView: View {
     
     func testJavaScriptAccess(for browser: String) -> Bool {
         let scriptSource: String
-        
         if browser == "Safari" {
             scriptSource = """
             tell application "Safari"
@@ -285,7 +337,6 @@ struct SettingsView: View {
             end tell
             """
         }
-        
         var error: NSDictionary?
         if let script = NSAppleScript(source: scriptSource) {
             let result = script.executeAndReturnError(&error).stringValue

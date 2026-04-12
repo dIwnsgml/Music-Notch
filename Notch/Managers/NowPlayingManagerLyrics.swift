@@ -278,8 +278,14 @@ extension NowPlayingManager {
     func updateActiveLyric() {
         guard !lyrics.isEmpty else { return }
         
-        // ⚡️ FIX 2: Dropped offset from 0.3 to 0.05. It will now track exactly with the audio rather than jumping ahead!
-        if let idx = lyrics.lastIndex(where: { $0.time <= self.currentTime + 0.05 }), self.activeLyricIndex != idx {
+        // ⚡️ 1. Read the manual offset the user selected in Settings
+        let userOffset = UserDefaults.standard.double(forKey: "lyricOffset")
+        
+        // ⚡️ 2. Combine your precise 0.05s buffer with the user's custom offset
+        let adjustedTime = self.currentTime + 0.05 + userOffset
+        
+        // ⚡️ 3. Evaluate the lyrics array using the new time!
+        if let idx = lyrics.lastIndex(where: { $0.time <= adjustedTime }), self.activeLyricIndex != idx {
             self.activeLyricIndex = idx
         }
     }
