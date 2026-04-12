@@ -19,9 +19,7 @@ struct ContentView: View {
     @AppStorage("showBannerLyrics") var showBannerLyrics = true
     @AppStorage("showGlowEffect") var showGlowEffect = true
     
-    // ⚡️ NEW: Read the required lyric lines
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
-    
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
     
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
@@ -61,13 +59,12 @@ struct ContentView: View {
     let notchHeight: CGFloat = 32
     let bannerHeightAddon: CGFloat = 24
     let collapsedWidth: CGFloat = 300
-    let expandedWidth: CGFloat = 380
+    let expandedWidth: CGFloat = 400
     
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
         
-        // ⚡️ THE FIX: Dynamically calculate the height of the Player Tab based on the user's setting!
-        let basePlayerHeight: CGFloat = 128
+        let basePlayerHeight: CGFloat = 132
         let dynamicLyricsHeight: CGFloat = CGFloat(visibleLyricLines) * 26.0
         let playerHeight: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (basePlayerHeight + dynamicLyricsHeight + 12) : basePlayerHeight
         
@@ -82,21 +79,31 @@ struct ContentView: View {
                 collapsedLayer(hasMedia: hasMedia, currentCollapsedHeight: currentCollapsedHeight)
                 expandedLayer(expandedHeight: expandedHeight)
             }
+            .contentShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
+            .contextMenu {
+                // ⚡️ THE FIX: Removed the "..." from Settings
+                Button(action: { SettingsWindowManager.shared.showSettings() }) {
+                    Text("Settings")
+                    Image(systemName: "gearshape")
+                }
+                Button(action: { NSApplication.shared.terminate(nil) }) {
+                    Text("Quit WaveNotch")
+                    Image(systemName: "power")
+                }
+            }
             .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
-            
-            // ---------------------------------------------------------
-            // ⚡️ THE FIX: Dynamic Asymmetric Spring Animations!
-            // ---------------------------------------------------------
             .animation(
                 isExpanded
-                ? .spring(response: 0.35, dampingFraction: 0.72, blendDuration: 0.1) // Bouncy expand
-                : .spring(response: 0.35, dampingFraction: 1.0, blendDuration: 0.1), // Rigid, perfectly flat collapse
+                ? .spring(response: 0.35, dampingFraction: 0.72, blendDuration: 0.1)
+                : .spring(response: 0.35, dampingFraction: 1.0, blendDuration: 0.1),
                 value: isExpanded
             )
             .animation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0.1), value: isShowingBanner || isShowingLyricBanner)
             
             Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .contentShape(Rectangle())
         
         // ⚡️ EVENT MONITORS
         .onAppear {
@@ -135,13 +142,10 @@ struct ContentView: View {
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
                     guard hasMedia else { return }
-                    
                     if value.translation.width > 30 {
-                        // Drag Right
-                        executeSkip(forward: invertSwipeDirection)
+                        executeSkip(forward: invertSwipeDirection ? false : true)
                     } else if value.translation.width < -30 {
-                        // Drag Left
-                        executeSkip(forward: !invertSwipeDirection)
+                        executeSkip(forward: invertSwipeDirection ? true : false)
                     }
                 }
         )
@@ -314,57 +318,16 @@ struct ContentView: View {
     // ---------------------------------------------------------
     @ViewBuilder
     private func expandedLayer(expandedHeight: CGFloat) -> some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 0) {
-                Button(action: {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        currentTab = currentTab == .player ? .playlist : .player
-                    }
-                }) {
-                    Image(systemName: currentTab == .player ? "list.bullet" : "music.note")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.white.opacity(0.6))
-                        .padding(8)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                
-                Spacer()
-                
-                if nowPlaying.isSearchingLyrics && showLyrics {
-                    ProgressView().controlSize(.small).padding(.trailing, 4)
-                }
-                
-                Button(action: { SettingsWindowManager.shared.showSettings() }) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.white.opacity(0.6))
-                        .padding(8)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                
-                Button(action: { NSApplication.shared.terminate(nil) }) {
-                    Image(systemName: "power")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.white.opacity(0.6))
-                        .padding(8)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            .frame(height: notchHeight - 8)
-            .padding(.horizontal, 12)
-            
+        VStack(spacing: 0) {
             if currentTab == .player {
                 PlayerTabView(nowPlaying: nowPlaying, expandedWidth: expandedWidth, skipDirection: $skipDirection, glowOpacity: $glowOpacity)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 14)
             } else {
                 PlaylistTabView(nowPlaying: nowPlaying)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 14)
             }
         }
-        .padding(.top, 6)
+        .padding(.top, notchHeight + 12)
         .frame(width: expandedWidth, height: expandedHeight)
         .opacity(isExpanded ? 1 : 0)
         .scaleEffect(isExpanded ? 1.0 : 0.95, anchor: .top)
@@ -408,7 +371,6 @@ struct ContentView: View {
         guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }
         guard Date().timeIntervalSince(lastSwipeTime) > 0.6 else { return }
         
-        // ⚡️ RESTORED: Your original default behavior, properly wired to the Settings toggle!
         if event.scrollingDeltaX > 15 {
             executeSkip(forward: invertSwipeDirection)
             lastSwipeTime = Date()

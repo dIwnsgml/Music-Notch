@@ -66,7 +66,7 @@ struct PlayerTabView: View {
             let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
             
             VStack(spacing: 0) {
-                HStack {
+                HStack(alignment: .center) {
                     ZStack {
                         if hasMedia && nowPlaying.artworkURL != nil {
                             AsyncImage(url: nowPlaying.artworkURL) { image in
@@ -90,57 +90,103 @@ struct PlayerTabView: View {
                     .animation(.spring(response: 0.5, dampingFraction: 0.72), value: nowPlaying.currentSong)
                     
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting...")
-                            .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
-                        MarqueeText(
-                            text: hasMedia ? nowPlaying.currentSong : "Nothing playing",
-                            font: .system(size: 14, weight: .bold),
-                            alignment: .leading
-                        )
-                        .foregroundColor(.white)
-                        .id(nowPlaying.currentSong)
+                        
+                        HStack(spacing: 6) {
+                            Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting...")
+                                .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
+                            
+                            ZStack {
+                                if nowPlaying.isSearchingLyrics && showLyrics {
+                                    ProgressView().controlSize(.mini)
+                                }
+                            }
+                            .frame(width: 14, height: 14)
+                        }
+                        
+                        if hasMedia {
+                            let songParts = nowPlaying.currentSong.components(separatedBy: " - ")
+                            let titleText = songParts.first ?? nowPlaying.currentSong
+                            let artistText = songParts.count > 1 ? songParts.dropFirst().joined(separator: " - ") : ""
+                            
+                            MarqueeText(
+                                text: titleText,
+                                font: .system(size: 14, weight: .bold),
+                                alignment: .leading
+                            )
+                            .frame(height: 18)
+                            .foregroundColor(.white)
+                            .id("title_" + titleText)
+                            
+                            if !artistText.isEmpty {
+                                MarqueeText(
+                                    text: artistText,
+                                    font: .system(size: 12, weight: .medium),
+                                    alignment: .leading
+                                )
+                                .frame(height: 16)
+                                .foregroundColor(.white.opacity(0.6))
+                                .id("artist_" + artistText)
+                            }
+                        } else {
+                            MarqueeText(
+                                text: "Nothing playing",
+                                font: .system(size: 14, weight: .bold),
+                                alignment: .leading
+                            )
+                            .frame(height: 18)
+                            .foregroundColor(.white)
+                            .id("nothing_playing")
+                        }
                     }
                     .padding(.leading, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                     
-                    Spacer()
-                    
+                    // ⚡️ THE FIX: Buttons restored safely inside a strict firewall frame!
                     if hasMedia {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 6) {
                             Button(action: {
                                 skipDirection = -1
                                 nowPlaying.skipBackward()
                             }) {
-                                Image(systemName: "backward.fill")
-                                    .foregroundColor(.white).padding(8).contentShape(Rectangle())
+                                ZStack { Image(systemName: "backward.fill").font(.system(size: 14)).foregroundColor(.white) }
+                                    .frame(width: 24, height: 24).contentShape(Rectangle())
                             }.buttonStyle(.plain)
                             
                             Button(action: { nowPlaying.togglePlayPause() }) {
-                                Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
-                                    .foregroundColor(.white).padding(8).contentShape(Rectangle())
+                                ZStack { Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 16)).foregroundColor(.white) }
+                                    .frame(width: 24, height: 24).contentShape(Rectangle())
                             }.buttonStyle(.plain)
                             
                             Button(action: {
                                 skipDirection = 1
                                 nowPlaying.skipForward()
                             }) {
-                                Image(systemName: "forward.fill")
-                                    .foregroundColor(.white).padding(8).contentShape(Rectangle())
+                                ZStack { Image(systemName: "forward.fill").font(.system(size: 14)).foregroundColor(.white) }
+                                    .frame(width: 24, height: 24).contentShape(Rectangle())
                             }.buttonStyle(.plain)
                             
                             Button(action: { nowPlaying.toggleLoop() }) {
-                                Image(systemName: nowPlaying.loopMode == 2 ? "repeat.1" : "repeat")
-                                    .foregroundColor(nowPlaying.loopMode > 0 ? .green : .white.opacity(0.6))
-                                    .padding(8).contentShape(Rectangle())
+                                ZStack {
+                                    Image(systemName: nowPlaying.loopMode == 2 ? "repeat.1" : "repeat").font(.system(size: 14))
+                                        .foregroundColor(nowPlaying.loopMode > 0 ? .green : .white.opacity(0.6))
+                                }
+                                .frame(width: 24, height: 24).contentShape(Rectangle())
                             }.buttonStyle(.plain)
                         }
+                        .frame(width: 120, alignment: .trailing)
                     }
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 36)
                 
                 if hasMedia {
                     HStack(spacing: 8) {
                         Text(formatTime(isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
-                            .font(.system(size: 10, design: .monospaced)).foregroundColor(.gray)
+                            .font(.system(size: 10, design: .monospaced))
+                            .monospacedDigit()
+                            .foregroundColor(.gray)
+                            .frame(width: 32, alignment: .leading)
+                        
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
                                 Capsule().fill(nowPlaying.artworkDominantColor.opacity(0.50)).frame(height: 6)
@@ -164,10 +210,13 @@ struct PlayerTabView: View {
                         
                         let remaining = max(0, nowPlaying.duration - (isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
                         Text("-" + formatTime(remaining))
-                            .font(.system(size: 10, design: .monospaced)).foregroundColor(.gray)
+                            .font(.system(size: 10, design: .monospaced))
+                            .monospacedDigit()
+                            .foregroundColor(.gray)
+                            .frame(width: 36, alignment: .trailing)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 12)
+                    .padding(.horizontal, 36)
+                    .padding(.top, 8)
                 }
                 
                 if showLyrics && hasMedia && !nowPlaying.lyrics.isEmpty {
@@ -181,8 +230,6 @@ struct PlayerTabView: View {
                             ForEach(Array(nowPlaying.lyrics.enumerated()), id: \.offset) { index, lyric in
                                 let distance = abs(index - nowPlaying.activeLyricIndex)
                                 
-                                // ⚡️ THE FIX: Smart Multiplier Math!
-                                // The further away a line is, the more it multiplies the user's setting.
                                 let lyricOpacity: Double = distance == 0 ? 1.0 : max(0.0, 1.0 - (Double(distance) * lyricDimming))
                                 let lyricScale: CGFloat = distance == 0 ? 1.0 : 1.0 - (CGFloat(distance) * 0.05)
                                 let lyricBlur: CGFloat = distance == 0 ? 0.0 : CGFloat(distance) * lyricBlurAmount
@@ -191,7 +238,7 @@ struct PlayerTabView: View {
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(.white.opacity(lyricOpacity))
                                     .multilineTextAlignment(.center)
-                                    .frame(maxWidth: expandedWidth - 48, alignment: .center)
+                                    .frame(maxWidth: expandedWidth - 72, alignment: .center)
                                     .frame(height: itemHeight)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
@@ -205,7 +252,6 @@ struct PlayerTabView: View {
                     }
                     .frame(height: CGFloat(visibleLyricLines) * 26.0)
                     .clipped()
-                    // ⚡️ THE FIX: Pushed the black gradient stops to 0.05 and 0.95 so it barely fades the edges
                     .mask(
                         LinearGradient(
                             gradient: Gradient(stops: [
@@ -218,7 +264,7 @@ struct PlayerTabView: View {
                             endPoint: .bottom
                         )
                     )
-                    .padding(.top, 12)
+                    .padding(.top, 8)
                 }
             }
             .onReceive(localTimer) { _ in
