@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import EventKit
+import ApplicationServices // ⚡️ Needed for the Accessibility check
 
 struct PlayerTabView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
@@ -32,10 +33,9 @@ struct PlayerTabView: View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
         let showSplitView = enableCalendar && calendarManager.hasAccess
         
-        // ⚡️ THE FIX: Calibrated padding and panel distribution for the 460px layout!
         let hPad: CGFloat = showSplitView ? 20 : 36
-        let calendarWidth: CGFloat = 170 // 170px for the Calendar
-        let playerPanelWidth: CGFloat = showSplitView ? (expandedWidth - calendarWidth) : expandedWidth // 290px for the Player
+        let calendarWidth: CGFloat = 170
+        let playerPanelWidth: CGFloat = showSplitView ? (expandedWidth - calendarWidth) : expandedWidth
         
         if !hasAnyAccess {
             VStack(spacing: 8) {
@@ -144,7 +144,6 @@ struct PlayerTabView: View {
                         .padding(.leading, 6)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         
-                        // If no calendar, controls stay on the right
                         if hasMedia && !showSplitView {
                             Spacer()
                             mediaControls
@@ -156,7 +155,7 @@ struct PlayerTabView: View {
                     if hasMedia {
                         HStack(spacing: 8) {
                             Text(formatTime(isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
-                                .font(.system(size: 9, design: .monospaced)) // Shrunk slightly for tight fit
+                                .font(.system(size: 9, design: .monospaced))
                                 .monospacedDigit()
                                 .foregroundColor(.gray)
                                 .frame(width: 28, alignment: .leading)
@@ -173,8 +172,15 @@ struct PlayerTabView: View {
                                         .shadow(color: nowPlaying.artworkDominantColor.opacity(0.4), radius: 4, x: 0, y: 0)
                                 }
                                 .gesture(DragGesture(minimumDistance: 0)
-                                    .onChanged { v in isDragging = true; dragProgress = min(max(0, v.location.x / geo.size.width), 0.99) }
+                                    .onChanged { v in
+                                        // ⚡️ THE FIX: Check permissions before allowing drag!
+                                        guard ensurePermissions() else { return }
+                                        isDragging = true
+                                        dragProgress = min(max(0, v.location.x / geo.size.width), 0.99)
+                                    }
                                     .onEnded { v in
+                                        // ⚡️ THE FIX: Check permissions before skipping!
+                                        guard ensurePermissions() else { return }
                                         let dragRatio = min(max(0, v.location.x / geo.size.width), 0.99)
                                         nowPlaying.seek(to: dragRatio)
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDragging = false }
@@ -192,7 +198,6 @@ struct PlayerTabView: View {
                         .padding(.horizontal, hPad)
                         .padding(.top, 8)
                         
-                        // ⚡️ THE SANDWICH: Controls drop beneath the progress bar when split!
                         if showSplitView {
                             HStack {
                                 Spacer()
@@ -204,7 +209,7 @@ struct PlayerTabView: View {
                         }
                     }
                     
-                    // 3. LYRICS (Bottom of the Sandwich)
+                    // 3. LYRICS
                     if showLyrics && hasMedia && !nowPlaying.lyrics.isEmpty {
                         GeometryReader { geo in
                             let itemHeight: CGFloat = 26
@@ -223,7 +228,6 @@ struct PlayerTabView: View {
                                         .font(.system(size: 14, weight: .bold))
                                         .foregroundColor(.white.opacity(lyricOpacity))
                                         .multilineTextAlignment(.center)
-                                    // Limits width to fit inside the 250px panel without clipping the divider
                                         .frame(maxWidth: playerPanelWidth - (hPad * 2), alignment: .center)
                                         .frame(height: itemHeight)
                                         .lineLimit(1)
@@ -256,7 +260,7 @@ struct PlayerTabView: View {
                 .frame(width: playerPanelWidth)
                 
                 // ==========================================
-                // 📅 RIGHT SIDE: THE CALENDAR (150px)
+                // 📅 RIGHT SIDE: THE CALENDAR
                 // ==========================================
                 if showSplitView {
                     Divider()
@@ -299,7 +303,7 @@ struct PlayerTabView: View {
                             }
                         }
                     }
-                    .frame(width: 149) // Fits exactly into the remaining space
+                    .frame(width: calendarWidth - 1)
                     .padding(.top, 4)
                 }
             }
@@ -312,25 +316,46 @@ struct PlayerTabView: View {
         }
     }
     
-    // ⚡️ Abstracted the buttons so they can be placed in either layout spot cleanly
+    // ---------------------------------------------------------
+    // ⚡️ HELPER METHODS
+    // ---------------------------------------------------------
+    
+    // ⚡️ THE FIX: A quick helper to pop the permission request!
+    private func ensurePermissions() -> Bool {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
+    }
+    
     private var mediaControls: some View {
         HStack(spacing: 12) {
-            Button(action: { skipDirection = -1; nowPlaying.skipBackward() }) {
+            Button(action: {
+                guard ensurePermissions() else { return } // ⚡️ Request on click
+                skipDirection = -1; nowPlaying.skipBackward()
+            }) {
                 ZStack { Image(systemName: "backward.fill").font(.system(size: 14)).foregroundColor(.white) }
                     .frame(width: 24, height: 24).contentShape(Rectangle())
             }.buttonStyle(.plain)
             
-            Button(action: { nowPlaying.togglePlayPause() }) {
+            Button(action: {
+                guard ensurePermissions() else { return } // ⚡️ Request on click
+                nowPlaying.togglePlayPause()
+            }) {
                 ZStack { Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 16)).foregroundColor(.white) }
                     .frame(width: 24, height: 24).contentShape(Rectangle())
             }.buttonStyle(.plain)
             
-            Button(action: { skipDirection = 1; nowPlaying.skipForward() }) {
+            Button(action: {
+                guard ensurePermissions() else { return } // ⚡️ Request on click
+                skipDirection = 1; nowPlaying.skipForward()
+            }) {
                 ZStack { Image(systemName: "forward.fill").font(.system(size: 14)).foregroundColor(.white) }
                     .frame(width: 24, height: 24).contentShape(Rectangle())
             }.buttonStyle(.plain)
             
-            Button(action: { nowPlaying.toggleLoop() }) {
+            Button(action: {
+                guard ensurePermissions() else { return } // ⚡️ Request on click
+                nowPlaying.toggleLoop()
+            }) {
                 ZStack { Image(systemName: nowPlaying.loopMode == 2 ? "repeat.1" : "repeat").font(.system(size: 14))
                     .foregroundColor(nowPlaying.loopMode > 0 ? .green : .white.opacity(0.6)) }
                 .frame(width: 24, height: 24).contentShape(Rectangle())

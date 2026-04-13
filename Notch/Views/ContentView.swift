@@ -60,8 +60,6 @@ struct ContentView: View {
     let bannerHeightAddon: CGFloat = 24
     
     var collapsedWidth: CGFloat { CGFloat(storedCollapsedWidth) }
-    
-    // ⚡️ Dynamic Width depending on Calendar state
     var expandedWidth: CGFloat { (enableCalendar && calendarManager.hasAccess) ? 460 : 400 }
     
     var body: some View {
@@ -107,10 +105,7 @@ struct ContentView: View {
                 }
             }
             .frame(width: currentWidth, height: currentHeight, alignment: .top)
-            
-            // ⚡️ This ensures ONLY the notch catches hovers and clicks, not the transparent spacing!
             .contentShape(Rectangle())
-            
             .onContinuousHover { phase in
                 switch phase {
                 case .active:
@@ -158,12 +153,22 @@ struct ContentView: View {
                 }
             }
             .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
-            .animation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0.1), value: isExpanded)
+            // ---------------------------------------------------------
+            // ⚡️ THE FIX: Asymmetric Springs
+            // Bouncy when expanding, perfectly flush (no undershoot) when collapsing.
+            // ---------------------------------------------------------
+            .animation(
+                isExpanded
+                ? .spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1)
+                : .spring(response: 0.30, dampingFraction: 1.0, blendDuration: 0.1),
+                value: isExpanded
+            )
+            .animation(.spring(response: 0.30, dampingFraction: 1.0, blendDuration: 0.1), value: isShowingBanner || isShowingLyricBanner)
             
-            Spacer() // This pushes the notch to the absolute top of the 600x350 window
+            Spacer()
         }
-        // ⚡️ We let SwiftUI perfectly center the VStack inside the AppDelegate's 600px window
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .contentShape(Rectangle())
         
         // ⚡️ EVENT MONITORS
         .onAppear {
