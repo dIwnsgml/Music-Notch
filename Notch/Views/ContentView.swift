@@ -13,9 +13,11 @@ struct ContentView: View {
     @State private var currentTab: AppTab = .player
     
     // ⚡️ USER SETTINGS
+    @AppStorage("enableCalendar") var enableCalendar = false
+    @StateObject private var calendarManager = CalendarManager.shared
+    
     @AppStorage("collapsedWidth") var storedCollapsedWidth: Double = 300.0
     @AppStorage("showSettingsButton") var showSettingsButton = true
-    
     @AppStorage("enableHoverToExpand") var enableHoverToExpand = true
     @AppStorage("hoverDelay") var hoverDelay: Double = 0.0
     
@@ -24,7 +26,6 @@ struct ContentView: View {
     @AppStorage("showLyrics") var showLyrics = true
     @AppStorage("showBannerLyrics") var showBannerLyrics = true
     @AppStorage("showGlowEffect") var showGlowEffect = true
-    
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
     
@@ -35,49 +36,47 @@ struct ContentView: View {
     @AppStorage("enableEdge") var enableEdge = false
     @AppStorage("enableSafari") var enableSafari = false
     
-    // ⚡️ BANNER STATE
     @State private var isShowingBanner = false
     @State private var bannerText: String = ""
     @State private var bannerTask: Task<Void, Never>? = nil
-    
-    // ⚡️ LYRICS STATE
     @State private var isShowingLyricBanner = false
     @State private var currentLyricText: String = ""
     
-    // ⚡️ GESTURE & ANIMATION STATE
     @State private var lastSwipeTime: Date = Date()
     @State private var localEventMonitor: Any?
     @State private var globalEventMonitor: Any?
-    
     @State private var hoverTask: Task<Void, Never>? = nil
     
-    // ⚡️ RACING BORDER GLOW STATE
-    @State private var glowRotation: Double = 0.0
-    @State private var glowOpacity: Double = 0.0
-    
-    // ⚡️ HARDWARE KEYBOARD STATE
     @State private var localMediaKeyMonitor: Any?
     @State private var globalMediaKeyMonitor: Any?
     
+    @State private var glowRotation: Double = 0.0
+    @State private var glowOpacity: Double = 0.0
     @State private var skipDirection: Int = 1
     @State private var lastSongChangeTime: Date = Date.distantPast
-    
     let lyricTimer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
     
     let notchHeight: CGFloat = 32
     let bannerHeightAddon: CGFloat = 24
-    let expandedWidth: CGFloat = 400
     
     var collapsedWidth: CGFloat { CGFloat(storedCollapsedWidth) }
     
+    // ⚡️ Dynamic Width depending on Calendar state
+    var expandedWidth: CGFloat { (enableCalendar && calendarManager.hasAccess) ? 460 : 400 }
+    
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
+        let showSplitView = enableCalendar && calendarManager.hasAccess
         
         let basePlayerHeight: CGFloat = 132
+        let sandwichHeightAddon: CGFloat = showSplitView ? 36 : 0
         let dynamicLyricsHeight: CGFloat = CGFloat(visibleLyricLines) * 26.0
-        let playerHeight: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (basePlayerHeight + dynamicLyricsHeight + 12) : basePlayerHeight
+        let calendarHeight: CGFloat = showSplitView ? 160 : 0
         
-        let expandedHeight: CGFloat = currentTab == .playlist ? 216 : playerHeight
+        let playerHeight: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (basePlayerHeight + sandwichHeightAddon + dynamicLyricsHeight + 12) : (basePlayerHeight + sandwichHeightAddon)
+        
+        let expandedHeight: CGFloat = currentTab == .playlist ? 216 : max(playerHeight, calendarHeight)
+        
         let currentWidth: CGFloat = isExpanded ? expandedWidth : collapsedWidth
         let currentCollapsedHeight: CGFloat = (isShowingBanner || isShowingLyricBanner) ? (notchHeight + bannerHeightAddon) : notchHeight
         let currentHeight: CGFloat = isExpanded ? expandedHeight : currentCollapsedHeight
@@ -108,7 +107,46 @@ struct ContentView: View {
                 }
             }
             .frame(width: currentWidth, height: currentHeight, alignment: .top)
+            
+            // ⚡️ This ensures ONLY the notch catches hovers and clicks, not the transparent spacing!
             .contentShape(Rectangle())
+            
+            .onContinuousHover { phase in
+                switch phase {
+                case .active:
+                    if !isExpanded && enableHoverToExpand {
+                        if hoverTask == nil {
+                            hoverTask = Task {
+                                if hoverDelay > 0 {
+                                    try? await Task.sleep(nanoseconds: UInt64(hoverDelay * 1_000_000_000))
+                                }
+                                guard !Task.isCancelled else { return }
+                                await MainActor.run {
+                                    isExpanded = true
+                                    isShowingBanner = false
+                                    isShowingLyricBanner = false
+                                    bannerTask?.cancel()
+                                }
+                            }
+                        }
+                    }
+                case .ended:
+                    hoverTask?.cancel()
+                    hoverTask = nil
+                    if isExpanded { isExpanded = false }
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 30)
+                    .onEnded { value in
+                        guard hasMedia else { return }
+                        if value.translation.width > 30 {
+                            executeSkip(forward: invertSwipeDirection ? false : true)
+                        } else if value.translation.width < -30 {
+                            executeSkip(forward: invertSwipeDirection ? true : false)
+                        }
+                    }
+            )
             .contextMenu {
                 Button(action: { SettingsWindowManager.shared.showSettings() }) {
                     Text("Settings")
@@ -120,21 +158,17 @@ struct ContentView: View {
                 }
             }
             .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
-            .animation(
-                isExpanded
-                ? .spring(response: 0.35, dampingFraction: 0.72, blendDuration: 0.1)
-                : .spring(response: 0.35, dampingFraction: 1.0, blendDuration: 0.1),
-                value: isExpanded
-            )
-            .animation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0.1), value: isShowingBanner || isShowingLyricBanner)
+            .animation(.spring(response: 0.35, dampingFraction: 0.8, blendDuration: 0.1), value: isExpanded)
             
-            Spacer()
+            Spacer() // This pushes the notch to the absolute top of the 600x350 window
         }
+        // ⚡️ We let SwiftUI perfectly center the VStack inside the AppDelegate's 600px window
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .contentShape(Rectangle())
         
         // ⚡️ EVENT MONITORS
         .onAppear {
+            calendarManager.fetchTodaysEvents()
+            
             let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
             if !hasAnyAccess {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -163,54 +197,6 @@ struct ContentView: View {
             if let global = globalEventMonitor { NSEvent.removeMonitor(global) }
             if let keyLocal = localMediaKeyMonitor { NSEvent.removeMonitor(keyLocal) }
             if let keyGlobal = globalMediaKeyMonitor { NSEvent.removeMonitor(keyGlobal) }
-        }
-        
-        // ⚡️ GESTURES & HOVERS
-        .gesture(
-            DragGesture(minimumDistance: 30)
-                .onEnded { value in
-                    guard hasMedia else { return }
-                    if value.translation.width > 30 {
-                        executeSkip(forward: invertSwipeDirection ? false : true)
-                    } else if value.translation.width < -30 {
-                        executeSkip(forward: invertSwipeDirection ? true : false)
-                    }
-                }
-        )
-        .onContinuousHover { phase in
-            switch phase {
-            case .active(let location):
-                let collapsedRect = CGRect(x: (400 - collapsedWidth) / 2, y: 0, width: collapsedWidth, height: currentCollapsedHeight)
-                let expandedRect = CGRect(x: (400 - expandedWidth) / 2, y: 0, width: expandedWidth, height: expandedHeight)
-                let targetRect = isExpanded ? expandedRect : collapsedRect
-                
-                if targetRect.contains(location) {
-                    if !isExpanded && enableHoverToExpand {
-                        if hoverTask == nil {
-                            hoverTask = Task {
-                                if hoverDelay > 0 {
-                                    try? await Task.sleep(nanoseconds: UInt64(hoverDelay * 1_000_000_000))
-                                }
-                                guard !Task.isCancelled else { return }
-                                await MainActor.run {
-                                    isExpanded = true
-                                    isShowingBanner = false
-                                    isShowingLyricBanner = false
-                                    bannerTask?.cancel()
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    hoverTask?.cancel()
-                    hoverTask = nil
-                    if isExpanded { isExpanded = false }
-                }
-            case .ended:
-                hoverTask?.cancel()
-                hoverTask = nil
-                if isExpanded { isExpanded = false }
-            }
         }
         
         // ⚡️ STATE OBSERVERS
@@ -370,7 +356,7 @@ struct ContentView: View {
     private func expandedLayer(expandedHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
             if currentTab == .player {
-                PlayerTabView(nowPlaying: nowPlaying, expandedWidth: expandedWidth, skipDirection: $skipDirection, glowOpacity: $glowOpacity)
+                PlayerTabView(nowPlaying: nowPlaying, calendarManager: calendarManager, expandedWidth: expandedWidth, skipDirection: $skipDirection, glowOpacity: $glowOpacity)
                     .padding(.bottom, 14)
             } else {
                 PlaylistTabView(nowPlaying: nowPlaying)
@@ -414,7 +400,9 @@ struct ContentView: View {
         
         guard let screen = NSScreen.main else { return }
         let mouseLoc = NSEvent.mouseLocation
-        let panelRect = CGRect(x: (screen.frame.width - 400) / 2, y: screen.frame.height - 260, width: 400, height: 260)
+        
+        let currentW: CGFloat = isExpanded ? expandedWidth : collapsedWidth
+        let panelRect = CGRect(x: (screen.frame.width - currentW) / 2, y: screen.frame.height - 260, width: currentW, height: 260)
         
         guard panelRect.contains(mouseLoc) else { return }
         guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }

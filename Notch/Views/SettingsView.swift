@@ -21,17 +21,13 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @AppStorage("lastSettingsTab") var selectedTab: SettingsTab = .general
-    
     @State private var showSidebar = true
     
     // ⚡️ GENERAL
     @AppStorage("collapsedWidth") var collapsedWidth: Double = 300.0
     @AppStorage("showSettingsButton") var showSettingsButton = true
-    
-    // ⚡️ HOVER SETTINGS
     @AppStorage("enableHoverToExpand") var enableHoverToExpand = true
     @AppStorage("hoverDelay") var hoverDelay: Double = 0.0
-    
     @AppStorage("launchAtLogin") var launchAtLogin = false
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
@@ -49,6 +45,9 @@ struct SettingsView: View {
     @State private var hasAccessibilityAccess = false
     
     // ⚡️ INTEGRATIONS
+    @AppStorage("enableCalendar") var enableCalendar = false
+    @ObservedObject var calendarManager = CalendarManager.shared
+    
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
     @AppStorage("enableChrome") var enableChrome = false
@@ -69,16 +68,13 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             HStack(spacing: 0) {
-                
                 if showSidebar {
                     VStack(spacing: 0) {
                         List(SettingsTab.allCases, selection: $selectedTab) { tab in
                             Label(tab.rawValue, systemImage: tab.icon).tag(tab)
                         }
                         .listStyle(.sidebar)
-                        
                         Divider()
-                        
                         Button(action: { NSApplication.shared.terminate(nil) }) {
                             HStack {
                                 Image(systemName: "power")
@@ -94,7 +90,6 @@ struct SettingsView: View {
                     }
                     .frame(width: 180)
                     .transition(.move(edge: .leading))
-                    
                     Divider()
                 }
                 
@@ -110,11 +105,7 @@ struct SettingsView: View {
             .navigationTitle(selectedTab.rawValue)
             .toolbar {
                 ToolbarItem(placement: .navigation) {
-                    Button(action: {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            showSidebar.toggle()
-                        }
-                    }) {
+                    Button(action: { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showSidebar.toggle() } }) {
                         Image(systemName: "sidebar.left")
                     }
                     .help("Toggle Sidebar")
@@ -125,14 +116,15 @@ struct SettingsView: View {
         .onAppear {
             hasAccessibilityAccess = AXIsProcessTrusted()
             launchAtLogin = SMAppService.mainApp.status == .enabled
-            
             isSpotifyInstalled = checkAppExists(bundleID: "com.spotify.client")
             isChromeInstalled = checkAppExists(bundleID: "com.google.Chrome")
             isBraveInstalled = checkAppExists(bundleID: "com.brave.Browser")
             isEdgeInstalled = checkAppExists(bundleID: "com.microsoft.edgemac")
+            calendarManager.checkAccessStatus()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             hasAccessibilityAccess = AXIsProcessTrusted()
+            calendarManager.checkAccessStatus()
         }
         .alert(isPresented: $showHelpAlert) {
             let browser = browserNeedingHelp ?? "Browser"
@@ -140,7 +132,7 @@ struct SettingsView: View {
             return Alert(
                 title: Text("Action Required for \(browser)"),
                 message: Text(isSafari ?
-                              "1. Open Safari\n2. Click 'Safari' in the top menu bar -> 'Settings'\n3. Go to 'Advanced' and check 'Show Develop menu'\n4. Click 'Develop' in the top menu bar\n5. Check 'Allow JavaScript from Apple Events'"
+                              "1. Open Safari\n2. Click 'Safari' in the menu bar -> 'Settings'\n3. Go to 'Advanced' and check 'Show features for web developers'\n4. Click 'Develop' in the menu bar\n5. Check 'Allow JavaScript from Apple Events'"
                               :
                                 "1. Open \(browser)\n2. Click 'View' in the top Mac menu bar\n3. Hover over 'Developer'\n4. Click 'Allow JavaScript from Apple Events'"),
                 dismissButton: .default(Text("I've done this!"))
@@ -163,18 +155,11 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
-                
                 Toggle("Show Settings Gear in Expanded View", isOn: $showSettingsButton)
-                
-            } header: {
-                Text("Appearance")
-            } footer: {
-                Text("Customize the visual layout of the notch.")
-            }
+            } header: { Text("Appearance") }
             
             Section {
                 Toggle("Expand Automatically on Hover", isOn: $enableHoverToExpand)
-                
                 if enableHoverToExpand {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Hover Delay: \(hoverDelay, specifier: "%.1f") sec")
@@ -186,46 +171,28 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, 4)
                 }
-                
                 Toggle("Launch at Login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { newValue in toggleLaunchAtLogin(enabled: newValue) }
-                
                 Toggle("Show Cinematic Glow on Song Change", isOn: $showGlowEffect)
-                
                 Toggle("Invert Swipe Direction", isOn: $invertSwipeDirection)
-            } header: {
-                Text("App Behavior")
-            } footer: {
-                Text(enableHoverToExpand ? "If the delay is set above 0s, the notch will wait before expanding." : "When hover is disabled, you must click the collapsed notch to expand it.")
-            }
+            } header: { Text("App Behavior") }
             
             Section {
                 HStack {
                     Text("Accessibility Access")
                     Spacer()
                     if hasAccessibilityAccess {
-                        Text("Granted")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.green)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(Color.green.opacity(0.1))
-                            .cornerRadius(6)
+                        Text("Granted").foregroundColor(.green)
                     } else {
                         Button("Request Access") { requestAccessibilityAccess() }
                     }
                 }
-            } header: {
-                Text("System Permissions")
-            } footer: {
-                Text("Required to read track data and enable trackpad swipe gestures.")
-            }
+            } header: { Text("System Permissions") }
         }
     }
     
     // ---------------------------------------------------------
-    // 🎵 LYRICS & BANNER TAB
+    // 🎵 LYRICS & BANNER TAB (⚡️ THE FIX: Restored perfectly!)
     // ---------------------------------------------------------
     private var lyricsContent: some View {
         Group {
@@ -313,41 +280,52 @@ struct SettingsView: View {
     private var integrationsContent: some View {
         Group {
             Section {
+                Toggle("Enable Calendar Integration", isOn: $enableCalendar)
+                
+                if enableCalendar {
+                    HStack {
+                        Text("Calendar Permission")
+                        Spacer()
+                        if calendarManager.hasAccess {
+                            Text("Granted")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.green)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Color.green.opacity(0.1))
+                                .cornerRadius(6)
+                        } else {
+                            Button("Request Access") { calendarManager.requestAccess() }
+                        }
+                    }
+                }
+            } header: {
+                Text("Productivity")
+            } footer: {
+                Text("Displays your upcoming events next to the player.")
+            }
+            
+            Section {
                 if isAppleMusicInstalled {
                     Toggle("Apple Music App", isOn: $enableAppleMusic)
-                        .onChange(of: enableAppleMusic) { newValue in
-                            if newValue { triggerPermission(for: "Music") }
-                        }
+                        .onChange(of: enableAppleMusic) { newValue in if newValue { triggerPermission(for: "Music") } }
                 }
                 if isSpotifyInstalled {
                     Toggle("Spotify Native App", isOn: $enableSpotify)
-                        .onChange(of: enableSpotify) { newValue in
-                            if newValue { triggerPermission(for: "Spotify") }
-                        }
+                        .onChange(of: enableSpotify) { newValue in if newValue { triggerPermission(for: "Spotify") } }
                 }
-            } header: {
-                Text("Native Players")
-            } footer: {
-                Text("Select which apps WaveNotch is allowed to control.")
-            }
+            } header: { Text("Native Players") }
             
             Section {
                 if isSafariInstalled { browserToggle(title: "Safari", isOn: $enableSafari, internalName: "Safari") }
                 if isChromeInstalled { browserToggle(title: "Google Chrome", isOn: $enableChrome, internalName: "Google Chrome") }
                 if isBraveInstalled { browserToggle(title: "Brave Browser", isOn: $enableBrave, internalName: "Brave Browser") }
                 if isEdgeInstalled { browserToggle(title: "Microsoft Edge", isOn: $enableEdge, internalName: "Microsoft Edge") }
-                
-                if !isSpotifyInstalled && !isChromeInstalled && !isBraveInstalled && !isEdgeInstalled && !isSafariInstalled {
-                    Text("No supported third-party browsers detected.")
-                        .foregroundColor(.secondary)
-                }
-            } header: {
-                Text("Web Browsers")
-            } footer: {
-                Text("Required to read media playing in browser tabs.")
-            }
+            } header: { Text("Web Browsers") }
         }
     }
+    
     
     // ---------------------------------------------------------
     // ⚡️ HELPER METHODS
@@ -355,19 +333,23 @@ struct SettingsView: View {
     @ViewBuilder
     func browserToggle(title: String, isOn: Binding<Bool>, internalName: String) -> some View {
         HStack {
-            Toggle(title, isOn: isOn)
-                .onChange(of: isOn.wrappedValue) { newValue in
-                    if newValue {
-                        triggerPermission(for: internalName)
-                        if !testJavaScriptAccess(for: internalName) {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                isOn.wrappedValue = false
-                                browserNeedingHelp = title
-                                showHelpAlert = true
-                            }
+            Toggle(isOn: isOn) {
+                Text(title)
+                Text("Allows WaveNotch to read media playing in \(title) tabs.").font(.caption).foregroundColor(.secondary)
+            }
+            .onChange(of: isOn.wrappedValue) { newValue in
+                if newValue {
+                    triggerPermission(for: internalName)
+                    
+                    if !testJavaScriptAccess(for: internalName) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            isOn.wrappedValue = false
+                            browserNeedingHelp = title
+                            showHelpAlert = true
                         }
                     }
                 }
+            }
             
             Spacer()
             
@@ -379,6 +361,7 @@ struct SettingsView: View {
                     .foregroundColor(.blue)
             }
             .buttonStyle(.plain)
+            .help("Setup Instructions")
         }
     }
     

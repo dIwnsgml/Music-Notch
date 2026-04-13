@@ -35,11 +35,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         
-        // 1. Define the invisible canvas size
-        // MUST be larger than the expanded SwiftUI view to prevent the
-        // ultraThinMaterial halo blur from hitting a wall and getting chopped off!
-        let panelWidth: CGFloat = 400
-        let panelHeight: CGFloat = 200
+        // ---------------------------------------------------------
+        // ⚡️ THE FIX: We increase the canvas size to 600x350!
+        // This gives the SwiftUI view plenty of room to expand to 460px
+        // without hitting the walls and getting pushed off-center.
+        // ---------------------------------------------------------
+        let panelWidth: CGFloat = 600
+        let panelHeight: CGFloat = 350
         
         // 2. Create the raw, unstyled window
         panel = IslandPanel(
