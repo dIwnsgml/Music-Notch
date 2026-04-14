@@ -2,7 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>SUFeedURL</key>
+	<string>https://wavenotch.com/appcast.xml</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>WaveNotch needs access to display your upcoming events.</string>
+	<key>SUPublicEDKey</key>
+	<string>61r/qxZuSY/imacPrlbNhTOLzs7X6/Cz8B6tM9kLfeY=</string>
 </dict>
 </plist>

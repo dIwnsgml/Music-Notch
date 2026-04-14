@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import KeyboardShortcuts
 
 enum AppTab {
     case player
@@ -24,10 +25,13 @@ struct ContentView: View {
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
     @AppStorage("showLyrics") var showLyrics = true
+    @AppStorage("lyricOffset") var lyricOffset: Double = 0.0
     @AppStorage("showBannerLyrics") var showBannerLyrics = true
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
+    //@AppStorage("isAppHidden") var isAppHidden = false
+    @State private var isAppHidden = false
     
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
@@ -56,7 +60,22 @@ struct ContentView: View {
     @State private var lastSongChangeTime: Date = Date.distantPast
     let lyricTimer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
     
-    let notchHeight: CGFloat = 32
+    // ---------------------------------------------------------
+    // ⚡️ THE BULLETPROOF NOTCH DETECTION
+    // Agent apps sometimes get generic data from NSScreen.main.
+    // This loops through EVERY connected display, finds the physical
+    // camera notch, and grabs its exact pixel depth.
+    // ---------------------------------------------------------
+    var notchHeight: CGFloat {
+        // 1. Ask all connected screens for their top safe area (the notch)
+        // 2. Grab the highest number.
+        let actualNotchDepth = NSScreen.screens.map { $0.safeAreaInsets.top }.max() ?? 0
+        
+        // 3. A physical notch is always taller than 24px.
+        // If it found one, use it. Otherwise, safely fall back to 32.
+        return actualNotchDepth > 24 ? actualNotchDepth : 32
+    }
+    
     let bannerHeightAddon: CGFloat = 24
     
     var collapsedWidth: CGFloat { CGFloat(storedCollapsedWidth) }
@@ -153,10 +172,6 @@ struct ContentView: View {
                 }
             }
             .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
-            // ---------------------------------------------------------
-            // ⚡️ THE FIX: Asymmetric Springs
-            // Bouncy when expanding, perfectly flush (no undershoot) when collapsing.
-            // ---------------------------------------------------------
             .animation(
                 isExpanded
                 ? .spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1)
@@ -169,6 +184,11 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
+        
+        // ⚡️ ADD THESE 3 LINES:
+        .opacity(isAppHidden ? 0 : 1)
+        .allowsHitTesting(!isAppHidden)
+        .animation(.easeInOut(duration: 0.3), value: isAppHidden)
         
         // ⚡️ EVENT MONITORS
         .onAppear {
@@ -196,6 +216,25 @@ struct ContentView: View {
             globalMediaKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { event in
                 handleSystemKey(event: event)
             }
+            
+            KeyboardShortcuts.onKeyDown(for: .toggleAppVisibility) { isAppHidden.toggle() }
+            
+            KeyboardShortcuts.onKeyDown(for: .toggleLiveLyrics) { showLyrics.toggle() }
+            KeyboardShortcuts.onKeyDown(for: .toggleBannerLyrics) { showBannerLyrics.toggle() }
+            KeyboardShortcuts.onKeyDown(for: .toggleBanner) { showBannerOnControl.toggle() }
+            
+            KeyboardShortcuts.onKeyDown(for: .increaseOffset) { lyricOffset = min(8.0, lyricOffset + 0.5) }
+            KeyboardShortcuts.onKeyDown(for: .decreaseOffset) { lyricOffset = max(-8.0, lyricOffset - 0.5) }
+            
+            KeyboardShortcuts.onKeyDown(for: .increaseLines) {
+                visibleLyricLines = visibleLyricLines == 1 ? 3 : (visibleLyricLines == 3 ? 5 : 5)
+            }
+            KeyboardShortcuts.onKeyDown(for: .decreaseLines) {
+                visibleLyricLines = visibleLyricLines == 5 ? 3 : (visibleLyricLines == 3 ? 1 : 1)
+            }
+            
+            KeyboardShortcuts.onKeyDown(for: .increaseDelay) { hoverDelay = min(3.0, hoverDelay + 0.1) }
+            KeyboardShortcuts.onKeyDown(for: .decreaseDelay) { hoverDelay = max(0.0, hoverDelay - 0.1) }
         }
         .onDisappear {
             if let local = localEventMonitor { NSEvent.removeMonitor(local) }
@@ -252,13 +291,7 @@ struct ContentView: View {
             .fill(Color.black)
             .shadow(color: Color.black.opacity(0.5), radius: 12, y: 6)
             .frame(width: currentWidth, height: currentHeight)
-            .overlay(
-                DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
-                    .stroke(
-                        LinearGradient(colors: [Color.white.opacity(isExpanded ? 0.2 : 0.0), Color.clear], startPoint: .top, endPoint: .bottom),
-                        lineWidth: 1.5
-                    )
-            )
+        // ⚡️ THE FIX: Removed the white 'rim light' overlay here so it blends perfectly into the hardware bezel!
             .overlay(
                 DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
                     .stroke(
@@ -316,7 +349,7 @@ struct ContentView: View {
                     .frame(width: 24, alignment: .trailing)
             }
             .padding(.horizontal, 24)
-            .frame(height: notchHeight)
+            .frame(height: notchHeight) // ⚡️ Uses dynamic height here too
             
             let showAnyBanner: Bool = (isShowingBanner || isShowingLyricBanner) && hasMedia
             if showAnyBanner {
@@ -368,7 +401,7 @@ struct ContentView: View {
                     .padding(.bottom, 14)
             }
         }
-        .padding(.top, notchHeight + 12)
+        .padding(.top, notchHeight + 12) // ⚡️ Perfectly drops below the dynamic hardware notch
         .frame(width: expandedWidth, height: expandedHeight)
         .opacity(isExpanded ? 1 : 0)
         .scaleEffect(isExpanded ? 1.0 : 0.95, anchor: .top)

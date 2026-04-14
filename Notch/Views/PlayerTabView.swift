@@ -38,38 +38,52 @@ struct PlayerTabView: View {
         let playerPanelWidth: CGFloat = showSplitView ? (expandedWidth - calendarWidth) : expandedWidth
         
         if !hasAnyAccess {
-            VStack(spacing: 8) {
-                Image(systemName: "puzzlepiece.extension")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundColor(.orange)
-                    .padding(.bottom, 2)
-                
-                Text("Setup Required")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white)
-                
-                Text("Enable a browser or music player in settings.")
-                    .font(.system(size: 11))
-                    .foregroundColor(.gray)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 20)
-                
-                Button(action: {
-                    SettingsWindowManager.shared.showSettings()
-                }) {
-                    Text("Open Settings")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.black)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.white)
-                        .cornerRadius(6)
+            // ⚡️ THE FIX: Redesigned as a Horizontal layout!
+            // This slashes the vertical height in half so it completely avoids
+            // the hardware notch above AND the window cutoff below.
+            HStack(spacing: 16) {
+                // 1. Icon Badge (Left Side)
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [Color.orange, Color.red], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 44, height: 44)
+                        .shadow(color: Color.orange.opacity(0.4), radius: 6, x: 0, y: 3)
+                    
+                    Image(systemName: "puzzlepiece.extension.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                        .offset(x: -0.5, y: -0.5)
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 6)
+                
+                // 2. Text & Button (Right Side)
+                VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Welcome to WaveNotch")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.white)
+                        
+                        Text("Enable a player or browser to begin.")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Button(action: {
+                        SettingsWindowManager.shared.showSettings()
+                    }) {
+                        Text("Open Settings")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .background(Color.white)
+                            .clipShape(Capsule())
+                            .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.bottom, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .padding(.bottom, 8) // Gentle nudge for perfect optical centering inside the remaining black box
             
         } else {
             HStack(alignment: .top, spacing: 0) {
@@ -173,13 +187,11 @@ struct PlayerTabView: View {
                                 }
                                 .gesture(DragGesture(minimumDistance: 0)
                                     .onChanged { v in
-                                        // ⚡️ THE FIX: Check permissions before allowing drag!
                                         guard ensurePermissions() else { return }
                                         isDragging = true
                                         dragProgress = min(max(0, v.location.x / geo.size.width), 0.99)
                                     }
                                     .onEnded { v in
-                                        // ⚡️ THE FIX: Check permissions before skipping!
                                         guard ensurePermissions() else { return }
                                         let dragRatio = min(max(0, v.location.x / geo.size.width), 0.99)
                                         nowPlaying.seek(to: dragRatio)
@@ -320,7 +332,6 @@ struct PlayerTabView: View {
     // ⚡️ HELPER METHODS
     // ---------------------------------------------------------
     
-    // ⚡️ THE FIX: A quick helper to pop the permission request!
     private func ensurePermissions() -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
@@ -329,7 +340,7 @@ struct PlayerTabView: View {
     private var mediaControls: some View {
         HStack(spacing: 12) {
             Button(action: {
-                guard ensurePermissions() else { return } // ⚡️ Request on click
+                guard ensurePermissions() else { return }
                 skipDirection = -1; nowPlaying.skipBackward()
             }) {
                 ZStack { Image(systemName: "backward.fill").font(.system(size: 14)).foregroundColor(.white) }
@@ -337,7 +348,7 @@ struct PlayerTabView: View {
             }.buttonStyle(.plain)
             
             Button(action: {
-                guard ensurePermissions() else { return } // ⚡️ Request on click
+                guard ensurePermissions() else { return }
                 nowPlaying.togglePlayPause()
             }) {
                 ZStack { Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 16)).foregroundColor(.white) }
@@ -345,7 +356,7 @@ struct PlayerTabView: View {
             }.buttonStyle(.plain)
             
             Button(action: {
-                guard ensurePermissions() else { return } // ⚡️ Request on click
+                guard ensurePermissions() else { return }
                 skipDirection = 1; nowPlaying.skipForward()
             }) {
                 ZStack { Image(systemName: "forward.fill").font(.system(size: 14)).foregroundColor(.white) }
@@ -353,7 +364,7 @@ struct PlayerTabView: View {
             }.buttonStyle(.plain)
             
             Button(action: {
-                guard ensurePermissions() else { return } // ⚡️ Request on click
+                guard ensurePermissions() else { return }
                 nowPlaying.toggleLoop()
             }) {
                 ZStack { Image(systemName: nowPlaying.loopMode == 2 ? "repeat.1" : "repeat").font(.system(size: 14))

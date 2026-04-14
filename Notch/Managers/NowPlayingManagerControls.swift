@@ -141,22 +141,22 @@ extension NowPlayingManager {
     func toggleLoop() {
         let rawBrowser = self.lastActiveBrowser ?? ""
         let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+        let isTwoState = rawBrowser.hasSuffix("_YT") || cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify"
         
-        DispatchQueue.main.async { self.lastLoopToggleTime = Date(); self.loopMode = (self.loopMode + 1) % 3 }
+        // ⚡️ THE FIX: We calculate the next mode cleanly in Swift...
+        let nextMode = isTwoState ? (self.loopMode == 0 ? 1 : 0) : ((self.loopMode + 1) % 3)
+        
+        DispatchQueue.main.async {
+            self.lastLoopToggleTime = Date()
+            self.loopMode = nextMode
+        }
         
         if cleanBrowser == "Music" || cleanBrowser == "AppleMusicNative" {
             DispatchQueue.global(qos: .userInitiated).async {
-                let script = """
-                    tell application "Music"
-                        if song repeat is off then
-                            set song repeat to all
-                        else if song repeat is all then
-                            set song repeat to one
-                        else
-                            set song repeat to off
-                        end if
-                    end tell
-                    """
+                // ⚡️ ...And explicitly force Apple Music to adopt that exact state!
+                // No more AppleScript 'if/else' confusion!
+                let command = nextMode == 1 ? "all" : (nextMode == 2 ? "one" : "off")
+                let script = "tell application \"Music\" to set song repeat to \(command)"
                 _ = NSAppleScript(source: script)?.executeAndReturnError(nil)
                 self.triggerFastFetch()
             }
@@ -165,16 +165,7 @@ extension NowPlayingManager {
         
         if cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify" {
             DispatchQueue.global(qos: .userInitiated).async {
-                // ⚡️ THE FIX: Wrap in a try-catch so if it's currently on "Repeat One", clicking the button safely forces it off instead of crashing.
-                let script = """
-                tell application "Spotify"
-                    try
-                        set repeating to not repeating
-                    on error
-                        set repeating to false
-                    end try
-                end tell
-                """
+                let script = "tell application \"Spotify\"\nset repeating to not repeating\nend tell"
                 _ = NSAppleScript(source: script)?.executeAndReturnError(nil)
                 self.triggerFastFetch()
             }

@@ -2,10 +2,12 @@ import SwiftUI
 import ApplicationServices
 import ServiceManagement
 import AppKit
+import KeyboardShortcuts // ⚡️ Import the package
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
     case lyrics = "Lyrics & Banner"
+    case shortcuts = "Shortcuts" // ⚡️ NEW TAB
     case integrations = "Integrations"
     
     var id: String { self.rawValue }
@@ -14,6 +16,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "gearshape"
         case .lyrics: return "text.quote"
+        case .shortcuts: return "keyboard" // ⚡️ NEW ICON
         case .integrations: return "puzzlepiece.extension"
         }
     }
@@ -97,6 +100,7 @@ struct SettingsView: View {
                     switch selectedTab {
                     case .general: generalContent
                     case .lyrics: lyricsContent
+                    case .shortcuts: shortcutsContent // ⚡️ ROUTE TO NEW TAB
                     case .integrations: integrationsContent
                     }
                 }
@@ -137,6 +141,53 @@ struct SettingsView: View {
                                 "1. Open \(browser)\n2. Click 'View' in the top Mac menu bar\n3. Hover over 'Developer'\n4. Click 'Allow JavaScript from Apple Events'"),
                 dismissButton: .default(Text("I've done this!"))
             )
+        }
+    }
+    
+    // ---------------------------------------------------------
+    // ⌨️ SHORTCUTS TAB
+    // ---------------------------------------------------------
+    private var shortcutsContent: some View {
+        Group {
+            Section {
+                KeyboardShortcuts.Recorder("Hide / Show WaveNotch", name: .toggleAppVisibility)
+            } header: {
+                Text("Global Visibility")
+            } footer: {
+                Text("Completely vanishes the notch from your screen until pressed again.")
+            }
+            
+            Section {
+                KeyboardShortcuts.Recorder("Toggle Live Lyrics in Player", name: .toggleLiveLyrics)
+                KeyboardShortcuts.Recorder("Toggle Menu Bar Lyrics", name: .toggleBannerLyrics)
+                KeyboardShortcuts.Recorder("Toggle Action Banners", name: .toggleBanner)
+            } header: {
+                Text("Toggles")
+            }
+            
+            Section {
+                KeyboardShortcuts.Recorder("Increase Lyric Sync (+0.5s)", name: .increaseOffset)
+                KeyboardShortcuts.Recorder("Decrease Lyric Sync (-0.5s)", name: .decreaseOffset)
+            } header: {
+                Text("Lyric Synchronization")
+            }
+            
+            Section {
+                KeyboardShortcuts.Recorder("Increase Visible Lines", name: .increaseLines)
+                KeyboardShortcuts.Recorder("Decrease Visible Lines", name: .decreaseLines)
+                
+                KeyboardShortcuts.Recorder("Increase Hover Delay", name: .increaseDelay)
+                KeyboardShortcuts.Recorder("Decrease Hover Delay", name: .decreaseDelay)
+            } header: {
+                Text("UI Adjustments")
+            }
+            
+            Section {
+                Button("Reset All Shortcuts") {
+                    KeyboardShortcuts.reset(.toggleAppVisibility, .toggleLiveLyrics, .toggleBannerLyrics, .toggleBanner, .increaseOffset, .decreaseOffset, .increaseLines, .decreaseLines, .increaseDelay, .decreaseDelay)
+                }
+                .foregroundColor(.red)
+            }
         }
     }
     
@@ -192,7 +243,7 @@ struct SettingsView: View {
     }
     
     // ---------------------------------------------------------
-    // 🎵 LYRICS & BANNER TAB (⚡️ THE FIX: Restored perfectly!)
+    // 🎵 LYRICS & BANNER TAB
     // ---------------------------------------------------------
     private var lyricsContent: some View {
         Group {
