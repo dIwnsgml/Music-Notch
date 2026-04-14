@@ -3,6 +3,7 @@ import ApplicationServices
 import ServiceManagement
 import AppKit
 import KeyboardShortcuts // ⚡️ Import the package
+import Sparkle
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
@@ -68,6 +69,8 @@ struct SettingsView: View {
     @State private var browserNeedingHelp: String? = nil
     @State private var showHelpAlert = false
     
+    private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    
     var body: some View {
         NavigationStack {
             HStack(spacing: 0) {
@@ -77,19 +80,52 @@ struct SettingsView: View {
                             Label(tab.rawValue, systemImage: tab.icon).tag(tab)
                         }
                         .listStyle(.sidebar)
+                        
                         Divider()
-                        Button(action: { NSApplication.shared.terminate(nil) }) {
-                            HStack {
-                                Image(systemName: "power")
-                                Text("Quit WaveNotch")
-                                Spacer()
+                        
+                        // ⚡️ NEW: Bottom Sidebar Actions
+                        VStack(spacing: 0) {
+                            
+                            // Check for Updates Button
+                            Button(action: { updaterController.updater.checkForUpdates() }) {
+                                HStack {
+                                    Image(systemName: "arrow.triangle.2.circlepath")
+                                    Text("Check for Updates")
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .contentShape(Rectangle())
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
+                            
+                            // Quit Button
+                            Button(action: { NSApplication.shared.terminate(nil) }) {
+                                HStack {
+                                    Image(systemName: "power")
+                                    Text("Quit WaveNotch")
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(.red)
+                            
+                            // ⚡️ NEW: Dynamic Version Label
+                            let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+                            let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+                            
+                            Text("Version \(appVersion) (\(buildNumber))")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 4)
+                                .padding(.bottom, 16)
                         }
-                        .buttonStyle(.plain)
-                        .foregroundColor(.red)
+                        .background(Color(NSColor.windowBackgroundColor)) // Matches the sidebar background natively
                     }
                     .frame(width: 180)
                     .transition(.move(edge: .leading))
@@ -100,7 +136,7 @@ struct SettingsView: View {
                     switch selectedTab {
                     case .general: generalContent
                     case .lyrics: lyricsContent
-                    case .shortcuts: shortcutsContent // ⚡️ ROUTE TO NEW TAB
+                    case .shortcuts: shortcutsContent
                     case .integrations: integrationsContent
                     }
                 }

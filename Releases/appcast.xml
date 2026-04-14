@@ -3,6 +3,17 @@
     <channel>
         <title>WaveNotch</title>
         <item>
+            <title>1.8</title>
+            <pubDate>Tue, 14 Apr 2026 17:10:40 -0400</pubDate>
+            <sparkle:version>9</sparkle:version>
+            <sparkle:shortVersionString>1.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://wavenotch.com/WaveNotch_Release_1.8.dmg" length="4753408" type="application/octet-stream" sparkle:edSignature="nZmfwaoZOLeVUjKLWOUuO1wUgQXcbOr/DHuqsR1bXRreRD2/Do8ptDGuypFf2oe5GWBxRVAKecLb4//Xa21LDg=="/>
+            <sparkle:deltas>
+                <enclosure url="https://wavenotch.com/WaveNotch9-8.delta" sparkle:deltaFrom="8" length="289222" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="lE+wibmQOdHV8j9y/BgjYZo/7wyKE76r9PS31Rl+41IxceCmVZOzPezd8BPzp8zDfS+A/gXTvfydbw4Ah3D8Dw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>1.7</title>
             <pubDate>Mon, 13 Apr 2026 21:06:38 -0400</pubDate>
             <sparkle:version>8</sparkle:version>
@@ -17,14 +28,6 @@
             <sparkle:shortVersionString>1.6</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="WaveNotch_Release_1.6.dmg" length="3661824" type="application/octet-stream"/>
-        </item>
-        <item>
-            <title>1.5</title>
-            <pubDate>Sun, 12 Apr 2026 16:30:42 -0400</pubDate>
-            <sparkle:version>6</sparkle:version>
-            <sparkle:shortVersionString>1.5</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="WaveNotch_Release_1.5.dmg" length="3621888" type="application/octet-stream"/>
         </item>
         <item>
             <title>1.3</title>
