@@ -67,12 +67,19 @@ extension NowPlayingManager {
                             end try
                             set tPos to player position
                             set tDur to (duration of current track) / 1000
-                            set rep to repeating
-                            if rep then
-                                set loopState to "ALL"
-                            else
-                                set loopState to "NONE"
-                            end if
+                            
+                            -- ⚡️ THE FIX: Safely handles Spotify Native's 'Repeat One' panic
+                            try
+                                set rep to repeating
+                                if rep then
+                                    set loopState to "ALL"
+                                else
+                                    set loopState to "NONE"
+                                end if
+                            on error
+                                set loopState to "ONE"
+                            end try
+                            
                             return tName & "|||" & tArtist & "|||" & tArt & "|||" & loopState & "|||" & tPos & "|||" & tDur
                         end if
                     end tell
@@ -146,7 +153,6 @@ extension NowPlayingManager {
                 self.lastWindowIndex = nil
                 self.lastTabIndex = nil
             } else if components.count >= 9 {
-                // ⚡️ THE FIX: Appends the secret flag to the browser string so UI knows it's Standard YT!
                 self.lastActiveBrowser = isStandardYT ? browser + "_YT" : browser
                 self.lastWindowIndex = Int(components[7])
                 self.lastTabIndex = Int(components[8])

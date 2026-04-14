@@ -142,19 +142,7 @@ extension NowPlayingManager {
         let rawBrowser = self.lastActiveBrowser ?? ""
         let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
         
-        // ⚡️ THE FIX: Check if we are on a 2-state system (Standard YouTube or Spotify Native)
-        let isTwoState = rawBrowser.hasSuffix("_YT") || cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify"
-        
-        DispatchQueue.main.async {
-            self.lastLoopToggleTime = Date()
-            if isTwoState {
-                // Standard YouTube/Spotify Native: Only cycle between 0 and 1
-                self.loopMode = self.loopMode == 0 ? 1 : 0
-            } else {
-                // Everything else: Cycle through all 3 states
-                self.loopMode = (self.loopMode + 1) % 3
-            }
-        }
+        DispatchQueue.main.async { self.lastLoopToggleTime = Date(); self.loopMode = (self.loopMode + 1) % 3 }
         
         if cleanBrowser == "Music" || cleanBrowser == "AppleMusicNative" {
             DispatchQueue.global(qos: .userInitiated).async {
@@ -177,7 +165,16 @@ extension NowPlayingManager {
         
         if cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify" {
             DispatchQueue.global(qos: .userInitiated).async {
-                let script = "tell application \"Spotify\"\nset repeating to not repeating\nend tell"
+                // ⚡️ THE FIX: Wrap in a try-catch so if it's currently on "Repeat One", clicking the button safely forces it off instead of crashing.
+                let script = """
+                tell application "Spotify"
+                    try
+                        set repeating to not repeating
+                    on error
+                        set repeating to false
+                    end try
+                end tell
+                """
                 _ = NSAppleScript(source: script)?.executeAndReturnError(nil)
                 self.triggerFastFetch()
             }
