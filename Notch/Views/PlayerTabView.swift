@@ -16,6 +16,7 @@ struct PlayerTabView: View {
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     @AppStorage("lyricDimming") var lyricDimming: Double = 0.3
     @AppStorage("lyricBlurAmount") var lyricBlurAmount: Double = 0.4
+    @AppStorage("enableDoubleClickToOpen") var enableDoubleClickToOpen = true
     
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
@@ -38,9 +39,6 @@ struct PlayerTabView: View {
         let playerPanelWidth: CGFloat = showSplitView ? (expandedWidth - calendarWidth) : expandedWidth
         
         if !hasAnyAccess {
-            // ⚡️ THE FIX: Redesigned as a Horizontal layout!
-            // This slashes the vertical height in half so it completely avoids
-            // the hardware notch above AND the window cutoff below.
             HStack(spacing: 16) {
                 // 1. Icon Badge (Left Side)
                 ZStack {
@@ -83,7 +81,7 @@ struct PlayerTabView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            .padding(.bottom, 8) // Gentle nudge for perfect optical centering inside the remaining black box
+            .padding(.bottom, 8)
             
         } else {
             HStack(alignment: .top, spacing: 0) {
@@ -97,17 +95,15 @@ struct PlayerTabView: View {
                     HStack(alignment: .center) {
                         ZStack {
                             if hasMedia && nowPlaying.artworkURL != nil {
-                                Button(action: { nowPlaying.openPlayingApp() }) {
-                                    AsyncImage(url: nowPlaying.artworkURL) { image in
-                                        image.resizable().aspectRatio(contentMode: .fill)
-                                    } placeholder: { Color.gray.opacity(0.3) }
-                                        .frame(width: 40, height: 40)
-                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                        .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 10, x: 0, y: 0)
-                                }
-                                .buttonStyle(.plain)
-                                .id(nowPlaying.currentSong)
-                                .transition(.dynamicPanRotate(direction: skipDirection))
+                                // ⚡️ THE FIX: Removed the Button wrapper entirely!
+                                AsyncImage(url: nowPlaying.artworkURL) { image in
+                                    image.resizable().aspectRatio(contentMode: .fill)
+                                } placeholder: { Color.gray.opacity(0.3) }
+                                    .frame(width: 40, height: 40)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 10, x: 0, y: 0)
+                                    .id(nowPlaying.currentSong)
+                                    .transition(.dynamicPanRotate(direction: skipDirection))
                                 
                             } else {
                                 Image(systemName: "music.note")
@@ -319,6 +315,14 @@ struct PlayerTabView: View {
                     .padding(.top, 4)
                 }
             }
+            // ⚡️ THE FIX: Added global double-tap gesture to the entire expanded area!
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                if hasMedia && enableDoubleClickToOpen {
+                    nowPlaying.openPlayingApp()
+                }
+            }
+            // ---------------------------------------------------------
             .onReceive(localTimer) { _ in
                 if nowPlaying.isPlaying && !isDragging {
                     nowPlaying.currentTime += 0.1

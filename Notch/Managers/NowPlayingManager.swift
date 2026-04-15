@@ -32,7 +32,7 @@ class NowPlayingManager: ObservableObject {
     }
     
     @Published var artworkURL: URL? = nil
-    @Published var artworkDominantColor: Color = .green
+    @Published var artworkDominantColor: Color = .white
     @Published var isPlaying: Bool = false
     @Published var loopMode: Int = 0
     @Published var currentTime: Double = 0.0
@@ -61,47 +61,78 @@ class NowPlayingManager: ObservableObject {
     }
     
     // ---------------------------------------------------------
-    // ⚡️ THE FIX: Aggressive NSRunningApplication Launcher
+    // ⚡️ THE FIX: Smart App Activation based on PLAYING STATE
     // ---------------------------------------------------------
     func openPlayingApp() {
-        DispatchQueue.main.async {
+        // Run this on a background thread so the AppleScript check doesn't freeze the UI!
+        DispatchQueue.global(qos: .userInitiated).async {
             let runningApps = NSWorkspace.shared.runningApplications
             
-            // 1. If Spotify is running, rip it to the front instantly
-            if let spotify = runningApps.first(where: { $0.bundleIdentifier == "com.spotify.client" }) {
-                spotify.activate(options: .activateIgnoringOtherApps)
-                return
+            // 1. Check if Spotify is explicitly PLAYING
+            let spotifyBundle = "com.spotify.client"
+            if runningApps.contains(where: { $0.bundleIdentifier == spotifyBundle }) {
+                if self.checkNativePlayerState(appName: "Spotify") == "playing" {
+                    DispatchQueue.main.async { self.activateApp(bundleID: spotifyBundle) }
+                    return
+                }
             }
             
-            // 2. If Apple Music is running, rip it to the front
-            if let music = runningApps.first(where: { $0.bundleIdentifier == "com.apple.Music" }) {
-                music.activate(options: .activateIgnoringOtherApps)
-                return
+            // 2. Check if Apple Music is explicitly PLAYING
+            let musicBundle = "com.apple.Music"
+            if runningApps.contains(where: { $0.bundleIdentifier == musicBundle }) {
+                if self.checkNativePlayerState(appName: "Music") == "playing" {
+                    DispatchQueue.main.async { self.activateApp(bundleID: musicBundle) }
+                    return
+                }
             }
             
-            // 3. Fallback to the active browser
+            // 3. If neither native app is playing, fall back to the active browser!
             if let browser = self.lastActiveBrowser {
-                self.activateApp(appName: browser)
+                DispatchQueue.main.async { self.activateApp(appName: browser) }
+                return
+            }
+            
+            // 4. Absolute Fallback: If everything is paused, open whichever native app is running
+            if runningApps.contains(where: { $0.bundleIdentifier == spotifyBundle }) {
+                DispatchQueue.main.async { self.activateApp(bundleID: spotifyBundle) }
+            } else if runningApps.contains(where: { $0.bundleIdentifier == musicBundle }) {
+                DispatchQueue.main.async { self.activateApp(bundleID: musicBundle) }
             }
         }
     }
     
-    private func activateApp(appName: String) {
-        let bundleID: String
-        switch appName {
-        case "Safari": bundleID = "com.apple.Safari"
-        case "Google Chrome": bundleID = "com.google.Chrome"
-        case "Brave Browser": bundleID = "com.brave.Browser"
-        case "Microsoft Edge": bundleID = "com.microsoft.edgemac"
-        default: return
+    // Asks the native app for its exact playback state ("playing", "paused", or "stopped")
+    private func checkNativePlayerState(appName: String) -> String {
+        let script = "tell application \"\(appName)\" to get player state as string"
+        var error: NSDictionary?
+        if let appleScript = NSAppleScript(source: script) {
+            return appleScript.executeAndReturnError(&error).stringValue?.lowercased() ?? "stopped"
+        }
+        return "stopped"
+    }
+    
+    // Updated to accept either an appName (for browsers) or a direct bundleID
+    private func activateApp(appName: String? = nil, bundleID: String? = nil) {
+        var targetBundleID = bundleID
+        
+        if let appName = appName {
+            switch appName {
+            case "Safari": targetBundleID = "com.apple.Safari"
+            case "Google Chrome": targetBundleID = "com.google.Chrome"
+            case "Brave Browser": targetBundleID = "com.brave.Browser"
+            case "Microsoft Edge": targetBundleID = "com.microsoft.edgemac"
+            default: break
+            }
         }
         
+        guard let finalBundleID = targetBundleID else { return }
+        
         // Aggressively activate the app if it's currently running
-        if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) {
+        if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == finalBundleID }) {
             app.activate(options: .activateIgnoringOtherApps)
         }
         // Fallback if it somehow isn't running
-        else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+        else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: finalBundleID) {
             let config = NSWorkspace.OpenConfiguration()
             config.activates = true
             NSWorkspace.shared.openApplication(at: url, configuration: config, completionHandler: nil)

@@ -194,13 +194,13 @@ struct ContentView: View {
         .onAppear {
             calendarManager.fetchTodaysEvents()
             
-            let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
+            /*let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
             if !hasAnyAccess {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     SettingsWindowManager.shared.showSettings()
                     isExpanded = true
                 }
-            }
+            }*/
             
             localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
                 handleScroll(event: event)

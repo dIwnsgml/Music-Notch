@@ -215,7 +215,7 @@ extension NowPlayingManager {
                     if self.artworkURL != url { self.artworkURL = url; self.fetchDominantColor(from: url) }
                 } else {
                     self.artworkURL = nil
-                    self.artworkDominantColor = .green
+                    self.artworkDominantColor = .white
                 }
             }
             

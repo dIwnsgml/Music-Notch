@@ -33,6 +33,7 @@ struct SettingsView: View {
     @AppStorage("showSettingsButton") var showSettingsButton = true
     @AppStorage("enableHoverToExpand") var enableHoverToExpand = true
     @AppStorage("hoverDelay") var hoverDelay: Double = 0.0
+    @AppStorage("enableDoubleClickToOpen") var enableDoubleClickToOpen = true
     @AppStorage("launchAtLogin") var launchAtLogin = false
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
@@ -262,6 +263,7 @@ struct SettingsView: View {
                 }
                 Toggle("Launch at Login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { newValue in toggleLaunchAtLogin(enabled: newValue) }
+                Toggle("Double-Click Player to Open Media App", isOn: $enableDoubleClickToOpen)
                 Toggle("Show Cinematic Glow on Song Change", isOn: $showGlowEffect)
                 Toggle("Invert Swipe Direction", isOn: $invertSwipeDirection)
             } header: { Text("App Behavior") }
