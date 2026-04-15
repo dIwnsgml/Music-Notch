@@ -2,10 +2,34 @@ import SwiftUI
 import AppKit
 import SkyLightWindow
 import Sparkle
+import PostHog
 
 @main
 struct DynamicIslandApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
+    // ⚡️ NEW: PostHog Privacy Toggle
+    @AppStorage("enableAnalytics") var enableAnalytics = true
+    
+    init() {
+        // 1. Configure PostHog (Make sure to paste your actual API Key here!)
+        let configuration = PostHogConfig(
+            apiKey: "phc_tptR6JFYUrtWPDsY4Mo2rZNF9BHnUduUirV58uaLpAjT",
+            host: "https://us.i.posthog.com"
+        )
+        
+        // 2. Start the engine
+        PostHogSDK.shared.setup(configuration)
+        
+        // 3. Opt the user out immediately if they disabled it in settings
+        if !enableAnalytics {
+            PostHogSDK.shared.optOut()
+        } else {
+            PostHogSDK.shared.optIn()
+            // ⚡️ THIS IS YOUR DAU METRIC:
+            PostHogSDK.shared.capture("App Launched")
+        }
+    }
     
     var body: some Scene {
         // Keeps the app alive in the menu bar as a background utility

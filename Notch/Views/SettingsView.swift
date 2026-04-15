@@ -1,4 +1,5 @@
 import SwiftUI
+import PostHog
 import ApplicationServices
 import ServiceManagement
 import AppKit
@@ -35,6 +36,7 @@ struct SettingsView: View {
     @AppStorage("launchAtLogin") var launchAtLogin = false
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
+    @AppStorage("enableAnalytics") var enableAnalytics = true
     
     // ⚡️ LYRICS & BANNER
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
@@ -69,7 +71,7 @@ struct SettingsView: View {
     @State private var browserNeedingHelp: String? = nil
     @State private var showHelpAlert = false
     
-    private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    @State private var updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     
     var body: some View {
         NavigationStack {
@@ -275,6 +277,21 @@ struct SettingsView: View {
                     }
                 }
             } header: { Text("System Permissions") }
+            
+            Section {
+                Toggle("Share Anonymous Usage Data", isOn: $enableAnalytics)
+                    .onChange(of: enableAnalytics) { newValue in
+                        if newValue {
+                            PostHogSDK.shared.optIn()
+                        } else {
+                            PostHogSDK.shared.optOut()
+                        }
+                    }
+            } header: {
+                Text("Privacy")
+            } footer: {
+                Text("Helps us improve WaveNotch by sending anonymous launch statistics. We never track your personal data or music history.")
+            }
         }
     }
     

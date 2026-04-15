@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A10332832F8DC44F00C7DDA1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A10332822F8DC44F00C7DDA1 /* Sparkle */; };
 		A10332862F8EDA5800C7DDA1 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = A10332852F8EDA5800C7DDA1 /* KeyboardShortcuts */; };
+		A103328B2F8FE1D400C7DDA1 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = A103328A2F8FE1D400C7DDA1 /* PostHog */; };
 		A1E947342F8781B200C0870A /* SkyLightWindow in Frameworks */ = {isa = PBXBuildFile; productRef = A1E947332F8781B200C0870A /* SkyLightWindow */; };
 /* End PBXBuildFile section */
 
@@ -75,6 +76,7 @@
 				A1E947342F8781B200C0870A /* SkyLightWindow in Frameworks */,
 				A10332832F8DC44F00C7DDA1 /* Sparkle in Frameworks */,
 				A10332862F8EDA5800C7DDA1 /* KeyboardShortcuts in Frameworks */,
+				A103328B2F8FE1D400C7DDA1 /* PostHog in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -147,6 +149,7 @@
 				A1E947332F8781B200C0870A /* SkyLightWindow */,
 				A10332822F8DC44F00C7DDA1 /* Sparkle */,
 				A10332852F8EDA5800C7DDA1 /* KeyboardShortcuts */,
+				A103328A2F8FE1D400C7DDA1 /* PostHog */,
 			);
 			productName = Notch;
 			productReference = A16A17F02F85BA7D0021EADF /* WaveNotch.app */;
@@ -234,6 +237,7 @@
 				A1E947312F87800B00C0870A /* XCRemoteSwiftPackageReference "SkyLightWindow" */,
 				A10332812F8DC30400C7DDA1 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				A10332842F8EDA4800C7DDA1 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
+				A10332892F8FE1C700C7DDA1 /* XCRemoteSwiftPackageReference "posthog-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A16A17F12F85BA7D0021EADF /* Products */;
@@ -669,6 +673,14 @@
 				minimumVersion = 2.4.0;
 			};
 		};
+		A10332892F8FE1C700C7DDA1 /* XCRemoteSwiftPackageReference "posthog-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/PostHog/posthog-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.51.0;
+			};
+		};
 		A1E947312F87800B00C0870A /* XCRemoteSwiftPackageReference "SkyLightWindow" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/Lakr233/SkyLightWindow";
@@ -689,6 +701,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10332842F8EDA4800C7DDA1 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */;
 			productName = KeyboardShortcuts;
+		};
+		A103328A2F8FE1D400C7DDA1 /* PostHog */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10332892F8FE1C700C7DDA1 /* XCRemoteSwiftPackageReference "posthog-ios" */;
+			productName = PostHog;
 		};
 		A1E947332F8781B200C0870A /* SkyLightWindow */ = {
 			isa = XCSwiftPackageProductDependency;
