@@ -11,6 +11,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case lyrics = "Lyrics & Banner"
     case shortcuts = "Shortcuts" // ⚡️ NEW TAB
     case integrations = "Integrations"
+    case plugins = "Plugin Store"
     
     var id: String { self.rawValue }
     
@@ -20,6 +21,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .lyrics: return "text.quote"
         case .shortcuts: return "keyboard" // ⚡️ NEW ICON
         case .integrations: return "puzzlepiece.extension"
+        case .plugins: return "puzzlepiece.extension.fill"
         }
     }
 }
@@ -135,15 +137,22 @@ struct SettingsView: View {
                     Divider()
                 }
                 
-                Form {
-                    switch selectedTab {
-                    case .general: generalContent
-                    case .lyrics: lyricsContent
-                    case .shortcuts: shortcutsContent
-                    case .integrations: integrationsContent
+                Group {
+                    if selectedTab == .plugins {
+                        PluginStoreView()
+                    } else {
+                        Form {
+                            switch selectedTab {
+                            case .general: generalContent
+                            case .lyrics: lyricsContent
+                            case .shortcuts: shortcutsContent
+                            case .integrations: integrationsContent
+                            default: EmptyView()
+                            }
+                        }
+                        .formStyle(.grouped)
                     }
                 }
-                .formStyle(.grouped)
             }
             .navigationTitle(selectedTab.rawValue)
             .toolbar {

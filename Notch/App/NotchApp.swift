@@ -96,11 +96,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hasShadow = false
         panel.isMovable = false
         
-        if let screen = NSScreen.main {
-            let x = (screen.frame.width - panelWidth) / 2
-            let y = screen.frame.height - panelHeight
-            panel.setFrameOrigin(NSPoint(x: x, y: y))
-        }
+        updatePanelPosition()
         
         let hostingView = NSHostingView(rootView: ContentView())
         hostingView.wantsLayer = true
@@ -112,5 +108,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
         
         _ = SkyLightOperator.shared.delegateWindow(panel)
+    }
+    
+    func updatePanelPosition() {
+        let mouseLocation = NSEvent.mouseLocation
+        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) 
+            ?? NSScreen.main 
+            ?? NSScreen.screens.first
+        
+        guard let screen = targetScreen else { return }
+        
+        let xPos = screen.frame.midX - (panel.frame.width / 2)
+        let yPos = screen.frame.maxY - panel.frame.height
+        
+        panel.setFrameOrigin(NSPoint(x: xPos, y: yPos))
     }
 }
