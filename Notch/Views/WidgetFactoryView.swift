@@ -9,27 +9,32 @@ struct WidgetFactoryView: View {
     let expandedWidth: CGFloat
     @Binding var skipDirection: Int
     @Binding var glowOpacity: Double
+    let onSwipe: (Bool) -> Void
     
     var body: some View {
-        Group {
-            switch widgetType {
-            case .player:
-                PlayerTabView(
-                    nowPlaying: nowPlaying,
-                    calendarManager: calendarManager,
-                    expandedWidth: expandedWidth,
-                    skipDirection: $skipDirection,
-                    glowOpacity: $glowOpacity
-                )
-            case .spotifyQueue:
-                SpotifyQueueWidget(nowPlaying: nowPlaying)
-            case .spotifyPlaylists:
-                PlaylistTabView(nowPlaying: nowPlaying)
-            case .calendar:
-                PlaceholderWidget(name: "Calendar", icon: "calendar")
-            case .weather:
-                PlaceholderWidget(name: "Weather", icon: "cloud.sun.fill")
+        VStack(spacing: 0) {
+            Group {
+                switch widgetType {
+                case .player:
+                    PlayerTabView(
+                        nowPlaying: nowPlaying,
+                        calendarManager: calendarManager,
+                        expandedWidth: expandedWidth,
+                        skipDirection: $skipDirection,
+                        glowOpacity: $glowOpacity,
+                        onSwipe: onSwipe
+                    )
+                case .spotifyQueue:
+                    SpotifyQueueWidget(nowPlaying: nowPlaying)
+                case .spotifyPlaylists:
+                    PlaylistTabView(nowPlaying: nowPlaying)
+                case .calendar:
+                    PlaceholderWidget(name: "Calendar", icon: "calendar")
+                case .weather:
+                    PlaceholderWidget(name: "Weather", icon: "cloud.sun.fill")
+                }
             }
+            Spacer(minLength: 0)
         }
     }
 }

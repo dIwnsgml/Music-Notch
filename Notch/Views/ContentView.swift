@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 import Combine
 import KeyboardShortcuts
 
@@ -49,9 +48,6 @@ struct ContentView: View {
     @State private var isShowingLyricBanner = false
     @State private var currentLyricText: String = ""
     
-    @State private var lastSwipeTime: Date = Date()
-    @State private var localEventMonitor: Any?
-    @State private var globalEventMonitor: Any?
     @State private var hoverTask: Task<Void, Never>? = nil
     
     @State private var localMediaKeyMonitor: Any?
@@ -62,6 +58,7 @@ struct ContentView: View {
     @State private var skipDirection: Int = 1
     @State private var lastSongChangeTime: Date = Date.distantPast
     let lyricTimer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
+    let hoverCheckTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     
     var notchHeight: CGFloat {
         let actualNotchDepth = NSScreen.screens.map { $0.safeAreaInsets.top }.max() ?? 0
@@ -77,7 +74,7 @@ struct ContentView: View {
     }
     
     var expandedWidth: CGFloat {
-        activeWidgetsCount <= 1 ? 440 : 800
+        activeWidgetsCount <= 1 ? 460 : 800
     }
     
     var body: some View {
@@ -91,13 +88,12 @@ struct ContentView: View {
         
         let playerHeight: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (basePlayerHeight + sandwichHeightAddon + dynamicLyricsHeight + 12) : (basePlayerHeight + sandwichHeightAddon)
         
-        // Calculate total expanded height dynamically
         let expandedHeight: CGFloat = {
             if activeWidgetsCount <= 1 {
                 return currentTab == .playlist ? 216 : max(playerHeight, calendarHeight)
             } else {
                 let rows = ceil(Double(activeWidgetsCount) / 2.0)
-                return CGFloat(rows) * 280 // approx height per row + padding
+                return CGFloat(rows) * 280
             }
         }()
         
@@ -107,10 +103,14 @@ struct ContentView: View {
         
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
+                // 1. BACKGROUND LAYER (Precise hover detection lives here)
                 backgroundLayer(currentWidth: currentWidth, currentHeight: currentHeight)
+                
+                // 2. CONTENT LAYERS
                 collapsedLayer(hasMedia: hasMedia, currentCollapsedHeight: currentCollapsedHeight)
                 expandedLayer(expandedHeight: expandedHeight)
                 
+                // 3. SETTINGS ICON
                 if isExpanded && showSettingsButton {
                     HStack {
                         Spacer()
@@ -118,60 +118,19 @@ struct ContentView: View {
                             Image(systemName: "gearshape.fill")
                                 .font(.system(size: 13))
                                 .foregroundColor(.white.opacity(0.3))
-                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .frame(width: 24, height: 24)
-                        .help("Open Settings")
                     }
                     .padding(.trailing, 20)
                     .padding(.top, 10)
                     .zIndex(4)
-                    .transition(.opacity)
                 }
             }
             .frame(width: currentWidth, height: currentHeight, alignment: .top)
-            .contentShape(Rectangle())
-            .onChange(of: currentWidth) { _, newWidth in
-                // ⚡️ Re-center the physical window when width changes
+            .onChange(of: currentWidth) { _, _ in
                 NotificationCenter.default.post(name: NSNotification.Name("CenterAppWindow"), object: nil)
             }
-            .onContinuousHover { phase in
-                switch phase {
-                case .active:
-                    if !isExpanded && enableHoverToExpand {
-                        if hoverTask == nil {
-                            hoverTask = Task {
-                                if hoverDelay > 0 {
-                                    try? await Task.sleep(nanoseconds: UInt64(hoverDelay * 1_000_000_000))
-                                }
-                                guard !Task.isCancelled else { return }
-                                await MainActor.run {
-                                    isExpanded = true
-                                    isShowingBanner = false
-                                    isShowingLyricBanner = false
-                                    bannerTask?.cancel()
-                                }
-                            }
-                        }
-                    }
-                case .ended:
-                    hoverTask?.cancel()
-                    hoverTask = nil
-                    if isExpanded { isExpanded = false }
-                }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 30)
-                    .onEnded { value in
-                        guard hasMedia else { return }
-                        if value.translation.width > 30 {
-                            executeSkip(forward: invertSwipeDirection ? false : true)
-                        } else if value.translation.width < -30 {
-                            executeSkip(forward: invertSwipeDirection ? true : false)
-                        }
-                    }
-            )
             .contextMenu {
                 Button(action: { SettingsWindowManager.shared.showSettings() }) {
                     Text("Settings")
@@ -198,13 +157,6 @@ struct ContentView: View {
         .allowsHitTesting(!isAppHidden)
         .onAppear {
             calendarManager.fetchTodaysEvents()
-            localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-                handleScroll(event: event)
-                return event
-            }
-            globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { event in
-                handleScroll(event: event)
-            }
             localMediaKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { event in
                 handleSystemKey(event: event)
                 return event
@@ -215,8 +167,6 @@ struct ContentView: View {
             KeyboardShortcuts.onKeyDown(for: .toggleAppVisibility) { isAppHidden.toggle() }
         }
         .onDisappear {
-            if let local = localEventMonitor { NSEvent.removeMonitor(local) }
-            if let global = globalEventMonitor { NSEvent.removeMonitor(global) }
             if let keyLocal = localMediaKeyMonitor { NSEvent.removeMonitor(keyLocal) }
             if let keyGlobal = globalMediaKeyMonitor { NSEvent.removeMonitor(keyGlobal) }
         }
@@ -238,6 +188,45 @@ struct ContentView: View {
             }
             triggerBanner(text: newSong, duration: bannerDuration)
         }
+        .onReceive(hoverCheckTimer) { _ in
+            guard let screen = NSScreen.main else { return }
+            let mouseLoc = NSEvent.mouseLocation
+            
+            let currentW = isExpanded ? expandedWidth : collapsedWidth
+            let currentH = isExpanded ? expandedHeight : currentCollapsedHeight
+            
+            // Reconstruct the notch window frame in screen coordinates
+            let panelRect = CGRect(x: (screen.frame.width - currentW) / 2, y: screen.frame.height - currentH, width: currentW, height: currentH)
+            
+            let isHovering = panelRect.contains(mouseLoc)
+            
+            if isHovering {
+                if !isExpanded && enableHoverToExpand {
+                    if hoverTask == nil {
+                        hoverTask = Task {
+                            if hoverDelay > 0 {
+                                try? await Task.sleep(nanoseconds: UInt64(hoverDelay * 1_000_000_000))
+                            }
+                            guard !Task.isCancelled else { return }
+                            await MainActor.run {
+                                isExpanded = true
+                                isShowingBanner = false
+                                isShowingLyricBanner = false
+                                bannerTask?.cancel()
+                            }
+                        }
+                    }
+                }
+            } else {
+                if hoverTask != nil {
+                    hoverTask?.cancel()
+                    hoverTask = nil
+                }
+                if isExpanded {
+                    isExpanded = false
+                }
+            }
+        }
         .edgesIgnoringSafeArea(.all)
     }
     
@@ -245,7 +234,6 @@ struct ContentView: View {
     private func backgroundLayer(currentWidth: CGFloat, currentHeight: CGFloat) -> some View {
         DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
             .fill(Color.black)
-            .shadow(color: Color.black.opacity(0.5), radius: 12, y: 6)
             .frame(width: currentWidth, height: currentHeight)
             .overlay(
                 DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
@@ -263,7 +251,9 @@ struct ContentView: View {
                         lineWidth: 2.5
                     )
                     .opacity(glowOpacity)
+                    .allowsHitTesting(false)
             )
+            .shadow(color: Color.black.opacity(0.5), radius: 12, y: 6)
             .zIndex(1)
     }
     
@@ -303,8 +293,15 @@ struct ContentView: View {
         .frame(width: collapsedWidth, height: currentCollapsedHeight)
         .opacity(isExpanded ? 0 : 1)
         .scaleEffect(isExpanded ? 0.95 : 1.0, anchor: .top)
-        .contentShape(Rectangle())
-        .onTapGesture { if !isExpanded { isExpanded = true } }
+        .allowsHitTesting(!isExpanded)
+        .onTapGesture {
+            if !isExpanded {
+                isExpanded = true
+                isShowingBanner = false
+                isShowingLyricBanner = false
+                bannerTask?.cancel()
+            }
+        }
         .zIndex(2)
     }
     
@@ -316,16 +313,18 @@ struct ContentView: View {
             if widgets.count <= 1 {
                 VStack(spacing: 0) {
                     if currentTab == .player {
-                        PlayerTabView(nowPlaying: nowPlaying, calendarManager: calendarManager, expandedWidth: expandedWidth, skipDirection: $skipDirection, glowOpacity: $glowOpacity)
-                            .padding(.bottom, 14)
+                        PlayerTabView(nowPlaying: nowPlaying, calendarManager: calendarManager, expandedWidth: expandedWidth, skipDirection: $skipDirection, glowOpacity: $glowOpacity, onSwipe: { forward in
+                            self.executeSkip(forward: forward)
+                        })
+                        .padding(.bottom, 14)
                     } else {
                         PlaylistTabView(nowPlaying: nowPlaying)
                             .padding(.bottom, 14)
                     }
+                    Spacer(minLength: 0)
                 }
             } else {
-                // Modular grid dashboard for 2+ plugins
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 16, alignment: .top), GridItem(.flexible(), spacing: 16, alignment: .top)], spacing: 16) {
                     ForEach(widgets) { widget in
                         WidgetFactoryView(
                             widgetType: widget,
@@ -333,7 +332,10 @@ struct ContentView: View {
                             calendarManager: calendarManager,
                             expandedWidth: (expandedWidth - 32 - 16) / 2,
                             skipDirection: $skipDirection,
-                            glowOpacity: $glowOpacity
+                            glowOpacity: $glowOpacity,
+                            onSwipe: { forward in
+                                self.executeSkip(forward: forward)
+                            }
                         )
                         .frame(height: 240)
                     }
@@ -351,7 +353,11 @@ struct ContentView: View {
     
     private func executeSkip(forward: Bool) {
         skipDirection = forward ? 1 : -1
-        simulateMediaKey(keyCode: forward ? 20 : 19)
+        if forward {
+            nowPlaying.skipForward()
+        } else {
+            nowPlaying.skipBackward()
+        }
         triggerBanner(text: forward ? "Skipped Forward" : "Skipped Back", duration: 1.5)
     }
     
@@ -361,18 +367,11 @@ struct ContentView: View {
             let keyCode = (data & 0xFFFF0000) >> 16
             let keyFlags = (data & 0x0000FFFF)
             let keyState = (((keyFlags & 0xFF00) >> 8)) == 0xA
-            
             if keyState {
                 if keyCode == 19 { skipDirection = -1 }
                 else if keyCode == 20 { skipDirection = 1 }
             }
         }
-    }
-    
-    private func handleScroll(event: NSEvent) {
-        guard nowPlaying.currentSong != "No Music", abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY), Date().timeIntervalSince(lastSwipeTime) > 0.6 else { return }
-        if event.scrollingDeltaX > 15 { executeSkip(forward: invertSwipeDirection); lastSwipeTime = Date() }
-        else if event.scrollingDeltaX < -15 { executeSkip(forward: !invertSwipeDirection); lastSwipeTime = Date() }
     }
     
     private func updateLyricBanner() {
@@ -395,15 +394,6 @@ struct ContentView: View {
                 await MainActor.run { withAnimation { isShowingBanner = false }; updateLyricBanner() }
             }
         }
-    }
-    
-    private func simulateMediaKey(keyCode: Int32) {
-        func postKey(down: Bool) {
-            let flags: NSEvent.ModifierFlags = down ? NSEvent.ModifierFlags(rawValue: 0xa00) : NSEvent.ModifierFlags(rawValue: 0xb00)
-            let data1 = Int((keyCode << 16) | (down ? 0xa00 : 0xb00))
-            NSEvent.otherEvent(with: .systemDefined, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil, subtype: 8, data1: data1, data2: -1)?.cgEvent?.post(tap: .cghidEventTap)
-        }
-        postKey(down: true); postKey(down: false)
     }
 }
 
