@@ -61,3 +61,8 @@ struct SpotifyTrack: Codable, Identifiable, Equatable {
         let images: [SpotifyImage]?
     }
 }
+
+struct SpotifyQueueItem: Identifiable, Equatable {
+    let id: String // Unique ID (index + uri)
+    let track: SpotifyTrack
+}

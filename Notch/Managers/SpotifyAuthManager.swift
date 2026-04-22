@@ -12,6 +12,7 @@ class SpotifyAuthManager: NSObject, ObservableObject {
     
     @Published var playlists: [SpotifyPlaylist] = []
     @Published var currentQueue: [SpotifyTrack] = []
+    @Published var currentQueueItems: [SpotifyQueueItem] = []
     @Published var currentlyPlaying: SpotifyTrack?
     
     private let clientID = "46f0d686e3194a918e5396e0715dd599" // ⚡️ Using your previously mentioned ID
@@ -144,8 +145,33 @@ class SpotifyAuthManager: NSObject, ObservableObject {
     
     // MARK: - Player Controls
     
-    func play(uri: String? = nil, completion: @escaping (Bool) -> Void = { _ in }) {
-        performPlayerRequest(method: "PUT", endpoint: "play", body: uri != nil ? ["uris": [uri!]] : nil, completion: completion)
+    func playContext(uri: String, completion: @escaping (Bool) -> Void = { _ in }) {
+        performPlayerRequest(method: "PUT", endpoint: "play", body: ["context_uri": uri]) { success in
+            if success {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.fetchQueue() }
+            }
+            completion(success)
+        }
+    }
+    
+    func skipToQueueItem(index: Int) {
+        let remainingTracks = Array(currentQueueItems.suffix(from: index))
+        let uris = remainingTracks.map { $0.track.uri }
+        
+        playTracks(uris: uris)
+    }
+    
+    func playTracks(uris: [String], completion: @escaping (Bool) -> Void = { _ in }) {
+        performPlayerRequest(method: "PUT", endpoint: "play", body: ["uris": uris]) { success in
+            if success {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.fetchQueue() }
+            }
+            completion(success)
+        }
+    }
+    
+    func play(completion: @escaping (Bool) -> Void = { _ in }) {
+        performPlayerRequest(method: "PUT", endpoint: "play", completion: completion)
     }
     
     func pause(completion: @escaping (Bool) -> Void = { _ in }) {
@@ -187,13 +213,31 @@ class SpotifyAuthManager: NSObject, ObservableObject {
             var request = URLRequest(url: url)
             request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
             
-            URLSession.shared.dataTask(with: request) { data, _, _ in
-                guard let data = data else { return }
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                guard let data = data, error == nil else { return }
+                
+                // ⚡️ Log the status code for debugging
+                if let httpResponse = response as? HTTPURLResponse {
+                    if httpResponse.statusCode != 200 {
+                        print("Spotify Queue API Error Status: \(httpResponse.statusCode)")
+                        return
+                    }
+                }
+                
                 if let response = try? JSONDecoder().decode(SpotifyQueue.self, from: data) {
                     DispatchQueue.main.async {
                         self.currentlyPlaying = response.currently_playing
                         self.currentQueue = response.queue
+                        
+                        // ⚡️ GENERATE UNIQUE ITEMS
+                        self.currentQueueItems = response.queue.enumerated().map { (index, track) in
+                            SpotifyQueueItem(id: "\(index)-\(track.uri)", track: track)
+                        }
+                        
+                        print("Spotify Queue Fetched: \(response.queue.count) tracks")
                     }
+                } else {
+                    print("Failed to decode Spotify Queue JSON")
                 }
             }.resume()
         }

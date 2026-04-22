@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct WidgetFactoryView: View {
     let widgetType: NotchWidgetType
@@ -38,71 +39,132 @@ struct SpotifyQueueWidget: View {
     @StateObject private var spotifyManager = SpotifyAuthManager.shared
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Spotify Queue")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.green)
+                HStack(spacing: 6) {
+                    Image(systemName: "list.bullet.indent")
+                        .foregroundColor(.green)
+                    Text("Spotify Queue")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                
                 Spacer()
+                
+                Button(action: {
+                    spotifyManager.fetchQueue()
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.gray)
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
+            .padding(.top, 12)
             
             if spotifyManager.accessToken.isEmpty {
-                VStack {
-                    Spacer()
-                    Text("Please enable Spotify Plus in Settings.")
-                        .font(.system(size: 10))
-                        .foregroundColor(.gray)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
-            } else if spotifyManager.currentQueue.isEmpty {
-                VStack {
-                    Spacer()
-                    Text("No queue data found.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.gray)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
+                emptyStateView(text: "Please enable Spotify Plus in Settings.")
+            } else if spotifyManager.currentQueueItems.isEmpty {
+                emptyStateView(text: "Fetching queue...")
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(spotifyManager.currentQueue.prefix(5)) { track in
-                            HStack(spacing: 8) {
-                                if let urlString = track.album?.images?.first?.url, let url = URL(string: urlString) {
-                                    AsyncImage(url: url) { image in
-                                        image.resizable().aspectRatio(contentMode: .fill)
-                                    } placeholder: {
-                                        Rectangle().fill(Color.gray.opacity(0.2))
-                                    }
-                                    .frame(width: 24, height: 24)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                                }
-                                
-                                VStack(alignment: .leading, spacing: 0) {
-                                    Text(track.name)
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .lineLimit(1)
-                                    Text(track.artists.first?.name ?? "")
-                                        .font(.system(size: 9))
-                                        .foregroundColor(.gray)
-                                        .lineLimit(1)
-                                }
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(Array(spotifyManager.currentQueueItems.prefix(50).enumerated()), id: \.offset) { index, item in
+                            SpotifyQueueRow(index: index + 1, track: item.track) {
+                                spotifyManager.skipToQueueItem(index: index)
                             }
                         }
                     }
                     .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.vertical, 12)
         .background(Color.white.opacity(0.05))
-        .cornerRadius(12)
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
         .onAppear {
             spotifyManager.fetchQueue()
+        }
+        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+            // ⚡️ PERIODIC REFRESH: Keep the queue synced every 5 seconds while expanded
+            spotifyManager.fetchQueue()
+        }
+        .onChange(of: nowPlaying.currentSong) { _, _ in
+            // ⚡️ INSTANT REFRESH: When the track changes, grab the new queue immediately
+            spotifyManager.fetchQueue()
+        }
+    }
+    
+    private func emptyStateView(text: String) -> some View {
+        VStack {
+            Spacer()
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundColor(.gray)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct SpotifyQueueRow: View {
+    let index: Int
+    let track: SpotifyTrack
+    let action: () -> Void
+    @State private var isHovering = false
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Text("\(index)")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(isHovering ? .green : .gray)
+                    .frame(width: 18, alignment: .trailing)
+                
+                if let urlString = track.album?.images?.first?.url, let url = URL(string: urlString) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Rectangle().fill(Color.gray.opacity(0.2))
+                    }
+                    .frame(width: 32, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(track.name)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(isHovering ? .green : .white)
+                        .lineLimit(1)
+                    Text(track.artists.first?.name ?? "Unknown Artist")
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                if isHovering {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.green)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovering = hovering
+            }
         }
     }
 }
