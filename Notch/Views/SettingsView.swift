@@ -8,8 +8,9 @@ import Sparkle
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
+    case dashboard = "Dashboard Layout" // ⚡️ NEW TAB
     case lyrics = "Lyrics & Banner"
-    case shortcuts = "Shortcuts" // ⚡️ NEW TAB
+    case shortcuts = "Shortcuts"
     case integrations = "Integrations"
     case plugins = "Plugin Store"
     
@@ -18,8 +19,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: return "gearshape"
+        case .dashboard: return "square.grid.2x2"
         case .lyrics: return "text.quote"
-        case .shortcuts: return "keyboard" // ⚡️ NEW ICON
+        case .shortcuts: return "keyboard"
         case .integrations: return "puzzlepiece.extension"
         case .plugins: return "puzzlepiece.extension.fill"
         }
@@ -140,6 +142,8 @@ struct SettingsView: View {
                 Group {
                     if selectedTab == .plugins {
                         PluginStoreView()
+                    } else if selectedTab == .dashboard {
+                        DashboardSettingsView()
                     } else {
                         Form {
                             switch selectedTab {

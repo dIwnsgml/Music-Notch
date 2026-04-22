@@ -8,11 +8,14 @@ import PostHog
 struct DynamicIslandApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
-    // ⚡️ NEW: PostHog Privacy Toggle
+    // ⚡️ PostHog Privacy Toggle
     @AppStorage("enableAnalytics") var enableAnalytics = true
     
+    // ⚡️ Onboarding Tracker
+    @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
+    
     init() {
-        // 1. Configure PostHog (Make sure to paste your actual API Key here!)
+        // 1. Configure PostHog
         let configuration = PostHogConfig(
             apiKey: "phc_tptR6JFYUrtWPDsY4Mo2rZNF9BHnUduUirV58uaLpAjT",
             host: "https://us.i.posthog.com"
@@ -26,19 +29,23 @@ struct DynamicIslandApp: App {
             PostHogSDK.shared.optOut()
         } else {
             PostHogSDK.shared.optIn()
-            // ⚡️ THIS IS YOUR DAU METRIC:
             PostHogSDK.shared.capture("App Launched")
+        }
+        
+        // ⚡️ 4. Check if it's the user's first time opening the app
+        if !hasCompletedOnboarding {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                OnboardingWindowManager.shared.show()
+            }
         }
     }
     
     var body: some Scene {
-        // Keeps the app alive in the menu bar as a background utility
         MenuBarExtra("WaveNotch", systemImage: "music.note") {
             Button("Settings...") {
                 SettingsWindowManager.shared.showSettings()
             }
             
-            // ⚡️ THE FIX: Add the Check for Updates button
             Button("Check for Updates...") {
                 appDelegate.updaterController.checkForUpdates(nil)
             }
@@ -59,20 +66,17 @@ class IslandPanel: NSPanel {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var panel: IslandPanel!
-    
-    // ⚡️ THE FIX: Initialize Sparkle's Updater Controller
     let updaterController: SPUStandardUpdaterController
     
     override init() {
-        // Starts the updater engine the moment the app launches
         updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
         super.init()
     }
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         
-        let panelWidth: CGFloat = 600
-        let panelHeight: CGFloat = 350
+        let panelWidth: CGFloat = 800
+        let panelHeight: CGFloat = 600
         
         panel = IslandPanel(
             contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
@@ -96,7 +100,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hasShadow = false
         panel.isMovable = false
         
-        updatePanelPosition()
+        if let screen = NSScreen.main {
+            let x = (screen.frame.width - panelWidth) / 2
+            let y = screen.frame.height - panelHeight
+            panel.setFrameOrigin(NSPoint(x: x, y: y))
+        }
         
         let hostingView = NSHostingView(rootView: ContentView())
         hostingView.wantsLayer = true
@@ -108,19 +116,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
         
         _ = SkyLightOperator.shared.delegateWindow(panel)
+        
+        // ⚡️ Listen for manual centering requests from SwiftUI
+        NotificationCenter.default.addObserver(forName: NSNotification.Name("CenterApp"), object: nil, queue: .main) { _ in
+            self.centerPanel()
+        }
     }
     
-    func updatePanelPosition() {
-        let mouseLocation = NSEvent.mouseLocation
-        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) 
-            ?? NSScreen.main 
-            ?? NSScreen.screens.first
-        
-        guard let screen = targetScreen else { return }
-        
-        let xPos = screen.frame.midX - (panel.frame.width / 2)
-        let yPos = screen.frame.maxY - panel.frame.height
-        
-        panel.setFrameOrigin(NSPoint(x: xPos, y: yPos))
+    func centerPanel() {
+        guard let screen = NSScreen.main else { return }
+        let x = (screen.frame.width - panel.frame.width) / 2
+        let y = screen.frame.height - panel.frame.height
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 }

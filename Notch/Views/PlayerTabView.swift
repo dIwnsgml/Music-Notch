@@ -10,6 +10,7 @@ struct PlayerTabView: View {
     var expandedWidth: CGFloat
     @Binding var skipDirection: Int
     @Binding var glowOpacity: Double
+    let onSwipe: (Bool) -> Void
     
     @AppStorage("enableCalendar") var enableCalendar = false
     @AppStorage("showLyrics") var showLyrics = true
@@ -266,6 +267,18 @@ struct PlayerTabView: View {
                     }
                 }
                 .frame(width: playerPanelWidth)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 30)
+                        .onEnded { value in
+                            guard hasMedia else { return }
+                            if value.translation.width > 30 {
+                                onSwipe(false) // Backward (based on executeSkip logic)
+                            } else if value.translation.width < -30 {
+                                onSwipe(true) // Forward
+                            }
+                        }
+                )
                 
                 // ==========================================
                 // 📅 RIGHT SIDE: THE CALENDAR
