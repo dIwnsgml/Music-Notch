@@ -109,7 +109,6 @@ struct MarqueeText: View {
             }
         }
         .clipped()
-        .id(text)
         .background(
             Text(text)
                 .font(font)

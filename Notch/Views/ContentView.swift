@@ -189,6 +189,11 @@ struct ContentView: View {
             triggerBanner(text: newSong, duration: bannerDuration)
         }
         .onReceive(hoverCheckTimer) { _ in
+            if !isExpanded && nowPlaying.isPlaying {
+                nowPlaying.currentTime += 0.1
+                nowPlaying.updateActiveLyric()
+            }
+            
             guard let screen = NSScreen.main else { return }
             let mouseLoc = NSEvent.mouseLocation
             
@@ -226,6 +231,16 @@ struct ContentView: View {
                     isExpanded = false
                 }
             }
+        }
+        .onChange(of: nowPlaying.activeLyricIndex) { _, _ in updateLyricBanner() }
+        .onChange(of: showBannerLyrics) { _, _ in updateLyricBanner() }
+        .onChange(of: nowPlaying.lyrics) { _, _ in updateLyricBanner() }
+        .onChange(of: nowPlaying.isPlaying) { _, newState in
+            updateLyricBanner()
+            guard showBannerOnControl else { return }
+            guard nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING" else { return }
+            guard Date().timeIntervalSince(lastSongChangeTime) > 0.5 else { return }
+            triggerBanner(text: newState ? "Resumed" : "Paused", duration: 1.5)
         }
         .edgesIgnoringSafeArea(.all)
     }
@@ -283,11 +298,24 @@ struct ContentView: View {
             .padding(.horizontal, 24)
             .frame(height: notchHeight)
             
-            if (isShowingBanner || isShowingLyricBanner) && hasMedia {
-                MarqueeText(text: isShowingBanner ? bannerText : currentLyricText, font: .system(size: 12, weight: .bold), alignment: .center)
-                    .foregroundColor(nowPlaying.artworkDominantColor)
-                    .frame(height: bannerHeightAddon)
-                    .padding(.horizontal, 24)
+            let showAnyBanner: Bool = (isShowingBanner || isShowingLyricBanner) && hasMedia
+            if showAnyBanner {
+                ZStack {
+                    if isShowingBanner {
+                        MarqueeText(text: bannerText, font: .system(size: 12, weight: .bold), alignment: .center)
+                            .foregroundColor(nowPlaying.artworkDominantColor)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .id("banner_\(bannerText)")
+                    } else if isShowingLyricBanner {
+                        MarqueeText(text: currentLyricText, font: .system(size: 12, weight: .bold), alignment: .center)
+                            .foregroundColor(nowPlaying.artworkDominantColor)
+                            .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .trailing)), removal: .opacity.combined(with: .move(edge: .leading))))
+                            .id("lyric_\(currentLyricText)")
+                    }
+                }
+                .frame(height: bannerHeightAddon)
+                .padding(.horizontal, 24)
+                .clipped()
             }
         }
         .frame(width: collapsedWidth, height: currentCollapsedHeight)
@@ -375,12 +403,19 @@ struct ContentView: View {
     }
     
     private func updateLyricBanner() {
-        guard showBannerLyrics, !isExpanded, nowPlaying.isPlaying, !nowPlaying.lyrics.isEmpty else {
-            withAnimation { isShowingLyricBanner = false }; return
+        guard showBannerLyrics, !isExpanded, nowPlaying.isPlaying, !nowPlaying.lyrics.isEmpty, nowPlaying.activeLyricIndex >= 0, nowPlaying.activeLyricIndex < nowPlaying.lyrics.count else {
+            withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) { isShowingLyricBanner = false }; return
         }
         let newLyric = nowPlaying.lyrics[nowPlaying.activeLyricIndex].text
-        if newLyric.isEmpty { withAnimation { isShowingLyricBanner = false } }
-        else { withAnimation { currentLyricText = newLyric; isShowingLyricBanner = true } }
+        if newLyric.trimmingCharacters(in: .whitespaces).isEmpty { 
+            withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) { isShowingLyricBanner = false } 
+        }
+        else { 
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { 
+                currentLyricText = newLyric
+                isShowingLyricBanner = true 
+            } 
+        }
     }
     
     private func triggerBanner(text: String, duration: Double) {
