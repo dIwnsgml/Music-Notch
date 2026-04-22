@@ -4,6 +4,7 @@ import Combine
 enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
     case player
     case spotifyQueue
+    case spotifyPlaylists
     case calendar
     case weather
     
@@ -13,6 +14,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .player: return "Music Player"
         case .spotifyQueue: return "Spotify Queue"
+        case .spotifyPlaylists: return "Spotify Playlists"
         case .calendar: return "Calendar"
         case .weather: return "Weather"
         }
@@ -22,28 +24,36 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
 class DashboardManager: ObservableObject {
     static let shared = DashboardManager()
     
-    // We always have the player by default
     @Published var activeWidgets: [NotchWidgetType] = [.player]
-    
-    @AppStorage("plugin_spotify_plus_enabled") private var spotifyEnabled = false
-    @AppStorage("plugin_google_calendar_enabled") private var calendarEnabled = false
-    @AppStorage("plugin_weather_enabled") private var weatherEnabled = false
     
     private var cancellables = Set<AnyCancellable>()
     
     init() {
-        // Watch for plugin toggles to refresh the dashboard
-        // In a real Obsidian-style app, this would be more dynamic, 
-        // but for Core Plugins, we map toggles to WidgetTypes.
+        // Observe key AppStorage changes to trigger live refresh
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .debounce(for: .milliseconds(100), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.refreshWidgets()
+            }
+            .store(in: &cancellables)
         
         refreshWidgets()
     }
     
     func refreshWidgets() {
+        let queueEnabled = UserDefaults.standard.bool(forKey: "plugin_spotify_queue_enabled")
+        let playlistsEnabled = UserDefaults.standard.bool(forKey: "plugin_spotify_playlists_enabled")
+        let calendarEnabled = UserDefaults.standard.bool(forKey: "plugin_google_calendar_enabled")
+        let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
+        
         var widgets: [NotchWidgetType] = [.player]
         
-        if spotifyEnabled {
+        if queueEnabled {
             widgets.append(.spotifyQueue)
+        }
+        
+        if playlistsEnabled {
+            widgets.append(.spotifyPlaylists)
         }
         
         if calendarEnabled {
@@ -54,9 +64,14 @@ class DashboardManager: ObservableObject {
             widgets.append(.weather)
         }
         
-        // Ensure the order or presence is updated
         DispatchQueue.main.async {
-            self.activeWidgets = widgets
+            if self.activeWidgets != widgets {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    self.activeWidgets = widgets
+                    // Notify window centering logic
+                    NotificationCenter.default.post(name: NSNotification.Name("UpdateNotchLayout"), object: nil)
+                }
+            }
         }
     }
 }

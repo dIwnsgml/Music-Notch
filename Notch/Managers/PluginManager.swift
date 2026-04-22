@@ -6,13 +6,22 @@ class PluginManager: ObservableObject {
     
     @Published var plugins: [WaveNotchPlugin] = [
         WaveNotchPlugin(
-            id: "spotify_plus",
-            name: "Spotify Plus",
-            description: "Advanced Spotify integration with private playlist access, real-time queue synchronization, and native playback controls using official APIs.",
-            iconName: "music.note",
+            id: "spotify_queue",
+            name: "Spotify Queue",
+            description: "View and manage your real-time Spotify play queue directly in the notch.",
+            iconName: "list.bullet.indent",
             assetImageName: "spotify_logo",
             category: .media,
-            storageKeyBase: "plugin_spotify_plus"
+            storageKeyBase: "plugin_spotify_queue"
+        ),
+        WaveNotchPlugin(
+            id: "spotify_playlists",
+            name: "Spotify Playlists",
+            description: "Quickly access and switch between your favorite Spotify playlists with one tap.",
+            iconName: "music.note.list",
+            assetImageName: "spotify_logo",
+            category: .media,
+            storageKeyBase: "plugin_spotify_playlists"
         ),
         WaveNotchPlugin(
             id: "google_calendar",

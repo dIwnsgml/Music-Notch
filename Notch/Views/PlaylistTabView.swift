@@ -4,87 +4,81 @@ struct PlaylistTabView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     @StateObject private var spotifyManager = SpotifyAuthManager.shared
     
-    @AppStorage("plugin_spotify_plus_enabled") var spotifyPlusEnabled = false
+    @AppStorage("plugin_spotify_playlists_enabled") var spotifyPlaylistsEnabled = false
     
     var body: some View {
         VStack(spacing: 0) {
-            if spotifyPlusEnabled && !spotifyManager.accessToken.isEmpty {
-                spotifyPlusContent
+            if spotifyPlaylistsEnabled && !spotifyManager.accessToken.isEmpty {
+                spotifyPlaylistsContent
             } else {
                 classicPlaylistContent
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            if spotifyPlusEnabled {
+            if spotifyPlaylistsEnabled {
                 spotifyManager.fetchPlaylists()
-                spotifyManager.fetchQueue()
             }
         }
     }
     
-    private var spotifyPlusContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private var spotifyPlaylistsContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Spotify Plus")
-                    .font(.system(size: 14, weight: .bold))
+                Text("Spotify Playlists")
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.green)
                 Spacer()
-                Button(action: {
-                    spotifyManager.fetchPlaylists()
-                    spotifyManager.fetchQueue()
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 10))
-                }
-                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
             
-            if spotifyManager.playlists.isEmpty && spotifyManager.currentQueue.isEmpty {
-                VStack(spacing: 12) {
+            if spotifyManager.playlists.isEmpty {
+                VStack {
                     Spacer()
-                    Image(systemName: "music.note.list")
-                        .font(.system(size: 30))
-                        .foregroundColor(.gray.opacity(0.3))
-                    Text("No data found. Make sure Spotify is open.")
-                        .font(.system(size: 11, weight: .medium))
+                    Text("No playlists found.")
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
                     Spacer()
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 10) {
                         ForEach(spotifyManager.playlists) { playlist in
-                            SpotifyPlaylistRow(playlist: playlist) {
+                            Button(action: {
                                 spotifyManager.play(uri: playlist.uri)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
-                .frame(height: 120)
-                
-                if !spotifyManager.currentQueue.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Up Next")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 20)
-                        
-                        ScrollView(.vertical, showsIndicators: false) {
-                            VStack(spacing: 8) {
-                                ForEach(spotifyManager.currentQueue.prefix(5)) { track in
-                                    SpotifyTrackRow(track: track)
+                            }) {
+                                HStack(spacing: 12) {
+                                    if let urlString = playlist.imageUrl, let url = URL(string: urlString) {
+                                        AsyncImage(url: url) { image in
+                                            image.resizable().aspectRatio(contentMode: .fill)
+                                        } placeholder: {
+                                            Rectangle().fill(Color.gray.opacity(0.2))
+                                        }
+                                        .frame(width: 32, height: 32)
+                                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    }
+                                    
+                                    Text(playlist.name)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                    
+                                    Spacer()
                                 }
+                                .padding(.horizontal, 16)
+                                .contentShape(Rectangle())
                             }
-                            .padding(.horizontal, 20)
+                            .buttonStyle(.plain)
                         }
                     }
+                    .padding(.vertical, 8)
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(12)
     }
     
     private var classicPlaylistContent: some View {
@@ -149,67 +143,6 @@ struct PlaylistTabView: View {
                     .padding(.vertical, 12)
                 }
             }
-        }
-    }
-}
-
-struct SpotifyPlaylistRow: View {
-    let playlist: SpotifyPlaylist
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 8) {
-                if let urlString = playlist.imageUrl, let url = URL(string: urlString) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Rectangle().fill(Color.gray.opacity(0.2))
-                    }
-                    .frame(width: 80, height: 80)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                } else {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(width: 80, height: 80)
-                        .overlay(Image(systemName: "music.note.list").foregroundColor(.gray))
-                }
-                
-                Text(playlist.name)
-                    .font(.system(size: 10, weight: .semibold))
-                    .lineLimit(1)
-                    .frame(width: 80, alignment: .leading)
-            }
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-struct SpotifyTrackRow: View {
-    let track: SpotifyTrack
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            if let urlString = track.album?.images?.first?.url, let url = URL(string: urlString) {
-                AsyncImage(url: url) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle().fill(Color.gray.opacity(0.2))
-                }
-                .frame(width: 28, height: 28)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            }
-            
-            VStack(alignment: .leading, spacing: 1) {
-                Text(track.name)
-                    .font(.system(size: 11, weight: .bold))
-                    .lineLimit(1)
-                Text(track.artists.first?.name ?? "Unknown Artist")
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer()
         }
     }
 }

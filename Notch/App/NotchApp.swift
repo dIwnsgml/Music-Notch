@@ -50,7 +50,6 @@ struct URLHandler: ViewModifier {
         content
             .onOpenURL { url in
                 if url.scheme == "wavenotch" && url.host == "callback" {
-                    // Extract code and notify manager
                     if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
                        let code = components.queryItems?.first(where: { $0.name == "code" })?.value {
                         NotificationCenter.default.post(name: NSNotification.Name("SpotifyAuthCallback"), object: code)
@@ -76,8 +75,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         
-        let panelWidth: CGFloat = 600
-        let panelHeight: CGFloat = 350
+        // ⚡️ Large transparent window to allow dynamic sizing of content within it
+        let panelWidth: CGFloat = 1000 
+        let panelHeight: CGFloat = 800
         
         panel = IslandPanel(
             contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
@@ -101,12 +101,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hasShadow = false
         panel.isMovable = false
         
-        if let screen = NSScreen.main {
-            let x = (screen.frame.width - panelWidth) / 2
-            let y = screen.frame.height - panelHeight
-            panel.setFrameOrigin(NSPoint(x: x, y: y))
-        }
-        
         let hostingView = NSHostingView(rootView: ContentView())
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
@@ -117,5 +111,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
         
         _ = SkyLightOperator.shared.delegateWindow(panel)
+        
+        // ⚡️ Initial center
+        centerPanel()
+        
+        // ⚡️ Listen for layout changes to re-center the window
+        NotificationCenter.default.addObserver(forName: NSNotification.Name("CenterAppWindow"), object: nil, queue: .main) { _ in
+            self.centerPanel()
+        }
+    }
+    
+    func centerPanel() {
+        guard let screen = NSScreen.main else { return }
+        let x = screen.frame.origin.x + (screen.frame.width - panel.frame.width) / 2
+        let y = screen.frame.maxY - panel.frame.height
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 }
