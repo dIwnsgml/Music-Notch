@@ -8,5 +8,18 @@
 	<string>WaveNotch needs access to display your upcoming events.</string>
 	<key>SUPublicEDKey</key>
 	<string>61r/qxZuSY/imacPrlbNhTOLzs7X6/Cz8B6tM9kLfeY=</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.jason.WaveNotch</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wavenotch</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

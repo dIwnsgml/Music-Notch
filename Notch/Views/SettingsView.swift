@@ -9,8 +9,9 @@ import Sparkle
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
     case lyrics = "Lyrics & Banner"
-    case shortcuts = "Shortcuts" // ⚡️ NEW TAB
+    case shortcuts = "Shortcuts"
     case integrations = "Integrations"
+    case plugins = "Plugins" // ⚡️ NEW TAB
     
     var id: String { self.rawValue }
     
@@ -18,8 +19,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "gearshape"
         case .lyrics: return "text.quote"
-        case .shortcuts: return "keyboard" // ⚡️ NEW ICON
+        case .shortcuts: return "keyboard"
         case .integrations: return "puzzlepiece.extension"
+        case .plugins: return "app.badge.fill"
         }
     }
 }
@@ -135,15 +137,22 @@ struct SettingsView: View {
                     Divider()
                 }
                 
-                Form {
-                    switch selectedTab {
-                    case .general: generalContent
-                    case .lyrics: lyricsContent
-                    case .shortcuts: shortcutsContent
-                    case .integrations: integrationsContent
+                Group {
+                    if selectedTab == .plugins {
+                        PluginStoreView()
+                    } else {
+                        Form {
+                            switch selectedTab {
+                            case .general: generalContent
+                            case .lyrics: lyricsContent
+                            case .shortcuts: shortcutsContent
+                            case .integrations: integrationsContent
+                            default: EmptyView()
+                            }
+                        }
+                        .formStyle(.grouped)
                     }
                 }
-                .formStyle(.grouped)
             }
             .navigationTitle(selectedTab.rawValue)
             .toolbar {

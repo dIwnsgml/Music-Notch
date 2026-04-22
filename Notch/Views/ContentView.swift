@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var isExpanded = false
     @StateObject private var nowPlaying = NowPlayingManager()
     @State private var currentTab: AppTab = .player
+    @StateObject private var dashboardManager = DashboardManager.shared
     
     // ⚡️ USER SETTINGS
     @AppStorage("enableCalendar") var enableCalendar = false
@@ -79,7 +80,15 @@ struct ContentView: View {
     let bannerHeightAddon: CGFloat = 24
     
     var collapsedWidth: CGFloat { CGFloat(storedCollapsedWidth) }
-    var expandedWidth: CGFloat { (enableCalendar && calendarManager.hasAccess) ? 460 : 400 }
+    
+    var expandedWidth: CGFloat {
+        let activeCount = dashboardManager.activeWidgets.count
+        if activeCount <= 1 {
+            return (enableCalendar && calendarManager.hasAccess) ? 460 : 400
+        } else {
+            return 800 // Split view for 2+ plugins
+        }
+    }
     
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
@@ -92,7 +101,15 @@ struct ContentView: View {
         
         let playerHeight: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (basePlayerHeight + sandwichHeightAddon + dynamicLyricsHeight + 12) : (basePlayerHeight + sandwichHeightAddon)
         
-        let expandedHeight: CGFloat = currentTab == .playlist ? 216 : max(playerHeight, calendarHeight)
+        let expandedHeight: CGFloat = {
+            let activeWidgets = dashboardManager.activeWidgets
+            if activeWidgets.count <= 1 {
+                return currentTab == .playlist ? 216 : max(playerHeight, calendarHeight)
+            } else {
+                // For side-by-side split view
+                return max(playerHeight, 250) 
+            }
+        }()
         
         let currentWidth: CGFloat = isExpanded ? expandedWidth : collapsedWidth
         let currentCollapsedHeight: CGFloat = (isShowingBanner || isShowingLyricBanner) ? (notchHeight + bannerHeightAddon) : notchHeight
@@ -392,13 +409,34 @@ struct ContentView: View {
     // ---------------------------------------------------------
     @ViewBuilder
     private func expandedLayer(expandedHeight: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            if currentTab == .player {
-                PlayerTabView(nowPlaying: nowPlaying, calendarManager: calendarManager, expandedWidth: expandedWidth, skipDirection: $skipDirection, glowOpacity: $glowOpacity)
-                    .padding(.bottom, 14)
+        Group {
+            let widgets = dashboardManager.activeWidgets
+            
+            if widgets.count <= 1 {
+                VStack(spacing: 0) {
+                    if currentTab == .player {
+                        PlayerTabView(nowPlaying: nowPlaying, calendarManager: calendarManager, expandedWidth: expandedWidth, skipDirection: $skipDirection, glowOpacity: $glowOpacity)
+                            .padding(.bottom, 14)
+                    } else {
+                        PlaylistTabView(nowPlaying: nowPlaying)
+                            .padding(.bottom, 14)
+                    }
+                }
             } else {
-                PlaylistTabView(nowPlaying: nowPlaying)
-                    .padding(.bottom, 14)
+                // Modular split dashboard for 2+ plugins
+                HStack(alignment: .top, spacing: 16) {
+                    ForEach(widgets) { widget in
+                        WidgetFactoryView(
+                            widgetType: widget,
+                            nowPlaying: nowPlaying,
+                            calendarManager: calendarManager,
+                            expandedWidth: (expandedWidth - 32 - 16) / 2, // Accounting for padding and spacing
+                            skipDirection: $skipDirection,
+                            glowOpacity: $glowOpacity
+                        )
+                    }
+                }
+                .padding(.horizontal, 16)
             }
         }
         .padding(.top, notchHeight + 12) // ⚡️ Perfectly drops below the dynamic hardware notch
@@ -407,6 +445,9 @@ struct ContentView: View {
         .scaleEffect(isExpanded ? 1.0 : 0.95, anchor: .top)
         .allowsHitTesting(isExpanded)
         .zIndex(3)
+        .onAppear {
+            dashboardManager.refreshWidgets()
+        }
     }
     
     // ---------------------------------------------------------
