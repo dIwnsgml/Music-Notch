@@ -9,9 +9,10 @@ import Sparkle
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
     case lyrics = "Lyrics & Banner"
+    case layout = "Layout" // ⚡️ NEW: Layout Editor
     case shortcuts = "Shortcuts"
     case integrations = "Integrations"
-    case plugins = "Plugins" // ⚡️ NEW TAB
+    case plugins = "Plugins"
     
     var id: String { self.rawValue }
     
@@ -19,6 +20,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "gearshape"
         case .lyrics: return "text.quote"
+        case .layout: return "square.grid.2x2"
         case .shortcuts: return "keyboard"
         case .integrations: return "puzzlepiece.extension"
         case .plugins: return "app.badge.fill"
@@ -140,6 +142,8 @@ struct SettingsView: View {
                 Group {
                     if selectedTab == .plugins {
                         PluginStoreView()
+                    } else if selectedTab == .layout {
+                        DashboardSettingsView()
                     } else {
                         Form {
                             switch selectedTab {
@@ -539,5 +543,88 @@ struct SettingsView: View {
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") { NSWorkspace.shared.open(url) }
         }
         hasAccessibilityAccess = accessEnabled
+    }
+}
+
+// ---------------------------------------------------------
+// 🎛️ DASHBOARD SETTINGS VIEW (DRAG & DROP LAYOUT)
+// ---------------------------------------------------------
+struct DashboardSettingsView: View {
+    @ObservedObject var dashboardManager = DashboardManager.shared
+    @State private var localOrder: [NotchWidgetType] = []
+    
+    @AppStorage("plugin_spotify_queue_enabled") var spotifyQueueEnabled = false
+    @AppStorage("plugin_spotify_playlists_enabled") var spotifyPlaylistsEnabled = false
+    @AppStorage("plugin_google_calendar_enabled") var calendarEnabled = false
+    @AppStorage("plugin_weather_enabled") var weatherEnabled = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Dashboard Layout")
+                .font(.system(size: 28, weight: .bold))
+            
+            Text("Drag and drop to prioritize how widgets appear side-by-side. The Music Player is permanently anchored as the primary widget.")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+            
+            List {
+                ForEach(localOrder, id: \.self) { widget in
+                    HStack(spacing: 12) {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundColor(.gray.opacity(widget == .player ? 0.3 : 1.0))
+                            .font(.system(size: 16, weight: .bold))
+                            .frame(width: 20)
+                        
+                        Text(widget.displayName)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(widget == .player ? .white.opacity(0.8) : .white)
+                        
+                        Spacer()
+                        
+                        if widget != .player {
+                            Toggle("", isOn: binding(for: widget))
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                        } else {
+                            Text("Always On")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.green)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.green.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .onMove { source, destination in
+                    localOrder.move(fromOffsets: source, toOffset: destination)
+                    dashboardManager.saveWidgetOrder(localOrder)
+                }
+            }
+            .listStyle(.inset)
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+        }
+        .padding(30)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            localOrder = dashboardManager.getWidgetOrder()
+        }
+    }
+    
+    private func binding(for widget: NotchWidgetType) -> Binding<Bool> {
+        switch widget {
+        case .spotifyQueue: return $spotifyQueueEnabled
+        case .spotifyPlaylists: return $spotifyPlaylistsEnabled
+        case .calendar: return $calendarEnabled
+        case .weather: return $weatherEnabled
+        case .player: return .constant(true)
+        }
     }
 }

@@ -40,28 +40,43 @@ class DashboardManager: ObservableObject {
         refreshWidgets()
     }
     
+    func getWidgetOrder() -> [NotchWidgetType] {
+        if let data = UserDefaults.standard.data(forKey: "dashboard_widget_order"),
+           let savedOrder = try? JSONDecoder().decode([NotchWidgetType].self, from: data) {
+            
+            // Ensure all enum cases are accounted for (e.g., if new plugins were added in an update)
+            var fullOrder = savedOrder
+            let missing = NotchWidgetType.allCases.filter { !fullOrder.contains($0) }
+            fullOrder.append(contentsOf: missing)
+            return fullOrder
+        }
+        return NotchWidgetType.allCases
+    }
+    
+    func saveWidgetOrder(_ order: [NotchWidgetType]) {
+        if let data = try? JSONEncoder().encode(order) {
+            UserDefaults.standard.set(data, forKey: "dashboard_widget_order")
+        }
+        refreshWidgets() // Live sync the notch!
+    }
+    
     func refreshWidgets() {
         let queueEnabled = UserDefaults.standard.bool(forKey: "plugin_spotify_queue_enabled")
         let playlistsEnabled = UserDefaults.standard.bool(forKey: "plugin_spotify_playlists_enabled")
         let calendarEnabled = UserDefaults.standard.bool(forKey: "plugin_google_calendar_enabled")
         let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
         
-        var widgets: [NotchWidgetType] = [.player]
+        let order = getWidgetOrder()
+        var widgets: [NotchWidgetType] = []
         
-        if queueEnabled {
-            widgets.append(.spotifyQueue)
-        }
-        
-        if playlistsEnabled {
-            widgets.append(.spotifyPlaylists)
-        }
-        
-        if calendarEnabled {
-            widgets.append(.calendar)
-        }
-        
-        if weatherEnabled {
-            widgets.append(.weather)
+        for widget in order {
+            switch widget {
+            case .player: widgets.append(.player) // Always enabled natively
+            case .spotifyQueue: if queueEnabled { widgets.append(.spotifyQueue) }
+            case .spotifyPlaylists: if playlistsEnabled { widgets.append(.spotifyPlaylists) }
+            case .calendar: if calendarEnabled { widgets.append(.calendar) }
+            case .weather: if weatherEnabled { widgets.append(.weather) }
+            }
         }
         
         DispatchQueue.main.async {
