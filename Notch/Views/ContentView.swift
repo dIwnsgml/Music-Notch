@@ -74,7 +74,7 @@ struct ContentView: View {
     }
     
     var expandedWidth: CGFloat {
-        activeWidgetsCount <= 1 ? 460 : 800
+        activeWidgetsCount <= 1 ? 400 : 520
     }
     
     var body: some View {
@@ -335,30 +335,34 @@ struct ContentView: View {
     
     @ViewBuilder
     private func expandedLayer(expandedHeight: CGFloat) -> some View {
-        Group {
-            let widgets = dashboardManager.activeWidgets
-            
+        let widgets = dashboardManager.activeWidgets
+        let availableWidth = expandedWidth - 48 - 12 // total padding and spacing
+        
+        VStack(spacing: 0) {
             if widgets.count <= 1 {
                 VStack(spacing: 0) {
                     if currentTab == .player {
-                        PlayerTabView(nowPlaying: nowPlaying, calendarManager: calendarManager, expandedWidth: expandedWidth, skipDirection: $skipDirection, glowOpacity: $glowOpacity, onSwipe: { forward in
+                        PlayerTabView(nowPlaying: nowPlaying, calendarManager: calendarManager, expandedWidth: expandedWidth - 48, isCompact: false, skipDirection: $skipDirection, glowOpacity: $glowOpacity, onSwipe: { forward in
                             self.executeSkip(forward: forward)
                         })
+                        .padding(.horizontal, 24)
                         .padding(.bottom, 14)
                     } else {
                         PlaylistTabView(nowPlaying: nowPlaying)
+                            .padding(.horizontal, 24)
                             .padding(.bottom, 14)
                     }
                     Spacer(minLength: 0)
                 }
             } else {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 16, alignment: .top), GridItem(.flexible(), spacing: 16, alignment: .top)], spacing: 16) {
-                    ForEach(widgets) { widget in
+                LazyVGrid(columns: [GridItem(.fixed(availableWidth * 0.6), spacing: 12, alignment: .top), GridItem(.fixed(availableWidth * 0.4), spacing: 12, alignment: .top)], spacing: 12) {
+                    ForEach(Array(widgets.enumerated()), id: \.element.id) { index, widget in
                         WidgetFactoryView(
                             widgetType: widget,
                             nowPlaying: nowPlaying,
                             calendarManager: calendarManager,
-                            expandedWidth: (expandedWidth - 32 - 16) / 2,
+                            expandedWidth: (index % 2 == 0) ? (availableWidth * 0.6) : (availableWidth * 0.4),
+                            isCompact: true,
                             skipDirection: $skipDirection,
                             glowOpacity: $glowOpacity,
                             onSwipe: { forward in
@@ -368,7 +372,7 @@ struct ContentView: View {
                         .frame(height: 240)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 24)
             }
         }
         .padding(.top, notchHeight + 12)

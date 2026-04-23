@@ -8,6 +8,7 @@ struct PlayerTabView: View {
     @ObservedObject var calendarManager: CalendarManager
     
     var expandedWidth: CGFloat
+    var isCompact: Bool
     @Binding var skipDirection: Int
     @Binding var glowOpacity: Double
     let onSwipe: (Bool) -> Void // ⚡️ ADDED: Scoped skip trigger
@@ -160,12 +161,23 @@ struct PlayerTabView: View {
                             .padding(.leading, 6)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             
-                            if hasMedia && !showSplitView {
+                            if hasMedia && !showSplitView && !isCompact {
                                 Spacer()
                                 mediaControls
                             }
                         }
                         .padding(.horizontal, hPad)
+                        
+                        // ⚡️ NEW: Stack controls under title if space is constrained
+                        if hasMedia && (showSplitView || isCompact) {
+                            HStack {
+                                Spacer()
+                                mediaControls
+                                Spacer()
+                            }
+                            .padding(.top, 12)
+                            .padding(.bottom, 2)
+                        }
                         
                         // 2. THE PROGRESS BAR
                         if hasMedia {
@@ -211,16 +223,6 @@ struct PlayerTabView: View {
                             }
                             .padding(.horizontal, hPad)
                             .padding(.top, 8)
-                            
-                            if showSplitView {
-                                HStack {
-                                    Spacer()
-                                    mediaControls
-                                    Spacer()
-                                }
-                                .padding(.top, 12)
-                                .padding(.bottom, 4)
-                            }
                         }
                         
                         // 3. LYRICS
@@ -352,6 +354,7 @@ struct PlayerTabView: View {
                         nowPlaying.openPlayingApp()
                     }
                 }
+                .padding(.vertical, 12)
             }
             Spacer(minLength: 0) // ⚡️ Force top alignment
         }

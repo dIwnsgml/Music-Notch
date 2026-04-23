@@ -7,6 +7,7 @@ struct WidgetFactoryView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     @ObservedObject var calendarManager: CalendarManager
     let expandedWidth: CGFloat
+    var isCompact: Bool // ⚡️ ADDED
     @Binding var skipDirection: Int
     @Binding var glowOpacity: Double
     let onSwipe: (Bool) -> Void
@@ -20,6 +21,7 @@ struct WidgetFactoryView: View {
                         nowPlaying: nowPlaying,
                         calendarManager: calendarManager,
                         expandedWidth: expandedWidth,
+                        isCompact: isCompact, // ⚡️ ADDED
                         skipDirection: $skipDirection,
                         glowOpacity: $glowOpacity,
                         onSwipe: onSwipe
@@ -44,30 +46,7 @@ struct SpotifyQueueWidget: View {
     @StateObject private var spotifyManager = SpotifyAuthManager.shared
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "list.bullet.indent")
-                        .foregroundColor(.green)
-                    Text("Spotify Queue")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white)
-                }
-                
-                Spacer()
-                
-                Button(action: {
-                    spotifyManager.fetchQueue()
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.gray)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            
+        VStack(alignment: .leading, spacing: 0) {
             if spotifyManager.accessToken.isEmpty {
                 emptyStateView(text: "Please enable Spotify Plus in Settings.")
             } else if spotifyManager.currentQueueItems.isEmpty {
@@ -81,18 +60,11 @@ struct SpotifyQueueWidget: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
+                    .padding(16)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
-        )
         .onAppear {
             spotifyManager.fetchQueue()
         }
@@ -145,10 +117,17 @@ struct SpotifyQueueRow: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(track.name)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(isHovering ? .green : .white)
-                        .lineLimit(1)
+                    if isHovering {
+                        MarqueeText(text: track.name, font: .system(size: 12, weight: .bold), alignment: .leading)
+                            .foregroundColor(.green)
+                            .frame(height: 14)
+                    } else {
+                        Text(track.name)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                            .frame(height: 14, alignment: .leading)
+                    }
                     Text(track.artists.first?.name ?? "Unknown Artist")
                         .font(.system(size: 10))
                         .foregroundColor(.gray)

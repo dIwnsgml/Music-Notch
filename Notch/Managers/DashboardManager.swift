@@ -67,15 +67,15 @@ class DashboardManager: ObservableObject {
         let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
         
         let order = getWidgetOrder()
-        var widgets: [NotchWidgetType] = []
+        var widgets: [NotchWidgetType] = [.player] // ⚡️ Always pinned as the primary widget
         
-        for widget in order {
+        for widget in order where widget != .player {
             switch widget {
-            case .player: widgets.append(.player) // Always enabled natively
             case .spotifyQueue: if queueEnabled { widgets.append(.spotifyQueue) }
             case .spotifyPlaylists: if playlistsEnabled { widgets.append(.spotifyPlaylists) }
             case .calendar: if calendarEnabled { widgets.append(.calendar) }
             case .weather: if weatherEnabled { widgets.append(.weather) }
+            default: break
             }
         }
         

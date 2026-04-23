@@ -23,29 +23,7 @@ struct PlaylistTabView: View {
     }
     
     private var spotifyPlaylistsContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "music.note.list")
-                        .foregroundColor(.green)
-                    Text("Spotify Playlists")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white)
-                }
-                Spacer()
-                
-                Button(action: {
-                    spotifyManager.fetchPlaylists()
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.gray)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            
+        VStack(alignment: .leading, spacing: 0) {
             if spotifyManager.playlists.isEmpty {
                 VStack {
                     Spacer()
@@ -64,17 +42,11 @@ struct PlaylistTabView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
+                    .padding(16)
                 }
             }
         }
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
-        )
+        .frame(maxHeight: .infinity)
     }
     
     private var classicPlaylistContent: some View {

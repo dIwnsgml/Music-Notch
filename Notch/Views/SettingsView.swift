@@ -567,43 +567,70 @@ struct DashboardSettingsView: View {
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
             
-            List {
-                ForEach(localOrder, id: \.self) { widget in
-                    HStack(spacing: 12) {
-                        Image(systemName: "line.3.horizontal")
-                            .foregroundColor(.gray.opacity(widget == .player ? 0.3 : 1.0))
-                            .font(.system(size: 16, weight: .bold))
-                            .frame(width: 20)
-                        
-                        Text(widget.displayName)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(widget == .player ? .white.opacity(0.8) : .white)
-                        
-                        Spacer()
-                        
-                        if widget != .player {
+            VStack(spacing: 0) {
+                // ⚡️ FIXED PRIMARY WIDGET
+                HStack(spacing: 12) {
+                    Image(systemName: "lock.fill")
+                        .foregroundColor(.gray)
+                        .font(.system(size: 14))
+                        .frame(width: 20)
+                    
+                    Text("Music Player")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
+                    
+                    Spacer()
+                    
+                    Text("Primary (60%)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.green.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                
+                Divider()
+                    .background(Color.white.opacity(0.1))
+                
+                // ⚡️ REORDERABLE SECONDARY WIDGETS
+                List {
+                    ForEach(localOrder.filter { $0 != .player }, id: \.self) { widget in
+                        HStack(spacing: 12) {
+                            Image(systemName: "line.3.horizontal")
+                                .foregroundColor(.gray)
+                                .font(.system(size: 16, weight: .bold))
+                                .frame(width: 20)
+                            
+                            Text(widget.displayName)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.white)
+                            
+                            Spacer()
+                            
                             Toggle("", isOn: binding(for: widget))
                                 .toggleStyle(.switch)
                                 .labelsHidden()
-                        } else {
-                            Text("Always On")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.green)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.green.opacity(0.15))
-                                .clipShape(Capsule())
                         }
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.vertical, 8)
-                    .contentShape(Rectangle())
+                    .onMove { source, destination in
+                        // We need to map the move indices to the full order array
+                        var reorderable = localOrder.filter { $0 != .player }
+                        reorderable.move(fromOffsets: source, toOffset: destination)
+                        
+                        var newOrder: [NotchWidgetType] = [.player]
+                        newOrder.append(contentsOf: reorderable)
+                        
+                        localOrder = newOrder
+                        dashboardManager.saveWidgetOrder(localOrder)
+                    }
                 }
-                .onMove { source, destination in
-                    localOrder.move(fromOffsets: source, toOffset: destination)
-                    dashboardManager.saveWidgetOrder(localOrder)
-                }
+                .listStyle(.plain)
             }
-            .listStyle(.inset)
             .background(Color.white.opacity(0.05))
             .cornerRadius(12)
             .overlay(
