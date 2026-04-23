@@ -66,3 +66,35 @@ struct SpotifyQueueItem: Identifiable, Equatable {
     let id: String // Unique ID (index + uri)
     let track: SpotifyTrack
 }
+
+// MARK: - Google Calendar Models
+
+struct GoogleCalendarListResponse: Codable {
+    let items: [GoogleCalendar]
+}
+
+struct GoogleCalendar: Codable, Identifiable {
+    let id: String
+    let summary: String
+    let backgroundColor: String?
+}
+
+struct GoogleCalendarEventsResponse: Codable {
+    let items: [GoogleCalendarEvent]
+}
+
+struct GoogleCalendarEvent: Codable, Identifiable {
+    let id: String
+    let summary: String
+    let description: String?
+    let start: GoogleCalendarTime
+    let end: GoogleCalendarTime
+    let htmlLink: String?
+    let calendarId: String? // Custom field to track source
+    let calendarColor: String? // Custom field to track color
+}
+
+struct GoogleCalendarTime: Codable {
+    let dateTime: String?
+    let date: String? // For all-day events
+}

@@ -181,6 +181,50 @@ struct PluginDetailView: View {
                         key: "plugin_spotify_playlists_auto_hide"
                     )
                 }
+            } else if plugin.id == "google_calendar" {
+                Divider()
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Account Connection")
+                        .font(.headline)
+                    
+                    if GoogleCalendarManager.shared.isAuthenticated {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Connected to Google")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.green)
+                                Text("Your events are syncing in the background.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Button("Log Out") {
+                                GoogleCalendarManager.shared.accessToken = ""
+                                GoogleCalendarManager.shared.refreshToken = ""
+                                GoogleCalendarManager.shared.isAuthenticated = false
+                                GoogleCalendarManager.shared.upcomingEvents = []
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    } else {
+                        Button(action: {
+                            GoogleCalendarManager.shared.authenticate { success in
+                                if success { print("Google Auth Success!") }
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: "person.crop.circle.badge.plus")
+                                Text("Sign in with Google")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                    }
+                }
             }
             
             Spacer()

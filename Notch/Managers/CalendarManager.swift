@@ -10,15 +10,27 @@ class CalendarManager: ObservableObject {
     @Published var hasAccess = false
     @Published var todaysEvents: [EKEvent] = []
     
+    private var timer: Timer?
+    
     init() {
         checkAccessStatus()
+        
+        // ⚡️ PERIODIC REFRESH: Every 15 minutes
+        timer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in
+            self?.fetchTodaysEvents()
+        }
     }
     
     func checkAccessStatus() {
         let status = EKEventStore.authorizationStatus(for: .event)
         DispatchQueue.main.async {
             // Check for both legacy authorized and modern fullAccess
-            self.hasAccess = (status == .authorized || status == .fullAccess)
+            if #available(macOS 14.0, *) {
+                self.hasAccess = (status == .fullAccess)
+            } else {
+                self.hasAccess = (status == .authorized)
+            }
+            
             if self.hasAccess {
                 self.fetchTodaysEvents()
             }

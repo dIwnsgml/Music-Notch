@@ -49,10 +49,21 @@ struct URLHandler: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onOpenURL { url in
-                if url.scheme == "wavenotch" && url.host == "callback" {
-                    if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
-                       let code = components.queryItems?.first(where: { $0.name == "code" })?.value {
-                        NotificationCenter.default.post(name: NSNotification.Name("SpotifyAuthCallback"), object: code)
+                print("Received URL: \(url.absoluteString)")
+                
+                if url.scheme == "wavenotch" {
+                    if url.host == "callback" {
+                        if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
+                           let code = components.queryItems?.first(where: { $0.name == "code" })?.value {
+                            NotificationCenter.default.post(name: NSNotification.Name("SpotifyAuthCallback"), object: code)
+                        }
+                    }
+                } else if url.scheme == "com.googleusercontent.apps.989490326013-4ukfahi6t9cplb3mujovrrbtb1onoif0" {
+                    if url.path == "/google-callback" {
+                        if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
+                           let code = components.queryItems?.first(where: { $0.name == "code" })?.value {
+                            NotificationCenter.default.post(name: NSNotification.Name("GoogleAuthCallback"), object: code)
+                        }
                     }
                 }
             }
@@ -101,7 +112,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hasShadow = false
         panel.isMovable = false
         
-        let hostingView = NSHostingView(rootView: ContentView())
+        let hostingView = NSHostingView(rootView: ContentView().modifier(URLHandler()))
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         
