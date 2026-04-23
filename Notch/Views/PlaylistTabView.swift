@@ -8,7 +8,7 @@ struct PlaylistTabView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            if spotifyPlaylistsEnabled && !spotifyManager.accessToken.isEmpty {
+            if spotifyPlaylistsEnabled {
                 spotifyPlaylistsContent
             } else {
                 classicPlaylistContent
@@ -25,7 +25,37 @@ struct PlaylistTabView: View {
     
     private var spotifyPlaylistsContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if spotifyManager.playlists.isEmpty {
+            if spotifyManager.accessToken.isEmpty {
+                VStack(spacing: 8) {
+                    Spacer()
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 20))
+                        .foregroundColor(.green.opacity(0.8))
+                    Text("Spotify Playlists")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("Sign in to quickly switch between your favorite playlists.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 10)
+                    
+                    Button(action: {
+                        spotifyManager.authenticate { _ in }
+                    }) {
+                        Text("Connect Spotify")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(Color.green)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            } else if spotifyManager.playlists.isEmpty {
                 VStack {
                     Spacer()
                     Text("No playlists found.")

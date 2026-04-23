@@ -129,6 +129,46 @@ struct PluginDetailView: View {
                 Divider()
                 
                 VStack(alignment: .leading, spacing: 12) {
+                    Text("Account Connection")
+                        .font(.headline)
+                    
+                    if !SpotifyAuthManager.shared.accessToken.isEmpty {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Connected to Spotify")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.green)
+                                Text("Your playback and queue are syncing.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Button("Log Out") {
+                                SpotifyAuthManager.shared.accessToken = ""
+                                SpotifyAuthManager.shared.refreshToken = ""
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    } else {
+                        Button(action: {
+                            SpotifyAuthManager.shared.authenticate { _ in }
+                        }) {
+                            HStack {
+                                Image(systemName: "music.note")
+                                Text("Sign in with Spotify")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                    }
+                }
+                
+                Divider()
+                
+                VStack(alignment: .leading, spacing: 12) {
                     Text("Plugin Settings")
                         .font(.headline)
                     
@@ -139,6 +179,46 @@ struct PluginDetailView: View {
                     )
                 }
             } else if plugin.id == "spotify_playlists" {
+                Divider()
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Account Connection")
+                        .font(.headline)
+                    
+                    if !SpotifyAuthManager.shared.accessToken.isEmpty {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Connected to Spotify")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.green)
+                                Text("Your playlists are ready to use.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Button("Log Out") {
+                                SpotifyAuthManager.shared.accessToken = ""
+                                SpotifyAuthManager.shared.refreshToken = ""
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    } else {
+                        Button(action: {
+                            SpotifyAuthManager.shared.authenticate { _ in }
+                        }) {
+                            HStack {
+                                Image(systemName: "music.note")
+                                Text("Sign in with Spotify")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                    }
+                }
+                
                 Divider()
                 
                 VStack(alignment: .leading, spacing: 12) {

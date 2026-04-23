@@ -202,6 +202,16 @@ struct ContentView: View {
                 if GoogleCalendarManager.shared.isAuthenticated {
                     GoogleCalendarManager.shared.fetchTodaysEvents()
                 }
+                
+                // ⚡️ REFETCH SPOTIFY: Ensure data isn't stuck in "Fetching..."
+                if !SpotifyAuthManager.shared.accessToken.isEmpty {
+                    if SpotifyAuthManager.shared.currentQueueItems.isEmpty {
+                        SpotifyAuthManager.shared.fetchQueue()
+                    }
+                    if SpotifyAuthManager.shared.playlists.isEmpty {
+                        SpotifyAuthManager.shared.fetchPlaylists()
+                    }
+                }
             }
         }
         .onChange(of: nowPlaying.currentSong) { _, newSong in

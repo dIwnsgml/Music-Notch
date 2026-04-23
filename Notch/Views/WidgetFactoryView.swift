@@ -160,7 +160,34 @@ struct SpotifyQueueWidget: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if spotifyManager.accessToken.isEmpty {
-                emptyStateView(text: "Please enable Spotify Plus in Settings.")
+                VStack(spacing: 8) {
+                    Spacer()
+                    Image(systemName: "music.note")
+                        .font(.system(size: 20))
+                        .foregroundColor(.green.opacity(0.8))
+                    Text("Sign in to Spotify")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("Access your queue directly from the notch.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                    
+                    Button(action: {
+                        spotifyManager.authenticate { _ in }
+                    }) {
+                        Text("Connect Spotify")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(Color.green)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
             } else if spotifyManager.currentQueueItems.isEmpty {
                 emptyStateView(text: "Fetching queue...")
             } else {
