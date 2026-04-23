@@ -97,20 +97,21 @@ struct ContentView: View {
         let rows = widgets.chunked(into: 2)
         var totalH: CGFloat = notchHeight + 12 // Start with top padding
         
-        let playerH: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (132 + 12 + CGFloat(visibleLyricLines) * 26.0) : 132
+        let playerH: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (80 + 12 + CGFloat(visibleLyricLines) * 26.0) : 80
         
         for row in rows {
             var rowMaxH: CGFloat = 0
             for widget in row {
                 let widgetH: CGFloat
                 switch widget {
-                case .player: widgetH = playerH + 24 // + internal vertical padding
+                case .player: widgetH = (row.count == 1) ? playerH : playerH + 20
                 case .spotifyQueue: widgetH = 250
-                case .spotifyPlaylists: widgetH = (row.count == 1) ? 110 : 250 // ⚡️ FIT CONTENT if full row
+                case .spotifyPlaylists: widgetH = (row.count == 1) ? 120 : 120 // Slightly taller for hover
                 case .calendar: widgetH = 160
                 case .weather: widgetH = 100
                 }
                 rowMaxH = max(rowMaxH, widgetH)
+                //print(rowMaxH, widget, widgetH)
             }
             totalH += rowMaxH
         }
@@ -364,7 +365,7 @@ struct ContentView: View {
     @ViewBuilder
     private func expandedLayer(expandedHeight: CGFloat) -> some View {
         let widgets = dashboardManager.activeWidgets
-        let availableWidth = expandedWidth - 48 - 6 // total horizontal padding (24*2) and inner spacing (6)
+        let availableWidth = expandedWidth - 32 - 6 // total horizontal padding (16*2) and inner spacing (6)
         
         VStack(spacing: 0) {
             if widgets.isEmpty {
@@ -387,7 +388,7 @@ struct ContentView: View {
                 VStack(spacing: 6) {
                     ForEach(0..<rows.count, id: \.self) { rowIndex in
                         let row = rows[rowIndex]
-                        HStack(alignment: .top, spacing: 6) {
+                        HStack(alignment: .center, spacing: 6) {
                             if row.count == 2 {
                                 let w1 = row[0]
                                 let w2 = row[1]
@@ -441,7 +442,7 @@ struct ContentView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 16)
             }
         }
         .padding(.top, notchHeight + 12)

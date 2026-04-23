@@ -14,6 +14,10 @@ struct WidgetFactoryView: View {
     
     var body: some View {
         VStack(spacing: 0) {
+            if widgetType == .spotifyPlaylists {
+                Spacer(minLength: 0)
+            }
+            
             Group {
                 switch widgetType {
                 case .player:
@@ -36,6 +40,7 @@ struct WidgetFactoryView: View {
                     PlaceholderWidget(name: "Weather", icon: "cloud.sun.fill")
                 }
             }
+            
             Spacer(minLength: 0)
         }
     }

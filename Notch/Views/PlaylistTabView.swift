@@ -42,7 +42,7 @@ struct PlaylistTabView: View {
                                 spotifyManager.playContext(uri: playlist.uri)
                             }
                         }
-                    }
+                    }.padding(.vertical, 10)
                 }
             }
         }
