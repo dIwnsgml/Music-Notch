@@ -37,6 +37,13 @@ class DashboardManager: ObservableObject {
             }
             .store(in: &cancellables)
         
+        // ⚡️ NEW: Observe media source changes to handle auto-hiding logic
+        NowPlayingManager.shared.$lastActiveBrowser
+            .sink { [weak self] _ in
+                self?.refreshWidgets()
+            }
+            .store(in: &cancellables)
+        
         refreshWidgets()
     }
     
@@ -67,14 +74,34 @@ class DashboardManager: ObservableObject {
         let calendarEnabled = UserDefaults.standard.bool(forKey: "plugin_google_calendar_enabled")
         let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
         
+        // ⚡️ NEW: Auto-hide logic for Spotify Plugins
+        let spotifyQueueAutoHide = UserDefaults.standard.bool(forKey: "plugin_spotify_queue_auto_hide")
+        let spotifyPlaylistsAutoHide = UserDefaults.standard.bool(forKey: "plugin_spotify_playlists_auto_hide")
+        let lastBrowser = NowPlayingManager.shared.lastActiveBrowser ?? ""
+        let isSpotifyActive = lastBrowser == "SpotifyNative" || lastBrowser.contains("Spotify")
+        
         let order = getWidgetOrder()
         var widgets: [NotchWidgetType] = []
         
         for widget in order {
             switch widget {
             case .player: if playerEnabled { widgets.append(.player) }
-            case .spotifyQueue: if queueEnabled { widgets.append(.spotifyQueue) }
-            case .spotifyPlaylists: if playlistsEnabled { widgets.append(.spotifyPlaylists) }
+            case .spotifyQueue:
+                if queueEnabled {
+                    if spotifyQueueAutoHide && !isSpotifyActive {
+                        // Skip adding it if auto-hide is on and Spotify isn't playing
+                    } else {
+                        widgets.append(.spotifyQueue)
+                    }
+                }
+            case .spotifyPlaylists:
+                if playlistsEnabled {
+                    if spotifyPlaylistsAutoHide && !isSpotifyActive {
+                        // Skip adding it
+                    } else {
+                        widgets.append(.spotifyPlaylists)
+                    }
+                }
             case .calendar: if calendarEnabled { widgets.append(.calendar) }
             case .weather: if weatherEnabled { widgets.append(.weather) }
             }

@@ -9,7 +9,7 @@ enum AppTab {
 
 struct ContentView: View {
     @State private var isExpanded = false
-    @StateObject private var nowPlaying = NowPlayingManager()
+    @ObservedObject private var nowPlaying = NowPlayingManager.shared
     @State private var currentTab: AppTab = .player
     @StateObject private var dashboardManager = DashboardManager.shared
     
@@ -89,25 +89,40 @@ struct ContentView: View {
         activeWidgetsCount <= 1 ? 400 : 520
     }
     
+    var expandedHeight: CGFloat {
+        let widgets = dashboardManager.activeWidgets
+        if widgets.isEmpty { return notchHeight + 12 }
+        
+        // ⚡️ DYNAMIC HEIGHT ENGINE
+        let rows = widgets.chunked(into: 2)
+        var totalH: CGFloat = notchHeight + 12 // Start with top padding
+        
+        let playerH: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (132 + 12 + CGFloat(visibleLyricLines) * 26.0) : 132
+        
+        for row in rows {
+            var rowMaxH: CGFloat = 0
+            for widget in row {
+                let widgetH: CGFloat
+                switch widget {
+                case .player: widgetH = playerH + 24 // + internal vertical padding
+                case .spotifyQueue: widgetH = 250
+                case .spotifyPlaylists: widgetH = (row.count == 1) ? 110 : 250 // ⚡️ FIT CONTENT if full row
+                case .calendar: widgetH = 160
+                case .weather: widgetH = 100
+                }
+                rowMaxH = max(rowMaxH, widgetH)
+            }
+            totalH += rowMaxH
+        }
+        
+        totalH += CGFloat(max(0, rows.count - 1)) * 6 // add row spacing
+        totalH += 12 // bottom padding
+        
+        return totalH
+    }
+    
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
-        let showSplitView = enableCalendar && calendarManager.hasAccess
-        
-        let basePlayerHeight: CGFloat = 132
-        let sandwichHeightAddon: CGFloat = showSplitView ? 36 : 0
-        let dynamicLyricsHeight: CGFloat = CGFloat(visibleLyricLines) * 26.0
-        let calendarHeight: CGFloat = showSplitView ? 160 : 0
-        
-        let playerHeight: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (basePlayerHeight + sandwichHeightAddon + dynamicLyricsHeight + 12) : (basePlayerHeight + sandwichHeightAddon)
-        
-        let expandedHeight: CGFloat = {
-            if activeWidgetsCount <= 1 {
-                return currentTab == .playlist ? 216 : max(playerHeight, calendarHeight)
-            } else {
-                let rows = ceil(Double(activeWidgetsCount) / 2.0)
-                return CGFloat(rows) * 280
-            }
-        }()
         
         let currentWidth: CGFloat = isExpanded ? expandedWidth : collapsedWidth
         let currentCollapsedHeight: CGFloat = (isShowingBanner || isShowingLyricBanner) ? (notchHeight + bannerHeightAddon) : notchHeight
@@ -349,7 +364,7 @@ struct ContentView: View {
     @ViewBuilder
     private func expandedLayer(expandedHeight: CGFloat) -> some View {
         let widgets = dashboardManager.activeWidgets
-        let availableWidth = expandedWidth - 32 - 6 // total horizontal padding (16*2) and inner spacing (6)
+        let availableWidth = expandedWidth - 48 - 6 // total horizontal padding (24*2) and inner spacing (6)
         
         VStack(spacing: 0) {
             if widgets.isEmpty {
@@ -426,7 +441,7 @@ struct ContentView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 24)
             }
         }
         .padding(.top, notchHeight + 12)

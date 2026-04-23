@@ -14,7 +14,8 @@ struct PlaylistTabView: View {
                 classicPlaylistContent
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
         .onAppear {
             if spotifyPlaylistsEnabled {
                 spotifyManager.fetchPlaylists()
@@ -45,9 +46,7 @@ struct PlaylistTabView: View {
                 }
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
-        .frame(maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
     }
     
     private var classicPlaylistContent: some View {

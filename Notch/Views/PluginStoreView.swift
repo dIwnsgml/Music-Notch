@@ -152,15 +152,75 @@ struct PluginDetailView: View {
                 
                 HStack(spacing: 12) {
                     PluginActionButton(plugin: plugin)
+                }
+            }
+            
+            if plugin.id == "spotify_queue" {
+                Divider()
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Plugin Settings")
+                        .font(.headline)
                     
-                    // Detail view specific uninstall if needed, but ActionButton handles it
+                    PluginSettingToggle(
+                        title: "Auto-hide when not playing Spotify",
+                        description: "The queue widget will only appear in your dashboard when Spotify is the active media source.",
+                        key: "plugin_spotify_queue_auto_hide"
+                    )
+                }
+            } else if plugin.id == "spotify_playlists" {
+                Divider()
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Plugin Settings")
+                        .font(.headline)
+                    
+                    PluginSettingToggle(
+                        title: "Auto-hide when not playing Spotify",
+                        description: "The playlists widget will only appear in your dashboard when Spotify is the active media source.",
+                        key: "plugin_spotify_playlists_auto_hide"
+                    )
                 }
             }
             
             Spacer()
         }
         .padding(30)
-        .frame(width: 450, height: 350)
+        .frame(width: 450, height: 450)
+    }
+}
+
+struct PluginSettingToggle: View {
+    let title: String
+    let description: String
+    let key: String
+    
+    @AppStorage var isOn: Bool
+    
+    init(title: String, description: String, key: String) {
+        self.title = title
+        self.description = description
+        self.key = key
+        self._isOn = AppStorage(wrappedValue: false, key)
+    }
+    
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Text(description)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            
+            Spacer()
+            
+            Toggle("", isOn: $isOn)
+                .toggleStyle(.switch)
+                .labelsHidden()
+        }
     }
 }
 

@@ -3,6 +3,8 @@ import Combine
 import AppKit
 
 class NowPlayingManager: ObservableObject {
+    static let shared = NowPlayingManager() // ⚡️ ADDED
+    
     // ⚡️ Network Safety & Caching
     var lyricSearchTask: DispatchWorkItem? = nil
     var lyricsCache: [String: [LyricLine]] = [:]
@@ -50,7 +52,7 @@ class NowPlayingManager: ObservableObject {
     var lastFetchTime = Date(timeIntervalSince1970: 0)
     var lastLoopToggleTime = Date(timeIntervalSince1970: 0)
     
-    var lastActiveBrowser: String? = nil
+    @Published var lastActiveBrowser: String? = nil
     var lastWindowIndex: Int? = nil
     var lastTabIndex: Int? = nil
     
