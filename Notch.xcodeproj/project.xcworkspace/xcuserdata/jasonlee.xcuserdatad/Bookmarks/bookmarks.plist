@@ -34,16 +34,16 @@
 			<key>text-context</key>
 			<dict>
 				<key>focused</key>
-				<string>            let browser = browserNeedingHelp ?? "Browser"
+				<string>                              "1. Open Safari\n2. Click 'Safari' in the menu bar -&gt; 'Settings'\n3. Go to 'Advanced' and check 'Show features for web developers'\n4. Click 'Develop' in the menu bar\n5. Check 'Allow JavaScript from Apple Events'"
 </string>
 				<key>leading</key>
-				<string>        }
-        .alert(isPresented: $showHelpAlert) {
+				<string>                title: Text("Action Required for \(browser)"),
+                message: Text(isSafari ?
 </string>
 				<key>trailing</key>
-				<string>            let isSafari = browser == "Safari"
-            return Alert(
-                title: Text("Action Required for \(browser)"),
+				<string>                              :
+                                "1. Open \(browser)\n2. Click 'View' in the top Mac menu bar\n3. Hover over 'Developer'\n4. Click 'Allow JavaScript from Apple Events'"),
+                dismissButton: .default(Text("I've done this!"))
 </string>
 			</dict>
 			<key>type</key>

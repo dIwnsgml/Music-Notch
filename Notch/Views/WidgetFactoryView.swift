@@ -1,12 +1,10 @@
 import SwiftUI
 import Combine
-import EventKit
 
 struct WidgetFactoryView: View {
     let widgetType: NotchWidgetType
     
     @ObservedObject var nowPlaying: NowPlayingManager
-    @ObservedObject var calendarManager: CalendarManager
     let expandedWidth: CGFloat
     var isCompact: Bool
     @Binding var skipDirection: Int
@@ -24,7 +22,6 @@ struct WidgetFactoryView: View {
                 case .player:
                     PlayerTabView(
                         nowPlaying: nowPlaying,
-                        calendarManager: calendarManager,
                         expandedWidth: expandedWidth,
                         isCompact: isCompact,
                         skipDirection: $skipDirection,

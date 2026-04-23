@@ -14,9 +14,6 @@ struct ContentView: View {
     @StateObject private var dashboardManager = DashboardManager.shared
     
     // ⚡️ USER SETTINGS
-    @AppStorage("enableCalendar") var enableCalendar = false
-    @StateObject private var calendarManager = CalendarManager.shared
-    
     @AppStorage("collapsedWidth") var storedCollapsedWidth: Double = 300.0
     @AppStorage("showSettingsButton") var showSettingsButton = true
     @AppStorage("enableHoverToExpand") var enableHoverToExpand = true
@@ -30,7 +27,6 @@ struct ContentView: View {
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
-    //@AppStorage("isAppHidden") var isAppHidden = false
     @State private var isAppHidden = false
     
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
@@ -106,12 +102,11 @@ struct ContentView: View {
                 switch widget {
                 case .player: widgetH = (row.count == 1) ? playerH : playerH + 20
                 case .spotifyQueue: widgetH = 250
-                case .spotifyPlaylists: widgetH = (row.count == 1) ? 120 : 120 // Slightly taller for hover
-                case .calendar: widgetH = 160
+                case .spotifyPlaylists: widgetH = (row.count == 1) ? 120 : 120 
                 case .weather: widgetH = 100
+                default: widgetH = 160 // Fallback for Calendar
                 }
                 rowMaxH = max(rowMaxH, widgetH)
-                //print(rowMaxH, widget, widgetH)
             }
             totalH += rowMaxH
         }
@@ -184,7 +179,6 @@ struct ContentView: View {
         .opacity(isAppHidden ? 0 : 1)
         .allowsHitTesting(!isAppHidden)
         .onAppear {
-            calendarManager.fetchTodaysEvents()
             localMediaKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { event in
                 handleSystemKey(event: event)
                 return event
@@ -204,6 +198,10 @@ struct ContentView: View {
                 currentTab = .player
             } else {
                 dashboardManager.refreshWidgets()
+                // ⚡️ REFETCH GOOGLE EVENTS: Ensure schedule is fresh on expand
+                if GoogleCalendarManager.shared.isAuthenticated {
+                    GoogleCalendarManager.shared.fetchTodaysEvents()
+                }
             }
         }
         .onChange(of: nowPlaying.currentSong) { _, newSong in
@@ -404,7 +402,6 @@ struct ContentView: View {
                                 WidgetFactoryView(
                                     widgetType: w1,
                                     nowPlaying: nowPlaying,
-                                    calendarManager: calendarManager,
                                     expandedWidth: availableWidth * r1,
                                     isCompact: true,
                                     skipDirection: $skipDirection,
@@ -416,7 +413,6 @@ struct ContentView: View {
                                 WidgetFactoryView(
                                     widgetType: w2,
                                     nowPlaying: nowPlaying,
-                                    calendarManager: calendarManager,
                                     expandedWidth: availableWidth * r2,
                                     isCompact: true,
                                     skipDirection: $skipDirection,
@@ -430,7 +426,6 @@ struct ContentView: View {
                                 WidgetFactoryView(
                                     widgetType: row[0],
                                     nowPlaying: nowPlaying,
-                                    calendarManager: calendarManager,
                                     expandedWidth: availableWidth,
                                     isCompact: false,
                                     skipDirection: $skipDirection,

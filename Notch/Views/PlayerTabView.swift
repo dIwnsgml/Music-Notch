@@ -1,11 +1,9 @@
 import SwiftUI
 import Combine
-import EventKit
 import ApplicationServices // ⚡️ Needed for the Accessibility check
 
 struct PlayerTabView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
-    @ObservedObject var calendarManager: CalendarManager
     
     var expandedWidth: CGFloat
     var isCompact: Bool
@@ -13,7 +11,6 @@ struct PlayerTabView: View {
     @Binding var glowOpacity: Double
     let onSwipe: (Bool) -> Void // ⚡️ ADDED: Scoped skip trigger
     
-    @AppStorage("enableCalendar") var enableCalendar = false
     @AppStorage("showLyrics") var showLyrics = true
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     @AppStorage("lyricDimming") var lyricDimming: Double = 0.3
@@ -39,11 +36,9 @@ struct PlayerTabView: View {
     var body: some View {
         let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
-        let showSplitView = enableCalendar && calendarManager.hasAccess
         
         let hPad: CGFloat = 6 // ⚡️ VERY LOW PADDING
-        let calendarWidth: CGFloat = 170
-        let playerPanelWidth: CGFloat = showSplitView ? (expandedWidth - calendarWidth) : expandedWidth
+        let playerPanelWidth: CGFloat = expandedWidth
         
         VStack(spacing: 0) {
             if !hasAnyAccess {
@@ -92,271 +87,214 @@ struct PlayerTabView: View {
                 .padding(.horizontal, 16)
                 
             } else {
-                HStack(alignment: .top, spacing: 0) {
-                    
-                    // ==========================================
-                    // 🎵 LEFT SIDE: THE PLAYER
-                    // ==========================================
-                    VStack(spacing: 0) {
-                        
-                        // 1. TOP ROW: Artwork + Title
-                        HStack(alignment: .center) {
-                            ZStack {
-                                if hasMedia && nowPlaying.artworkURL != nil {
-                                    AsyncImage(url: nowPlaying.artworkURL) { image in
-                                        image.resizable().aspectRatio(contentMode: .fill)
-                                    } placeholder: { Color.gray.opacity(0.3) }
-                                        .frame(width: 40, height: 40)
-                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                        .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 10, x: 0, y: 0)
-                                        .id(nowPlaying.currentSong)
-                                        .transition(.dynamicPanRotate(direction: skipDirection))
-                                    
-                                } else {
-                                    Image(systemName: "music.note")
-                                        .foregroundColor(nowPlaying.isPlaying ? Color.red : Color.gray)
-                                        .font(.system(size: 20, weight: .bold))
-                                        .transition(.opacity)
-                                }
-                            }
-                            .frame(width: 40, height: 40)
-                            .animation(.spring(response: 0.5, dampingFraction: 0.72), value: nowPlaying.currentSong)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting...")
-                                        .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
-                                    
-                                    ZStack {
-                                        if nowPlaying.isSearchingLyrics && showLyrics {
-                                            ProgressView().controlSize(.mini)
-                                        }
-                                    }
-                                    .frame(width: 14, height: 14)
-                                }
+                VStack(spacing: 0) {
+                    // 1. TOP ROW: Artwork + Title
+                    HStack(alignment: .center) {
+                        ZStack {
+                            if hasMedia && nowPlaying.artworkURL != nil {
+                                AsyncImage(url: nowPlaying.artworkURL) { image in
+                                    image.resizable().aspectRatio(contentMode: .fill)
+                                } placeholder: { Color.gray.opacity(0.3) }
+                                    .frame(width: 40, height: 40)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 10, x: 0, y: 0)
+                                    .id(nowPlaying.currentSong)
+                                    .transition(.dynamicPanRotate(direction: skipDirection))
                                 
-                                if hasMedia {
-                                    let songParts = nowPlaying.currentSong.components(separatedBy: " - ")
-                                    let titleText = songParts.first ?? nowPlaying.currentSong
-                                    let artistText = songParts.count > 1 ? songParts.dropFirst().joined(separator: " - ") : ""
-                                    
-                                    MarqueeText(text: titleText, font: .system(size: 14, weight: .bold), alignment: .leading)
-                                        .frame(height: 18)
-                                        .foregroundColor(.white)
-                                        .id("title_" + titleText)
-                                    
-                                    if !artistText.isEmpty {
-                                        MarqueeText(text: artistText, font: .system(size: 12, weight: .medium), alignment: .leading)
-                                            .frame(height: 16)
-                                            .foregroundColor(.white.opacity(0.6))
-                                            .id("artist_" + artistText)
+                            } else {
+                                Image(systemName: "music.note")
+                                    .foregroundColor(nowPlaying.isPlaying ? Color.red : Color.gray)
+                                    .font(.system(size: 20, weight: .bold))
+                                    .transition(.opacity)
+                            }
+                        }
+                        .frame(width: 40, height: 40)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.72), value: nowPlaying.currentSong)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting...")
+                                    .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
+                                
+                                ZStack {
+                                    if nowPlaying.isSearchingLyrics && showLyrics {
+                                        ProgressView().controlSize(.mini)
                                     }
-                                } else {
-                                    MarqueeText(text: "Nothing playing", font: .system(size: 14, weight: .bold), alignment: .leading)
-                                        .frame(height: 18)
-                                        .foregroundColor(.white)
-                                        .id("nothing_playing")
                                 }
+                                .frame(width: 14, height: 14)
                             }
-                            .padding(.leading, 6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                             
-                            if hasMedia && !showSplitView && !isCompact {
-                                Spacer()
-                                mediaControls
+                            if hasMedia {
+                                let songParts = nowPlaying.currentSong.components(separatedBy: " - ")
+                                let titleText = songParts.first ?? nowPlaying.currentSong
+                                let artistText = songParts.count > 1 ? songParts.dropFirst().joined(separator: " - ") : ""
+                                
+                                MarqueeText(text: titleText, font: .system(size: 14, weight: .bold), alignment: .leading)
+                                    .frame(height: 18)
+                                    .foregroundColor(.white)
+                                    .id("title_" + titleText)
+                                
+                                if !artistText.isEmpty {
+                                    MarqueeText(text: artistText, font: .system(size: 12, weight: .medium), alignment: .leading)
+                                        .frame(height: 16)
+                                        .foregroundColor(.white.opacity(0.6))
+                                        .id("artist_" + artistText)
+                                }
+                            } else {
+                                MarqueeText(text: "Nothing playing", font: .system(size: 14, weight: .bold), alignment: .leading)
+                                    .frame(height: 18)
+                                    .foregroundColor(.white)
+                                    .id("nothing_playing")
                             }
+                        }
+                        .padding(.leading, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        if hasMedia && !isCompact {
+                            Spacer()
+                            mediaControls
+                        }
+                    }
+                    .padding(.horizontal, hPad)
+                    
+                    // Stacking controls under title if space is constrained
+                    if hasMedia && isCompact {
+                        HStack {
+                            Spacer()
+                            mediaControls
+                            Spacer()
+                        }
+                        .padding(.top, 12)
+                        .padding(.bottom, 2)
+                    }
+                    
+                    // 2. THE PROGRESS BAR
+                    if hasMedia {
+                        HStack(spacing: 8) {
+                            Text(formatTime(isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
+                                .font(.system(size: 9, design: .monospaced))
+                                .monospacedDigit()
+                                .foregroundColor(.gray)
+                                .frame(width: 28, alignment: .leading)
+                            
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(nowPlaying.artworkDominantColor.opacity(0.50)).frame(height: 6)
+                                    
+                                    let progressRatio = min(1.0, max(0.0, isDragging ? dragProgress : (nowPlaying.currentTime / nowPlaying.duration)))
+                                    
+                                    Capsule()
+                                        .fill(nowPlaying.artworkDominantColor)
+                                        .frame(width: geo.size.width * CGFloat(progressRatio), height: 6)
+                                        .shadow(color: nowPlaying.artworkDominantColor.opacity(0.4), radius: 4, x: 0, y: 0)
+                                }
+                                .gesture(DragGesture(minimumDistance: 0)
+                                    .onChanged { v in
+                                        guard ensurePermissions() else { return }
+                                        isDragging = true
+                                        dragProgress = min(max(0, v.location.x / geo.size.width), 0.99)
+                                    }
+                                    .onEnded { v in
+                                        guard ensurePermissions() else { return }
+                                        let dragRatio = min(max(0, v.location.x / geo.size.width), 0.99)
+                                        nowPlaying.seek(to: dragRatio)
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDragging = false }
+                                    }
+                                )
+                            }.frame(height: 6)
+                            
+                            let remaining = max(0, nowPlaying.duration - (isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
+                            Text("-" + formatTime(remaining))
+                                .font(.system(size: 9, design: .monospaced))
+                                .monospacedDigit()
+                                .foregroundColor(.gray)
+                                .frame(width: 32, alignment: .trailing)
                         }
                         .padding(.horizontal, hPad)
-                        
-                        // ⚡️ NEW: Stack controls under title if space is constrained
-                        if hasMedia && (showSplitView || isCompact) {
-                            HStack {
-                                Spacer()
-                                mediaControls
-                                Spacer()
-                            }
-                            .padding(.top, 12)
-                            .padding(.bottom, 2)
-                        }
-                        
-                        // 2. THE PROGRESS BAR
-                        if hasMedia {
-                            HStack(spacing: 8) {
-                                Text(formatTime(isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .monospacedDigit()
-                                    .foregroundColor(.gray)
-                                    .frame(width: 28, alignment: .leading)
-                                
-                                GeometryReader { geo in
-                                    ZStack(alignment: .leading) {
-                                        Capsule().fill(nowPlaying.artworkDominantColor.opacity(0.50)).frame(height: 6)
-                                        
-                                        let progressRatio = min(1.0, max(0.0, isDragging ? dragProgress : (nowPlaying.currentTime / nowPlaying.duration)))
-                                        
-                                        Capsule()
-                                            .fill(nowPlaying.artworkDominantColor)
-                                            .frame(width: geo.size.width * CGFloat(progressRatio), height: 6)
-                                            .shadow(color: nowPlaying.artworkDominantColor.opacity(0.4), radius: 4, x: 0, y: 0)
-                                    }
-                                    .gesture(DragGesture(minimumDistance: 0)
-                                        .onChanged { v in
-                                            guard ensurePermissions() else { return }
-                                            isDragging = true
-                                            dragProgress = min(max(0, v.location.x / geo.size.width), 0.99)
-                                        }
-                                        .onEnded { v in
-                                            guard ensurePermissions() else { return }
-                                            let dragRatio = min(max(0, v.location.x / geo.size.width), 0.99)
-                                            nowPlaying.seek(to: dragRatio)
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDragging = false }
-                                        }
-                                    )
-                                }.frame(height: 6)
-                                
-                                let remaining = max(0, nowPlaying.duration - (isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
-                                Text("-" + formatTime(remaining))
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .monospacedDigit()
-                                    .foregroundColor(.gray)
-                                    .frame(width: 32, alignment: .trailing)
-                            }
-                            .padding(.horizontal, hPad)
-                            .padding(.top, 8)
-                        }
-                        
-                        // 3. LYRICS
-                        if showLyrics && hasMedia && !nowPlaying.lyrics.isEmpty {
-                            GeometryReader { geo in
-                                let itemHeight: CGFloat = 26
-                                let exactFrameHeight: CGFloat = CGFloat(visibleLyricLines) * itemHeight
-                                let activeOffset = CGFloat(nowPlaying.activeLyricIndex) * itemHeight
-                                let centerAdjustment = (exactFrameHeight - itemHeight) / 2.0
-                                
-                                VStack(spacing: 0) {
-                                    ForEach(Array(nowPlaying.lyrics.enumerated()), id: \.offset) { index, lyric in
-                                        let distance = abs(index - nowPlaying.activeLyricIndex)
-                                        let lyricOpacity: Double = distance == 0 ? 1.0 : max(0.0, 1.0 - (Double(distance) * lyricDimming))
-                                        let lyricScale: CGFloat = distance == 0 ? 1.0 : 1.0 - (CGFloat(distance) * 0.05)
-                                        let lyricBlur: CGFloat = distance == 0 ? 0.0 : CGFloat(distance) * lyricBlurAmount
-                                        
-                                        Text(lyric.text)
-                                            .font(.system(size: 14, weight: .bold))
-                                            .foregroundColor(.white.opacity(lyricOpacity))
-                                            .multilineTextAlignment(.center)
-                                            .frame(maxWidth: playerPanelWidth - (hPad * 2), alignment: .center)
-                                            .frame(height: itemHeight)
-                                            .lineLimit(1)
-                                            .truncationMode(.tail)
-                                            .scaleEffect(lyricScale)
-                                            .blur(radius: lyricBlur)
-                                    }
-                                }
-                                .frame(width: geo.size.width, alignment: .center)
-                                .offset(y: -activeOffset + centerAdjustment)
-                                .animation(.spring(response: 0.6, dampingFraction: 0.8), value: nowPlaying.activeLyricIndex)
-                            }
-                            .frame(height: CGFloat(visibleLyricLines) * 26.0)
-                            .clipped()
-                            .mask(
-                                LinearGradient(
-                                    gradient: Gradient(stops: [
-                                        .init(color: visibleLyricLines == 1 ? .black : .clear, location: 0),
-                                        .init(color: .black, location: visibleLyricLines == 1 ? 0 : 0.05),
-                                        .init(color: .black, location: visibleLyricLines == 1 ? 1 : 0.95),
-                                        .init(color: visibleLyricLines == 1 ? .black : .clear, location: 1)
-                                    ]),
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .padding(.top, 8)
-                        }
+                        .padding(.top, 8)
                     }
-                    .frame(width: playerPanelWidth)
-                    .contentShape(Rectangle())
-                    .onHover { isMouseOver = $0 }
-                    .onAppear {
-                        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-                            handleScroll(event: event)
-                            return event
-                        }
-                    }
-                    .onDisappear {
-                        if let monitor = localEventMonitor {
-                            NSEvent.removeMonitor(monitor)
-                        }
-                    }
-                    .gesture(
-                        DragGesture(minimumDistance: 30)
-                            .onEnded { value in
-                                guard hasMedia else { return }
-                                if value.translation.width > 30 {
-                                    onSwipe(false) // Trigger skip previous
-                                } else if value.translation.width < -30 {
-                                    onSwipe(true) // Trigger skip next
-                                }
-                            }
-                    )
                     
-                    // ==========================================
-                    // 📅 RIGHT SIDE: THE CALENDAR
-                    // ==========================================
-                    if showSplitView {
-                        Divider()
-                            .background(Color.white.opacity(0.1))
-                            .padding(.vertical, 8)
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "calendar")
-                                    .foregroundColor(.accentColor)
-                                Text("Today")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundColor(.white)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 2)
+                    // 3. LYRICS
+                    if showLyrics && hasMedia && !nowPlaying.lyrics.isEmpty {
+                        GeometryReader { geo in
+                            let itemHeight: CGFloat = 26
+                            let exactFrameHeight: CGFloat = CGFloat(visibleLyricLines) * itemHeight
+                            let activeOffset = CGFloat(nowPlaying.activeLyricIndex) * itemHeight
+                            let centerAdjustment = (exactFrameHeight - itemHeight) / 2.0
                             
-                            if calendarManager.todaysEvents.isEmpty {
-                                Text("No upcoming events today.")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.gray)
-                                    .padding(.horizontal, 16)
-                            } else {
-                                ScrollView(.vertical, showsIndicators: false) {
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        ForEach(calendarManager.todaysEvents, id: \.eventIdentifier) { event in
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(event.title)
-                                                    .font(.system(size: 12, weight: .semibold))
-                                                    .foregroundColor(.white)
-                                                    .lineLimit(1)
-                                                
-                                                Text(formatEventTime(event))
-                                                    .font(.system(size: 10))
-                                                    .foregroundColor(.gray)
-                                            }
-                                        }
-                                    }
-                                    .padding(.horizontal, 16)
+                            VStack(spacing: 0) {
+                                ForEach(Array(nowPlaying.lyrics.enumerated()), id: \.offset) { index, lyric in
+                                    let distance = abs(index - nowPlaying.activeLyricIndex)
+                                    let lyricOpacity: Double = distance == 0 ? 1.0 : max(0.0, 1.0 - (Double(distance) * lyricDimming))
+                                    let lyricScale: CGFloat = distance == 0 ? 1.0 : 1.0 - (CGFloat(distance) * 0.05)
+                                    let lyricBlur: CGFloat = distance == 0 ? 0.0 : CGFloat(distance) * lyricBlurAmount
+                                    
+                                    Text(lyric.text)
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.white.opacity(lyricOpacity))
+                                        .multilineTextAlignment(.center)
+                                        .frame(maxWidth: playerPanelWidth - (hPad * 2), alignment: .center)
+                                        .frame(height: itemHeight)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                        .scaleEffect(lyricScale)
+                                        .blur(radius: lyricBlur)
                                 }
                             }
+                            .frame(width: geo.size.width, alignment: .center)
+                            .offset(y: -activeOffset + centerAdjustment)
+                            .animation(.spring(response: 0.6, dampingFraction: 0.8), value: nowPlaying.activeLyricIndex)
                         }
-                        .frame(width: calendarWidth - 1)
-                        .padding(.top, 4)
+                        .frame(height: CGFloat(visibleLyricLines) * 26.0)
+                        .clipped()
+                        .mask(
+                            LinearGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: visibleLyricLines == 1 ? .black : .clear, location: 0),
+                                    .init(color: .black, location: visibleLyricLines == 1 ? 0 : 0.05),
+                                    .init(color: .black, location: visibleLyricLines == 1 ? 1 : 0.95),
+                                    .init(color: visibleLyricLines == 1 ? .black : .clear, location: 1)
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .padding(.top, 8)
                     }
                 }
-                // ⚡️ Added global double-tap gesture to the entire expanded area!
+                .frame(width: playerPanelWidth)
                 .contentShape(Rectangle())
+                .onHover { isMouseOver = $0 }
+                .onAppear {
+                    localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                        handleScroll(event: event)
+                        return event
+                    }
+                }
+                .onDisappear {
+                    if let monitor = localEventMonitor {
+                        NSEvent.removeMonitor(monitor)
+                    }
+                }
+                .gesture(
+                    DragGesture(minimumDistance: 30)
+                        .onEnded { value in
+                            guard hasMedia else { return }
+                            if value.translation.width > 30 {
+                                onSwipe(false)
+                            } else if value.translation.width < -30 {
+                                onSwipe(true)
+                            }
+                        }
+                )
                 .onTapGesture(count: 2) {
                     if hasMedia && enableDoubleClickToOpen {
                         nowPlaying.openPlayingApp()
                     }
                 }
-                .padding(.vertical, 12)
+                .padding(.top, 12)
             }
-            Spacer(minLength: 0) // ⚡️ Force top alignment
+            Spacer(minLength: 0)
         }
         .onReceive(localTimer) { _ in
             if nowPlaying.isPlaying && !isDragging {
@@ -417,13 +355,6 @@ struct PlayerTabView: View {
         if safeSecs.isNaN || safeSecs.isInfinite { return "0:00" }
         let ts = Int(safeSecs)
         return String(format: "%d:%02d", ts / 60, ts % 60)
-    }
-    
-    private func formatEventTime(_ event: EKEvent) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        if event.isAllDay { return "All Day" }
-        return "\(formatter.string(from: event.startDate)) - \(formatter.string(from: event.endDate))"
     }
     
     private func handleScroll(event: NSEvent) {

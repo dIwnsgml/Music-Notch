@@ -10,7 +10,7 @@ class PluginManager: ObservableObject {
             name: "Spotify Queue",
             description: "View and manage your real-time Spotify play queue directly in the notch.",
             iconName: "list.bullet.indent",
-            assetImageName: "spotify_logo",
+            assetImageName: nil, // Use SF Symbol for now
             category: .media,
             storageKeyBase: "plugin_spotify_queue"
         ),
@@ -19,7 +19,7 @@ class PluginManager: ObservableObject {
             name: "Spotify Playlists",
             description: "Quickly access and switch between your favorite Spotify playlists with one tap.",
             iconName: "music.note.list",
-            assetImageName: "spotify_logo",
+            assetImageName: nil,
             category: .media,
             storageKeyBase: "plugin_spotify_playlists"
         ),
@@ -28,7 +28,7 @@ class PluginManager: ObservableObject {
             name: "Google Calendar",
             description: "View your upcoming events and schedule directly in the notch. Supports multiple calendars and provides timely meeting alerts.",
             iconName: "calendar",
-            assetImageName: "calendar_logo",
+            assetImageName: nil,
             category: .productivity,
             storageKeyBase: "plugin_google_calendar"
         ),
@@ -37,7 +37,7 @@ class PluginManager: ObservableObject {
             name: "Weather",
             description: "Real-time local weather conditions, temperature, and precipitation forecasts displayed beautifully in your Dynamic Island.",
             iconName: "cloud.sun.fill",
-            assetImageName: "weather_logo",
+            assetImageName: nil,
             category: .system,
             storageKeyBase: "plugin_weather"
         )

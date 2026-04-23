@@ -56,9 +56,6 @@ struct SettingsView: View {
     @State private var hasAccessibilityAccess = false
     
     // ⚡️ INTEGRATIONS
-    @AppStorage("enableCalendar") var enableCalendar = false
-    @ObservedObject var calendarManager = CalendarManager.shared
-    
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
     @AppStorage("enableChrome") var enableChrome = false
@@ -176,11 +173,9 @@ struct SettingsView: View {
             isChromeInstalled = checkAppExists(bundleID: "com.google.Chrome")
             isBraveInstalled = checkAppExists(bundleID: "com.brave.Browser")
             isEdgeInstalled = checkAppExists(bundleID: "com.microsoft.edgemac")
-            calendarManager.checkAccessStatus()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             hasAccessibilityAccess = AXIsProcessTrusted()
-            calendarManager.checkAccessStatus()
         }
         .alert(isPresented: $showHelpAlert) {
             let browser = browserNeedingHelp ?? "Browser"
@@ -398,95 +393,99 @@ struct SettingsView: View {
     // ---------------------------------------------------------
     private var integrationsContent: some View {
         Group {
-            Section {
-                Toggle("Enable Calendar Integration", isOn: $enableCalendar)
-                
-                if enableCalendar {
-                    HStack {
-                        Text("Calendar Status")
-                        Spacer()
-                        if calendarManager.hasAccess {
-                            Text("Connected").foregroundColor(.green)
-                        } else {
-                            Button("Request Access") {
-                                calendarManager.requestAccess()
-                            }
-                        }
-                    }
-                }
-            } header: { Text("Google/Apple Calendar") }
             
             Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("Media Players", systemImage: "play.circle.fill")
-                        .font(.headline)
-                    
-                    Toggle(isOn: $enableAppleMusic) {
-                        HStack {
-                            Image(systemName: "apple.logo")
-                            Text("Apple Music")
-                        }
-                    }
-                    
-                    Toggle(isOn: $enableSpotify) {
-                        HStack {
-                            Image(systemName: "music.note")
-                            Text("Spotify")
-                        }
-                    }
-                    .disabled(!isSpotifyInstalled)
-                    if !isSpotifyInstalled {
-                        Text("Spotify app not detected.").font(.caption2).foregroundColor(.secondary)
-                    }
+                if isAppleMusicInstalled {
+                    Toggle("Apple Music App", isOn: $enableAppleMusic)
+                        .onChange(of: enableAppleMusic) { newValue in if newValue { triggerPermission(for: "Music") } }
                 }
-                .padding(.vertical, 4)
-            } header: { Text("Supported Apps") }
+                if isSpotifyInstalled {
+                    Toggle("Spotify Native App", isOn: $enableSpotify)
+                        .onChange(of: enableSpotify) { newValue in if newValue { triggerPermission(for: "Spotify") } }
+                }
+            } header: { Text("Native Players") }
             
             Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("Web Browsers", systemImage: "safari.fill")
-                        .font(.headline)
-                    
-                    Toggle(isOn: $enableChrome) {
-                        HStack {
-                            Image(systemName: "globe")
-                            Text("Google Chrome")
-                        }
-                    }
-                    .onChange(of: enableChrome) { newValue in if newValue { browserNeedingHelp = "Chrome"; showHelpAlert = true } }
-                    
-                    Toggle(isOn: $enableBrave) {
-                        HStack {
-                            Image(systemName: "globe")
-                            Text("Brave Browser")
-                        }
-                    }
-                    .onChange(of: enableBrave) { newValue in if newValue { browserNeedingHelp = "Brave"; showHelpAlert = true } }
-                    
-                    Toggle(isOn: $enableEdge) {
-                        HStack {
-                            Image(systemName: "globe")
-                            Text("Microsoft Edge")
-                        }
-                    }
-                    .onChange(of: enableEdge) { newValue in if newValue { browserNeedingHelp = "Edge"; showHelpAlert = true } }
-                    
-                    Toggle(isOn: $enableSafari) {
-                        HStack {
-                            Image(systemName: "safari")
-                            Text("Safari")
-                        }
-                    }
-                    .onChange(of: enableSafari) { newValue in if newValue { browserNeedingHelp = "Safari"; showHelpAlert = true } }
-                }
-                .padding(.vertical, 4)
-            } header: { Text("Browser Scrapers") }
+                if isSafariInstalled { browserToggle(title: "Safari", isOn: $enableSafari, internalName: "Safari") }
+                if isChromeInstalled { browserToggle(title: "Google Chrome", isOn: $enableChrome, internalName: "Google Chrome") }
+                if isBraveInstalled { browserToggle(title: "Brave Browser", isOn: $enableBrave, internalName: "Brave Browser") }
+                if isEdgeInstalled { browserToggle(title: "Microsoft Edge", isOn: $enableEdge, internalName: "Microsoft Edge") }
+            } header: { Text("Web Browsers") }
         }
     }
     
     // ---------------------------------------------------------
     // ⚡️ HELPERS
     // ---------------------------------------------------------
+    @ViewBuilder
+    func browserToggle(title: String, isOn: Binding<Bool>, internalName: String) -> some View {
+        HStack {
+            Toggle(isOn: isOn) {
+                Text(title)
+                Text("Allows WaveNotch to read media playing in \(title) tabs.").font(.caption).foregroundColor(.secondary)
+            }
+            .onChange(of: isOn.wrappedValue) { newValue in
+                if newValue {
+                    triggerPermission(for: internalName)
+                    
+                    if !testJavaScriptAccess(for: internalName) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            isOn.wrappedValue = false
+                            browserNeedingHelp = title
+                            showHelpAlert = true
+                        }
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            Button(action: {
+                browserNeedingHelp = title
+                showHelpAlert = true
+            }) {
+                Image(systemName: "questionmark.circle")
+                    .foregroundColor(.blue)
+            }
+            .buttonStyle(.plain)
+            .help("Setup Instructions")
+        }
+    }
+    
+    
+    func testJavaScriptAccess(for browser: String) -> Bool {
+        let scriptSource: String
+        if browser == "Safari" {
+            scriptSource = """
+            tell application "Safari"
+                try
+                    do JavaScript "1+1" in document 1
+                    return "SUCCESS"
+                on error
+                    return "FAIL"
+                end try
+            end tell
+            """
+        } else {
+            scriptSource = """
+            tell application "\(browser)"
+                try
+                    execute active tab of window 1 javascript "1+1"
+                    return "SUCCESS"
+                on error
+                    return "FAIL"
+                end try
+            end tell
+            """
+        }
+        var error: NSDictionary?
+        if let script = NSAppleScript(source: scriptSource) {
+            let result = script.executeAndReturnError(&error).stringValue
+            if result == "FAIL" || error != nil { return false }
+            return true
+        }
+        return false
+    }
     
     func checkAppExists(bundleID: String) -> Bool {
         return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
@@ -499,6 +498,12 @@ struct SettingsView: View {
         } catch {
             print("Login Item Error: \(error)")
         }
+    }
+    
+    func triggerPermission(for appName: String) {
+        let script = "tell application \"\(appName)\" to running"
+        var error: NSDictionary?
+        if let appleScript = NSAppleScript(source: script) { appleScript.executeAndReturnError(&error) }
     }
     
     func requestAccessibilityAccess() {
@@ -515,7 +520,7 @@ struct SettingsView: View {
 // 🎛️ DASHBOARD SETTINGS VIEW (DRAG & DROP LAYOUT)
 // ---------------------------------------------------------
 struct DashboardSettingsView: View {
-    @ObservedObject var dashboardManager = DashboardManager.shared
+    @ObservedObject var dashboardObject = DashboardManager.shared
     @State private var localOrder: [NotchWidgetType] = []
     
     @AppStorage("plugin_player_enabled") var playerEnabled = true
@@ -557,7 +562,7 @@ struct DashboardSettingsView: View {
                     }
                     .onMove { source, destination in
                         localOrder.move(fromOffsets: source, toOffset: destination)
-                        dashboardManager.saveWidgetOrder(localOrder)
+                        dashboardObject.saveWidgetOrder(localOrder)
                     }
                 }
                 .listStyle(.plain)
@@ -572,7 +577,7 @@ struct DashboardSettingsView: View {
         .padding(30)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            localOrder = dashboardManager.getWidgetOrder()
+            localOrder = dashboardObject.getWidgetOrder()
         }
     }
     

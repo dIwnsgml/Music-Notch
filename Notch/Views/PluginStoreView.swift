@@ -42,22 +42,7 @@ struct PluginCardView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 // Icon
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.accentColor.opacity(0.1))
-                        .frame(width: 44, height: 44)
-                    
-                    if let asset = plugin.assetImageName {
-                        Image(asset)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 28, height: 28)
-                    } else {
-                        Image(systemName: plugin.iconName)
-                            .font(.system(size: 20))
-                            .foregroundColor(.accentColor)
-                    }
-                }
+                PluginIcon(plugin: plugin, size: 44)
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(plugin.name)
@@ -104,22 +89,7 @@ struct PluginDetailView: View {
     var body: some View {
         VStack(spacing: 20) {
             HStack(alignment: .top) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.accentColor.opacity(0.1))
-                        .frame(width: 80, height: 80)
-                    
-                    if let asset = plugin.assetImageName {
-                        Image(asset)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 50, height: 50)
-                    } else {
-                        Image(systemName: plugin.iconName)
-                            .font(.system(size: 32))
-                            .foregroundColor(.accentColor)
-                    }
-                }
+                PluginIcon(plugin: plugin, size: 80)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(plugin.name)
@@ -231,6 +201,43 @@ struct PluginDetailView: View {
         }
         .padding(30)
         .frame(width: 450, height: 450)
+    }
+}
+
+struct PluginIcon: View {
+    let plugin: WaveNotchPlugin
+    let size: CGFloat
+    
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.27)
+                .fill(brandColor.opacity(0.1))
+                .frame(width: size, height: size)
+            
+            if let asset = plugin.assetImageName, NSImage(named: asset) != nil {
+                Image(asset)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size * 0.63, height: size * 0.63)
+            } else {
+                Image(systemName: plugin.iconName)
+                    .font(.system(size: size * 0.45, weight: .semibold))
+                    .foregroundColor(brandColor)
+            }
+        }
+    }
+    
+    private var brandColor: Color {
+        switch plugin.id {
+        case let id where id.contains("spotify"):
+            return .green
+        case let id where id.contains("calendar"):
+            return .blue
+        case let id where id.contains("weather"):
+            return .orange
+        default:
+            return .accentColor
+        }
     }
 }
 
