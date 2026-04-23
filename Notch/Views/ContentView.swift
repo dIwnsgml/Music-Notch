@@ -30,6 +30,7 @@ struct ContentView: View {
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
+    //@AppStorage("isAppHidden") var isAppHidden = false
     @State private var isAppHidden = false
     
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
@@ -60,8 +61,19 @@ struct ContentView: View {
     let lyricTimer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
     let hoverCheckTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     
+    // ---------------------------------------------------------
+    // ⚡️ THE BULLETPROOF NOTCH DETECTION
+    // Agent apps sometimes get generic data from NSScreen.main.
+    // This loops through EVERY connected display, finds the physical
+    // camera notch, and grabs its exact pixel depth.
+    // ---------------------------------------------------------
     var notchHeight: CGFloat {
+        // 1. Ask all connected screens for their top safe area (the notch)
+        // 2. Grab the highest number.
         let actualNotchDepth = NSScreen.screens.map { $0.safeAreaInsets.top }.max() ?? 0
+        
+        // 3. A physical notch is always taller than 24px.
+        // If it found one, use it. Otherwise, safely fall back to 32.
         return actualNotchDepth > 24 ? actualNotchDepth : 32
     }
     
@@ -250,6 +262,7 @@ struct ContentView: View {
         DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
             .fill(Color.black)
             .frame(width: currentWidth, height: currentHeight)
+            .contentShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
             .overlay(
                 DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
                     .stroke(
@@ -336,7 +349,7 @@ struct ContentView: View {
     @ViewBuilder
     private func expandedLayer(expandedHeight: CGFloat) -> some View {
         let widgets = dashboardManager.activeWidgets
-        let availableWidth = expandedWidth - 48 - 12 // total padding and spacing
+        let availableWidth = expandedWidth - 32 - 6 // total horizontal padding (16*2) and inner spacing (6)
         
         VStack(spacing: 0) {
             if widgets.isEmpty {
@@ -356,18 +369,18 @@ struct ContentView: View {
                 // ⚡️ DYNAMIC ROW-BASED LAYOUT
                 let rows = widgets.chunked(into: 2)
                 
-                VStack(spacing: 12) {
+                VStack(spacing: 6) {
                     ForEach(0..<rows.count, id: \.self) { rowIndex in
                         let row = rows[rowIndex]
-                        HStack(alignment: .top, spacing: 12) {
+                        HStack(alignment: .top, spacing: 6) {
                             if row.count == 2 {
                                 let w1 = row[0]
                                 let w2 = row[1]
                                 
-                                // Ratios: Player is now 0.6 (Major), others are 0.4 (Minor)
+                                // Ratios: Spotify Queue is always 0.4 (Minor), all others split 1:1
                                 let r1: CGFloat = {
-                                    if w1 == .player { return 0.6 }
-                                    if w2 == .player { return 0.4 }
+                                    if w1 == .spotifyQueue { return 0.4 }
+                                    if w2 == .spotifyQueue { return 0.6 }
                                     return 0.5
                                 }()
                                 let r2 = 1.0 - r1
@@ -413,7 +426,7 @@ struct ContentView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 16)
             }
         }
         .padding(.top, notchHeight + 12)
@@ -440,6 +453,7 @@ struct ContentView: View {
             let keyCode = (data & 0xFFFF0000) >> 16
             let keyFlags = (data & 0x0000FFFF)
             let keyState = (((keyFlags & 0xFF00) >> 8)) == 0xA
+            
             if keyState {
                 if keyCode == 19 { skipDirection = -1 }
                 else if keyCode == 20 { skipDirection = 1 }
@@ -466,12 +480,17 @@ struct ContentView: View {
     private func triggerBanner(text: String, duration: Double) {
         if !isExpanded {
             bannerText = text
-            withAnimation { isShowingBanner = true }
+            withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) { isShowingBanner = true }
+            
+            let sleepTime = UInt64(duration * 1_000_000_000)
             bannerTask?.cancel()
             bannerTask = Task {
-                try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: sleepTime)
                 guard !Task.isCancelled else { return }
-                await MainActor.run { withAnimation { isShowingBanner = false }; updateLyricBanner() }
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) { isShowingBanner = false }
+                    updateLyricBanner()
+                }
             }
         }
     }

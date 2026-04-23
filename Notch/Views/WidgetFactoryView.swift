@@ -7,7 +7,7 @@ struct WidgetFactoryView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     @ObservedObject var calendarManager: CalendarManager
     let expandedWidth: CGFloat
-    var isCompact: Bool // ⚡️ ADDED
+    var isCompact: Bool
     @Binding var skipDirection: Int
     @Binding var glowOpacity: Double
     let onSwipe: (Bool) -> Void
@@ -21,7 +21,7 @@ struct WidgetFactoryView: View {
                         nowPlaying: nowPlaying,
                         calendarManager: calendarManager,
                         expandedWidth: expandedWidth,
-                        isCompact: isCompact, // ⚡️ ADDED
+                        isCompact: isCompact,
                         skipDirection: $skipDirection,
                         glowOpacity: $glowOpacity,
                         onSwipe: onSwipe
@@ -60,20 +60,19 @@ struct SpotifyQueueWidget: View {
                             }
                         }
                     }
-                    .padding(16)
                 }
             }
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             spotifyManager.fetchQueue()
         }
         .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
-            // ⚡️ PERIODIC REFRESH: Keep the queue synced every 5 seconds while expanded
             spotifyManager.fetchQueue()
         }
         .onChange(of: nowPlaying.currentSong) { _, _ in
-            // ⚡️ INSTANT REFRESH: When the track changes, grab the new queue immediately
             spotifyManager.fetchQueue()
         }
     }
@@ -158,7 +157,7 @@ struct PlaceholderWidget: View {
     let icon: String
     
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 24))
                 .foregroundColor(.accentColor)

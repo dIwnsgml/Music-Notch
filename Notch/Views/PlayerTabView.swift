@@ -41,11 +41,11 @@ struct PlayerTabView: View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
         let showSplitView = enableCalendar && calendarManager.hasAccess
         
-        let hPad: CGFloat = showSplitView ? 10 : 20
+        let hPad: CGFloat = 6 // ⚡️ VERY LOW PADDING
         let calendarWidth: CGFloat = 170
         let playerPanelWidth: CGFloat = showSplitView ? (expandedWidth - calendarWidth) : expandedWidth
         
-        VStack(spacing: 0) { // ⚡️ TOP ALIGNMENT WRAPPER
+        VStack(spacing: 0) {
             if !hasAnyAccess {
                 HStack(spacing: 16) {
                     // 1. Icon Badge (Left Side)
@@ -88,8 +88,8 @@ struct PlayerTabView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.bottom, 8)
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
                 
             } else {
                 HStack(alignment: .top, spacing: 0) {

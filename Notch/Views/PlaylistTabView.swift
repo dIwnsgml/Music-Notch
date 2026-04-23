@@ -42,10 +42,11 @@ struct PlaylistTabView: View {
                             }
                         }
                     }
-                    .padding(16)
                 }
             }
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
         .frame(maxHeight: .infinity)
     }
     
