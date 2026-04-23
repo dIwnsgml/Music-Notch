@@ -403,120 +403,90 @@ struct SettingsView: View {
                 
                 if enableCalendar {
                     HStack {
-                        Text("Calendar Permission")
+                        Text("Calendar Status")
                         Spacer()
                         if calendarManager.hasAccess {
-                            Text("Granted")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .foregroundColor(.green)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 2)
-                                .background(Color.green.opacity(0.1))
-                                .cornerRadius(6)
+                            Text("Connected").foregroundColor(.green)
                         } else {
-                            Button("Request Access") { calendarManager.requestAccess() }
+                            Button("Request Access") {
+                                calendarManager.requestAccess()
+                            }
                         }
                     }
                 }
-            } header: {
-                Text("Productivity")
-            } footer: {
-                Text("Displays your upcoming events next to the player.")
-            }
+            } header: { Text("Google/Apple Calendar") }
             
             Section {
-                if isAppleMusicInstalled {
-                    Toggle("Apple Music App", isOn: $enableAppleMusic)
-                        .onChange(of: enableAppleMusic) { newValue in if newValue { triggerPermission(for: "Music") } }
-                }
-                if isSpotifyInstalled {
-                    Toggle("Spotify Native App", isOn: $enableSpotify)
-                        .onChange(of: enableSpotify) { newValue in if newValue { triggerPermission(for: "Spotify") } }
-                }
-            } header: { Text("Native Players") }
-            
-            Section {
-                if isSafariInstalled { browserToggle(title: "Safari", isOn: $enableSafari, internalName: "Safari") }
-                if isChromeInstalled { browserToggle(title: "Google Chrome", isOn: $enableChrome, internalName: "Google Chrome") }
-                if isBraveInstalled { browserToggle(title: "Brave Browser", isOn: $enableBrave, internalName: "Brave Browser") }
-                if isEdgeInstalled { browserToggle(title: "Microsoft Edge", isOn: $enableEdge, internalName: "Microsoft Edge") }
-            } header: { Text("Web Browsers") }
-        }
-    }
-    
-    
-    // ---------------------------------------------------------
-    // ⚡️ HELPER METHODS
-    // ---------------------------------------------------------
-    @ViewBuilder
-    func browserToggle(title: String, isOn: Binding<Bool>, internalName: String) -> some View {
-        HStack {
-            Toggle(isOn: isOn) {
-                Text(title)
-                Text("Allows WaveNotch to read media playing in \(title) tabs.").font(.caption).foregroundColor(.secondary)
-            }
-            .onChange(of: isOn.wrappedValue) { newValue in
-                if newValue {
-                    triggerPermission(for: internalName)
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Media Players", systemImage: "play.circle.fill")
+                        .font(.headline)
                     
-                    if !testJavaScriptAccess(for: internalName) {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                            isOn.wrappedValue = false
-                            browserNeedingHelp = title
-                            showHelpAlert = true
+                    Toggle(isOn: $enableAppleMusic) {
+                        HStack {
+                            Image(systemName: "apple.logo")
+                            Text("Apple Music")
                         }
                     }
+                    
+                    Toggle(isOn: $enableSpotify) {
+                        HStack {
+                            Image(systemName: "music.note")
+                            Text("Spotify")
+                        }
+                    }
+                    .disabled(!isSpotifyInstalled)
+                    if !isSpotifyInstalled {
+                        Text("Spotify app not detected.").font(.caption2).foregroundColor(.secondary)
+                    }
                 }
-            }
+                .padding(.vertical, 4)
+            } header: { Text("Supported Apps") }
             
-            Spacer()
-            
-            Button(action: {
-                browserNeedingHelp = title
-                showHelpAlert = true
-            }) {
-                Image(systemName: "questionmark.circle")
-                    .foregroundColor(.blue)
-            }
-            .buttonStyle(.plain)
-            .help("Setup Instructions")
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Web Browsers", systemImage: "safari.fill")
+                        .font(.headline)
+                    
+                    Toggle(isOn: $enableChrome) {
+                        HStack {
+                            Image(systemName: "globe")
+                            Text("Google Chrome")
+                        }
+                    }
+                    .onChange(of: enableChrome) { newValue in if newValue { browserNeedingHelp = "Chrome"; showHelpAlert = true } }
+                    
+                    Toggle(isOn: $enableBrave) {
+                        HStack {
+                            Image(systemName: "globe")
+                            Text("Brave Browser")
+                        }
+                    }
+                    .onChange(of: enableBrave) { newValue in if newValue { browserNeedingHelp = "Brave"; showHelpAlert = true } }
+                    
+                    Toggle(isOn: $enableEdge) {
+                        HStack {
+                            Image(systemName: "globe")
+                            Text("Microsoft Edge")
+                        }
+                    }
+                    .onChange(of: enableEdge) { newValue in if newValue { browserNeedingHelp = "Edge"; showHelpAlert = true } }
+                    
+                    Toggle(isOn: $enableSafari) {
+                        HStack {
+                            Image(systemName: "safari")
+                            Text("Safari")
+                        }
+                    }
+                    .onChange(of: enableSafari) { newValue in if newValue { browserNeedingHelp = "Safari"; showHelpAlert = true } }
+                }
+                .padding(.vertical, 4)
+            } header: { Text("Browser Scrapers") }
         }
     }
     
-    func testJavaScriptAccess(for browser: String) -> Bool {
-        let scriptSource: String
-        if browser == "Safari" {
-            scriptSource = """
-            tell application "Safari"
-                try
-                    do JavaScript "1+1" in document 1
-                    return "SUCCESS"
-                on error
-                    return "FAIL"
-                end try
-            end tell
-            """
-        } else {
-            scriptSource = """
-            tell application "\(browser)"
-                try
-                    execute active tab of window 1 javascript "1+1"
-                    return "SUCCESS"
-                on error
-                    return "FAIL"
-                end try
-            end tell
-            """
-        }
-        var error: NSDictionary?
-        if let script = NSAppleScript(source: scriptSource) {
-            let result = script.executeAndReturnError(&error).stringValue
-            if result == "FAIL" || error != nil { return false }
-            return true
-        }
-        return false
-    }
+    // ---------------------------------------------------------
+    // ⚡️ HELPERS
+    // ---------------------------------------------------------
     
     func checkAppExists(bundleID: String) -> Bool {
         return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
@@ -524,16 +494,11 @@ struct SettingsView: View {
     
     func toggleLaunchAtLogin(enabled: Bool) {
         do {
-            if enabled {
-                if SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
-            } else { try SMAppService.mainApp.unregister() }
-        } catch { launchAtLogin = SMAppService.mainApp.status == .enabled }
-    }
-    
-    func triggerPermission(for appName: String) {
-        let script = "tell application \"\(appName)\" to running"
-        var error: NSDictionary?
-        if let appleScript = NSAppleScript(source: script) { appleScript.executeAndReturnError(&error) }
+            if enabled { try SMAppService.mainApp.register() }
+            else { try SMAppService.mainApp.unregister() }
+        } catch {
+            print("Login Item Error: \(error)")
+        }
     }
     
     func requestAccessibilityAccess() {
@@ -553,6 +518,7 @@ struct DashboardSettingsView: View {
     @ObservedObject var dashboardManager = DashboardManager.shared
     @State private var localOrder: [NotchWidgetType] = []
     
+    @AppStorage("plugin_player_enabled") var playerEnabled = true
     @AppStorage("plugin_spotify_queue_enabled") var spotifyQueueEnabled = false
     @AppStorage("plugin_spotify_playlists_enabled") var spotifyPlaylistsEnabled = false
     @AppStorage("plugin_google_calendar_enabled") var calendarEnabled = false
@@ -563,41 +529,13 @@ struct DashboardSettingsView: View {
             Text("Dashboard Layout")
                 .font(.system(size: 28, weight: .bold))
             
-            Text("Drag and drop to prioritize how widgets appear side-by-side. The Music Player is permanently anchored as the primary widget.")
+            Text("Drag and drop to prioritize how widgets appear side-by-side. You can now also choose whether to display the Music Player.")
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
             
             VStack(spacing: 0) {
-                // ⚡️ FIXED PRIMARY WIDGET
-                HStack(spacing: 12) {
-                    Image(systemName: "lock.fill")
-                        .foregroundColor(.gray)
-                        .font(.system(size: 14))
-                        .frame(width: 20)
-                    
-                    Text("Music Player")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white.opacity(0.8))
-                    
-                    Spacer()
-                    
-                    Text("Primary (60%)")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.green)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.green.opacity(0.15))
-                        .clipShape(Capsule())
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                
-                Divider()
-                    .background(Color.white.opacity(0.1))
-                
-                // ⚡️ REORDERABLE SECONDARY WIDGETS
                 List {
-                    ForEach(localOrder.filter { $0 != .player }, id: \.self) { widget in
+                    ForEach(localOrder, id: \.self) { widget in
                         HStack(spacing: 12) {
                             Image(systemName: "line.3.horizontal")
                                 .foregroundColor(.gray)
@@ -618,14 +556,7 @@ struct DashboardSettingsView: View {
                         .contentShape(Rectangle())
                     }
                     .onMove { source, destination in
-                        // We need to map the move indices to the full order array
-                        var reorderable = localOrder.filter { $0 != .player }
-                        reorderable.move(fromOffsets: source, toOffset: destination)
-                        
-                        var newOrder: [NotchWidgetType] = [.player]
-                        newOrder.append(contentsOf: reorderable)
-                        
-                        localOrder = newOrder
+                        localOrder.move(fromOffsets: source, toOffset: destination)
                         dashboardManager.saveWidgetOrder(localOrder)
                     }
                 }
@@ -647,11 +578,11 @@ struct DashboardSettingsView: View {
     
     private func binding(for widget: NotchWidgetType) -> Binding<Bool> {
         switch widget {
+        case .player: return $playerEnabled
         case .spotifyQueue: return $spotifyQueueEnabled
         case .spotifyPlaylists: return $spotifyPlaylistsEnabled
         case .calendar: return $calendarEnabled
         case .weather: return $weatherEnabled
-        case .player: return .constant(true)
         }
     }
 }

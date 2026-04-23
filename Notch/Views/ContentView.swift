@@ -339,37 +339,78 @@ struct ContentView: View {
         let availableWidth = expandedWidth - 48 - 12 // total padding and spacing
         
         VStack(spacing: 0) {
-            if widgets.count <= 1 {
-                VStack(spacing: 0) {
-                    if currentTab == .player {
-                        PlayerTabView(nowPlaying: nowPlaying, calendarManager: calendarManager, expandedWidth: expandedWidth - 48, isCompact: false, skipDirection: $skipDirection, glowOpacity: $glowOpacity, onSwipe: { forward in
-                            self.executeSkip(forward: forward)
-                        })
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 14)
-                    } else {
-                        PlaylistTabView(nowPlaying: nowPlaying)
-                            .padding(.horizontal, 24)
-                            .padding(.bottom, 14)
-                    }
-                    Spacer(minLength: 0)
+            if widgets.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 32))
+                        .foregroundColor(.gray.opacity(0.5))
+                    Text("No widgets enabled.")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.gray)
+                    Text("Go to Settings > Layout to enable plugins.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.gray.opacity(0.8))
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                LazyVGrid(columns: [GridItem(.fixed(availableWidth * 0.6), spacing: 12, alignment: .top), GridItem(.fixed(availableWidth * 0.4), spacing: 12, alignment: .top)], spacing: 12) {
-                    ForEach(Array(widgets.enumerated()), id: \.element.id) { index, widget in
-                        WidgetFactoryView(
-                            widgetType: widget,
-                            nowPlaying: nowPlaying,
-                            calendarManager: calendarManager,
-                            expandedWidth: (index % 2 == 0) ? (availableWidth * 0.6) : (availableWidth * 0.4),
-                            isCompact: true,
-                            skipDirection: $skipDirection,
-                            glowOpacity: $glowOpacity,
-                            onSwipe: { forward in
-                                self.executeSkip(forward: forward)
+                // ⚡️ DYNAMIC ROW-BASED LAYOUT
+                let rows = widgets.chunked(into: 2)
+                
+                VStack(spacing: 12) {
+                    ForEach(0..<rows.count, id: \.self) { rowIndex in
+                        let row = rows[rowIndex]
+                        HStack(alignment: .top, spacing: 12) {
+                            if row.count == 2 {
+                                let w1 = row[0]
+                                let w2 = row[1]
+                                
+                                // Ratios: Player is now 0.6 (Major), others are 0.4 (Minor)
+                                let r1: CGFloat = {
+                                    if w1 == .player { return 0.6 }
+                                    if w2 == .player { return 0.4 }
+                                    return 0.5
+                                }()
+                                let r2 = 1.0 - r1
+                                
+                                WidgetFactoryView(
+                                    widgetType: w1,
+                                    nowPlaying: nowPlaying,
+                                    calendarManager: calendarManager,
+                                    expandedWidth: availableWidth * r1,
+                                    isCompact: true,
+                                    skipDirection: $skipDirection,
+                                    glowOpacity: $glowOpacity,
+                                    onSwipe: { forward in self.executeSkip(forward: forward) }
+                                )
+                                .frame(width: availableWidth * r1)
+                                
+                                WidgetFactoryView(
+                                    widgetType: w2,
+                                    nowPlaying: nowPlaying,
+                                    calendarManager: calendarManager,
+                                    expandedWidth: availableWidth * r2,
+                                    isCompact: true,
+                                    skipDirection: $skipDirection,
+                                    glowOpacity: $glowOpacity,
+                                    onSwipe: { forward in self.executeSkip(forward: forward) }
+                                )
+                                .frame(width: availableWidth * r2)
+                                
+                            } else {
+                                // Single widget row (e.g. last item in odd-count list)
+                                WidgetFactoryView(
+                                    widgetType: row[0],
+                                    nowPlaying: nowPlaying,
+                                    calendarManager: calendarManager,
+                                    expandedWidth: availableWidth,
+                                    isCompact: false,
+                                    skipDirection: $skipDirection,
+                                    glowOpacity: $glowOpacity,
+                                    onSwipe: { forward in self.executeSkip(forward: forward) }
+                                )
+                                .frame(width: availableWidth)
                             }
-                        )
-                        .frame(height: 240)
+                        }
                     }
                 }
                 .padding(.horizontal, 24)

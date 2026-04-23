@@ -61,21 +61,22 @@ class DashboardManager: ObservableObject {
     }
     
     func refreshWidgets() {
+        let playerEnabled = UserDefaults.standard.object(forKey: "plugin_player_enabled") as? Bool ?? true
         let queueEnabled = UserDefaults.standard.bool(forKey: "plugin_spotify_queue_enabled")
         let playlistsEnabled = UserDefaults.standard.bool(forKey: "plugin_spotify_playlists_enabled")
         let calendarEnabled = UserDefaults.standard.bool(forKey: "plugin_google_calendar_enabled")
         let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
         
         let order = getWidgetOrder()
-        var widgets: [NotchWidgetType] = [.player] // ⚡️ Always pinned as the primary widget
+        var widgets: [NotchWidgetType] = []
         
-        for widget in order where widget != .player {
+        for widget in order {
             switch widget {
+            case .player: if playerEnabled { widgets.append(.player) }
             case .spotifyQueue: if queueEnabled { widgets.append(.spotifyQueue) }
             case .spotifyPlaylists: if playlistsEnabled { widgets.append(.spotifyPlaylists) }
             case .calendar: if calendarEnabled { widgets.append(.calendar) }
             case .weather: if weatherEnabled { widgets.append(.weather) }
-            default: break
             }
         }
         

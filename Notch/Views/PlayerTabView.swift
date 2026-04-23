@@ -41,7 +41,7 @@ struct PlayerTabView: View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
         let showSplitView = enableCalendar && calendarManager.hasAccess
         
-        let hPad: CGFloat = showSplitView ? 20 : 36
+        let hPad: CGFloat = showSplitView ? 10 : 20
         let calendarWidth: CGFloat = 170
         let playerPanelWidth: CGFloat = showSplitView ? (expandedWidth - calendarWidth) : expandedWidth
         

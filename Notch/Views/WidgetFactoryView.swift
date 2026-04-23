@@ -53,7 +53,7 @@ struct SpotifyQueueWidget: View {
                 emptyStateView(text: "Fetching queue...")
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 10) {
                         ForEach(Array(spotifyManager.currentQueueItems.prefix(50).enumerated()), id: \.offset) { index, item in
                             SpotifyQueueRow(index: index + 1, track: item.track) {
                                 spotifyManager.skipToQueueItem(index: index)
@@ -100,7 +100,7 @@ struct SpotifyQueueRow: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Text("\(index)")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundColor(isHovering ? .green : .gray)
@@ -158,7 +158,7 @@ struct PlaceholderWidget: View {
     let icon: String
     
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 24))
                 .foregroundColor(.accentColor)
