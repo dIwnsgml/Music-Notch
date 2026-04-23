@@ -3,6 +3,20 @@
     <channel>
         <title>WaveNotch</title>
         <item>
+            <title>2.0</title>
+            <pubDate>Thu, 23 Apr 2026 17:07:52 -0400</pubDate>
+            <sparkle:version>12</sparkle:version>
+            <sparkle:shortVersionString>2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://wavenotch.com/WaveNotch_Release_2.0.dmg" length="6344614" type="application/octet-stream" sparkle:edSignature="YS6avwgEDK4T59yqYmR4gQMSQD+vMY22LYeQsNaDM5pj+k3vm2RhIm3u7dlzLqVmS9tFyeTpiipw7IONZT+7DA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://wavenotch.com/WaveNotch12-11.delta" sparkle:deltaFrom="11" length="622390" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="n2dpnqbj5/iU1Zs6OKfwTm83yVDaGo4ARH/PE5oThkRuMapcpue7T5Yf2vRGSyEz+2mccARdU3gDGUFtFOtLDw=="/>
+                <enclosure url="https://wavenotch.com/WaveNotch12-10.delta" sparkle:deltaFrom="10" length="1293078" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="tvdC2aZ01FXuHg55E50A/hId4cpYRu3ntojcB9bztqjTnTIg4Qu5t6P1wPStZYxoEx/rnlLMSr/zpbNCqlQcAw=="/>
+                <enclosure url="https://wavenotch.com/WaveNotch12-9.delta" sparkle:deltaFrom="9" length="1298646" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="onW4xfh5hA6sU5c1+lqjhsWVhv22h9CYR8PsOXOG1KRCxQDwBC+18EVcvCiYK0ecZR76pK4eWpotRmNqpXXgAw=="/>
+                <enclosure url="https://wavenotch.com/WaveNotch12-8.delta" sparkle:deltaFrom="8" length="1404126" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="wDHSqs6EJO8wtRnulbH0T72KWDHBkNfJkUz5pOQhKkctvdGh/Ps8vtEUvim23vWBn3KDOy7fxJcx2edZGePnBg=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>1.10</title>
             <pubDate>Wed, 15 Apr 2026 14:31:20 -0400</pubDate>
             <sparkle:version>11</sparkle:version>
@@ -25,17 +39,6 @@
             <sparkle:deltas>
                 <enclosure url="https://wavenotch.com/WaveNotch10-9.delta" sparkle:deltaFrom="9" length="98530" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="JdgF1B/eSSJNHotfw8CDdNGndlfrzqTnN3bGQW1VgLbDzatXp7qh1Fgj78ZU9in37QMJZB25Re511Bt2oEE4Ag=="/>
                 <enclosure url="https://wavenotch.com/WaveNotch10-8.delta" sparkle:deltaFrom="8" length="297002" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="RWtAnrdytQEy3IZjuKxhmmjIFqgDuS+XHKmoPjg+jadJNpDdRrYG0L4N/MbFsLXz0LWQvJgt3WRDs7/aoCW2Bw=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>1.8</title>
-            <pubDate>Tue, 14 Apr 2026 17:10:40 -0400</pubDate>
-            <sparkle:version>9</sparkle:version>
-            <sparkle:shortVersionString>1.8</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://wavenotch.com/WaveNotch_Release_1.8.dmg" length="4753408" type="application/octet-stream" sparkle:edSignature="nZmfwaoZOLeVUjKLWOUuO1wUgQXcbOr/DHuqsR1bXRreRD2/Do8ptDGuypFf2oe5GWBxRVAKecLb4//Xa21LDg=="/>
-            <sparkle:deltas>
-                <enclosure url="https://wavenotch.com/WaveNotch9-8.delta" sparkle:deltaFrom="8" length="289222" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="lE+wibmQOdHV8j9y/BgjYZo/7wyKE76r9PS31Rl+41IxceCmVZOzPezd8BPzp8zDfS+A/gXTvfydbw4Ah3D8Dw=="/>
             </sparkle:deltas>
         </item>
         <item>
