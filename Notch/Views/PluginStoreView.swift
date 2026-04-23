@@ -15,7 +15,7 @@ struct PluginStoreView: View {
                             }
                     }
                 }
-                .padding(20)
+                .padding(24)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -41,14 +41,13 @@ struct PluginCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                // Icon
-                PluginIcon(plugin: plugin, size: 44)
+                PluginIcon(plugin: plugin, size: 48)
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(plugin.name)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 14, weight: .bold))
                     Text(plugin.category.rawValue)
-                        .font(.system(size: 10))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
                 }
                 
@@ -58,6 +57,7 @@ struct PluginCardView: View {
                     Circle()
                         .fill(Color.green)
                         .frame(width: 8, height: 8)
+                        .shadow(color: .green.opacity(0.5), radius: 4)
                 }
             }
             
@@ -72,12 +72,12 @@ struct PluginCardView: View {
                 PluginActionButton(plugin: plugin)
             }
         }
-        .padding(14)
+        .padding(16)
         .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
+        .cornerRadius(16)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isEnabled ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(isEnabled ? Color.accentColor.opacity(0.2) : Color.white.opacity(0.05), lineWidth: 1)
         )
     }
 }
@@ -87,200 +87,184 @@ struct PluginDetailView: View {
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        VStack(spacing: 20) {
-            HStack(alignment: .top) {
+        VStack(spacing: 0) {
+            // Header
+            HStack(alignment: .center, spacing: 20) {
                 PluginIcon(plugin: plugin, size: 80)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(plugin.name)
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 24, weight: .bold))
                     Text(plugin.category.rawValue)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                    
+                    PluginActionButton(plugin: plugin)
+                        .padding(.top, 4)
                 }
                 
                 Spacer()
                 
                 Button(action: { dismiss() }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 22))
+                        .foregroundColor(.secondary.opacity(0.5))
                 }
                 .buttonStyle(.plain)
             }
+            .padding(32)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
             
-            Text(plugin.description)
-                .font(.body)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("About")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.secondary)
+                        Text(plugin.description)
+                            .font(.system(size: 14))
+                            .lineSpacing(4)
+                    }
+                    
+                    if plugin.id.contains("spotify") {
+                        spotifyAuthSection
+                    } else if plugin.id == "google_calendar" {
+                        googleAuthSection
+                    }
+                    
+                    pluginSettingsSection
+                }
+                .padding(32)
+            }
+        }
+        .frame(width: 500, height: 600)
+    }
+    
+    private var spotifyAuthSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Account Connection")
+                .font(.system(size: 14, weight: .bold))
                 .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
             
-            Divider()
-            
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Management")
-                    .font(.headline)
-                
-                HStack(spacing: 12) {
-                    PluginActionButton(plugin: plugin)
+            VStack {
+                if !SpotifyAuthManager.shared.accessToken.isEmpty {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Connected to Spotify")
+                                .font(.system(size: 13, weight: .medium))
+                            Text("Your playback and data are syncing perfectly.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button("Log Out") {
+                            SpotifyAuthManager.shared.accessToken = ""
+                            SpotifyAuthManager.shared.refreshToken = ""
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                } else {
+                    Button(action: {
+                        SpotifyAuthManager.shared.authenticate { _ in }
+                    }) {
+                        HStack {
+                            Image(systemName: "music.note")
+                            Text("Sign in with Spotify")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
                 }
             }
+            .padding(16)
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(12)
+        }
+    }
+    
+    private var googleAuthSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Account Connection")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.secondary)
             
-            if plugin.id == "spotify_queue" {
-                Divider()
-                
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Account Connection")
-                        .font(.headline)
-                    
-                    if !SpotifyAuthManager.shared.accessToken.isEmpty {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text("Connected to Spotify")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(.green)
-                                Text("Your playback and queue are syncing.")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Button("Log Out") {
-                                SpotifyAuthManager.shared.accessToken = ""
-                                SpotifyAuthManager.shared.refreshToken = ""
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+            VStack {
+                if GoogleCalendarManager.shared.isAuthenticated {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.blue)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Connected to Google")
+                                .font(.system(size: 13, weight: .medium))
+                            Text("Your events are syncing in the background.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
                         }
-                    } else {
-                        Button(action: {
-                            SpotifyAuthManager.shared.authenticate { _ in }
-                        }) {
-                            HStack {
-                                Image(systemName: "music.note")
-                                Text("Sign in with Spotify")
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
+                        Spacer()
+                        Button("Log Out") {
+                            GoogleCalendarManager.shared.accessToken = ""
+                            GoogleCalendarManager.shared.refreshToken = ""
+                            GoogleCalendarManager.shared.isAuthenticated = false
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.green)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
+                } else {
+                    Button(action: {
+                        GoogleCalendarManager.shared.authenticate { _ in }
+                    }) {
+                        HStack {
+                            Image(systemName: "calendar")
+                            Text("Sign in with Google")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
                 }
-                
-                Divider()
-                
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Plugin Settings")
-                        .font(.headline)
-                    
+            }
+            .padding(16)
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(12)
+        }
+    }
+    
+    private var pluginSettingsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Plugin Settings")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.secondary)
+            
+            VStack(spacing: 0) {
+                if plugin.id == "spotify_queue" {
                     PluginSettingToggle(
                         title: "Auto-hide when not playing Spotify",
-                        description: "The queue widget will only appear in your dashboard when Spotify is the active media source.",
+                        description: "The queue widget will only appear when Spotify is active.",
                         key: "plugin_spotify_queue_auto_hide"
                     )
-                }
-            } else if plugin.id == "spotify_playlists" {
-                Divider()
-                
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Account Connection")
-                        .font(.headline)
-                    
-                    if !SpotifyAuthManager.shared.accessToken.isEmpty {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text("Connected to Spotify")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(.green)
-                                Text("Your playlists are ready to use.")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Button("Log Out") {
-                                SpotifyAuthManager.shared.accessToken = ""
-                                SpotifyAuthManager.shared.refreshToken = ""
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    } else {
-                        Button(action: {
-                            SpotifyAuthManager.shared.authenticate { _ in }
-                        }) {
-                            HStack {
-                                Image(systemName: "music.note")
-                                Text("Sign in with Spotify")
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.green)
-                    }
-                }
-                
-                Divider()
-                
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Plugin Settings")
-                        .font(.headline)
-                    
+                } else if plugin.id == "spotify_playlists" {
                     PluginSettingToggle(
                         title: "Auto-hide when not playing Spotify",
-                        description: "The playlists widget will only appear in your dashboard when Spotify is the active media source.",
+                        description: "The playlists widget will only appear when Spotify is active.",
                         key: "plugin_spotify_playlists_auto_hide"
                     )
-                }
-            } else if plugin.id == "google_calendar" {
-                Divider()
-                
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Account Connection")
-                        .font(.headline)
-                    
-                    if GoogleCalendarManager.shared.isAuthenticated {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text("Connected to Google")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(.green)
-                                Text("Your events are syncing in the background.")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Button("Log Out") {
-                                GoogleCalendarManager.shared.accessToken = ""
-                                GoogleCalendarManager.shared.refreshToken = ""
-                                GoogleCalendarManager.shared.isAuthenticated = false
-                                GoogleCalendarManager.shared.upcomingEvents = []
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    } else {
-                        Button(action: {
-                            GoogleCalendarManager.shared.authenticate { success in
-                                if success { print("Google Auth Success!") }
-                            }
-                        }) {
-                            HStack {
-                                Image(systemName: "person.crop.circle.badge.plus")
-                                Text("Sign in with Google")
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
-                    }
+                } else {
+                    Text("No additional settings for this plugin.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 8)
                 }
             }
-            
-            Spacer()
+            .padding(16)
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(12)
         }
-        .padding(30)
-        .frame(width: 450, height: 450)
     }
 }
 
@@ -298,7 +282,7 @@ struct PluginIcon: View {
                 Image(asset)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: size * 0.63, height: size * 0.63)
+                    .frame(width: size * 0.6, height: size * 0.6)
             } else {
                 Image(systemName: plugin.iconName)
                     .font(.system(size: size * 0.45, weight: .semibold))
@@ -336,7 +320,7 @@ struct PluginSettingToggle: View {
     }
     
     var body: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
@@ -375,36 +359,21 @@ struct PluginActionButton: View {
                     .controlSize(.small)
                     .frame(width: 60)
             } else if !isInstalled {
-                Button("Install") {
+                Button("Install Plugin") {
                     simulateAction {
                         isInstalled = true
                         isEnabled = true
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .controlSize(.regular)
             } else {
-                // Enable/Disable Toggle
                 Button(isEnabled ? "Disable" : "Enable") {
-                    if !isEnabled && plugin.id == "spotify_plus" {
-                        // Trigger Spotify Auth if not already authenticated
-                        SpotifyAuthManager.shared.authenticate { success in
-                            if success {
-                                withAnimation {
-                                    isEnabled = true
-                                }
-                            }
-                        }
-                    } else {
-                        withAnimation {
-                            isEnabled.toggle()
-                        }
-                    }
+                    withAnimation { isEnabled.toggle() }
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.small)
+                .controlSize(.regular)
                 
-                // Uninstall
                 Button(action: {
                     simulateAction {
                         isInstalled = false
@@ -415,7 +384,7 @@ struct PluginActionButton: View {
                         .foregroundColor(.red)
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.small)
+                .controlSize(.regular)
                 .help("Uninstall Plugin")
             }
         }
