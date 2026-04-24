@@ -162,25 +162,33 @@ struct SpotifyQueueWidget: View {
             if spotifyManager.accessToken.isEmpty {
                 VStack(spacing: 8) {
                     Spacer()
-                    Image(systemName: "music.note")
+                    let hasClientID = spotifyManager.hasValidClientID
+                    
+                    Image(systemName: hasClientID ? "music.note" : "lock.fill")
                         .font(.system(size: 20))
-                        .foregroundColor(.green.opacity(0.8))
-                    Text("Sign in to Spotify")
+                        .foregroundColor(hasClientID ? .green.opacity(0.8) : .gray.opacity(0.5))
+                    Text(hasClientID ? "Sign in to Spotify" : "Setup Required")
                         .font(.system(size: 13, weight: .bold))
-                    Text("Access your queue directly from the notch.")
+                        .foregroundColor(hasClientID ? .white : .gray)
+                    Text(hasClientID ? "Access your queue directly from the notch." : "Open Settings to set your Client ID.")
                         .font(.system(size: 10))
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
                     
                     Button(action: {
-                        spotifyManager.authenticate { _ in }
+                        if hasClientID {
+                            spotifyManager.authenticate { _ in }
+                        } else {
+                            UserDefaults.standard.set("Plugins", forKey: "lastSettingsTab")
+                            SettingsWindowManager.shared.showSettings()
+                        }
                     }) {
-                        Text("Connect Spotify")
+                        Text(hasClientID ? "Connect Spotify" : "Open Settings")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.black)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 6)
-                            .background(Color.green)
+                            .background(hasClientID ? Color.green : Color.white)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)

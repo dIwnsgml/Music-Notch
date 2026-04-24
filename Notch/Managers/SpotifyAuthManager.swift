@@ -20,6 +20,13 @@ class SpotifyAuthManager: NSObject, ObservableObject {
         userClientID.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
+    var hasValidClientID: Bool {
+        let trimmed = clientID
+        guard trimmed.count == 32 else { return false }
+        let hexCharacterSet = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        return trimmed.rangeOfCharacter(from: hexCharacterSet.inverted) == nil
+    }
+    
     private let redirectURI = "wavenotch://callback"
     private let scopes = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-read"
     
@@ -235,11 +242,15 @@ class SpotifyAuthManager: NSObject, ObservableObject {
         
         let fetchIdJsCode = """
         (function() {
-            var span = document.querySelector('span[id=\"client-id\"]');
-            if (span && span.innerText && span.innerText.trim().length > 0) {
-                return span.innerText.trim();
+            var spans = Array.from(document.querySelectorAll('span'));
+            var targetSpan = spans.find(s => {
+                var txt = s.innerText ? s.innerText.trim() : '';
+                return txt.length === 32 && /^[a-f0-9]{32}$/i.test(txt);
+            });
+            if (targetSpan) {
+                return targetSpan.innerText.trim();
             }
-            var settingsBtn = Array.from(document.querySelectorAll('a, button, span')).find(el => el.innerText.includes('Settings'));
+            var settingsBtn = Array.from(document.querySelectorAll('a, button, span')).find(el => el.innerText && el.innerText.includes('Settings'));
             if (settingsBtn) settingsBtn.click();
             return '';
         })();

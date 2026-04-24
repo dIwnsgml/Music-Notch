@@ -86,6 +86,9 @@ struct PluginDetailView: View {
     let plugin: WaveNotchPlugin
     @Environment(\.dismiss) var dismiss
     
+    @State private var showManualSetup = false // ⚡️ Added state for manual setup toggle
+    @ObservedObject var spotifyManager = SpotifyAuthManager.shared // ⚡️ Reactivity fix
+    
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -127,8 +130,8 @@ struct PluginDetailView: View {
                     }
                     
                     if plugin.id.contains("spotify") {
-                        spotifyAuthSection
                         spotifyDeveloperSection
+                        spotifyAuthSection
                     } else if plugin.id == "google_calendar" {
                         googleAuthSection
                     }
@@ -141,67 +144,9 @@ struct PluginDetailView: View {
         .frame(width: 500, height: 600)
     }
     
-    private var spotifyAuthSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Account Connection")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundColor(.secondary)
-            
-            VStack {
-                if !SpotifyAuthManager.shared.accessToken.isEmpty {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Connected to Spotify")
-                                .font(.system(size: 13, weight: .medium))
-                            Text("Your playback and data are syncing perfectly.")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Button("Log Out") {
-                            SpotifyAuthManager.shared.accessToken = ""
-                            SpotifyAuthManager.shared.refreshToken = ""
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-                } else {
-                    let hasClientID = !SpotifyAuthManager.shared.userClientID.trimmingCharacters(in: .whitespaces).isEmpty
-                    
-                    Button(action: {
-                        SpotifyAuthManager.shared.authenticate { _ in }
-                    }) {
-                        HStack {
-                            Image(systemName: "music.note")
-                            Text("Sign in with Spotify")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-                    .disabled(!hasClientID)
-                    .opacity(hasClientID ? 1.0 : 0.5)
-                    
-                    if !hasClientID {
-                        Text("Please enter your Client ID below to enable sign-in.")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.orange)
-                            .padding(.top, 4)
-                    }
-                }
-            }
-            .padding(16)
-            .background(Color.white.opacity(0.05))
-            .cornerRadius(12)
-        }
-    }
-
     private var spotifyDeveloperSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Developer Setup (Required)")
+            Text("1. Developer Setup (Required)")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(.secondary)
             
@@ -214,45 +159,130 @@ struct PluginDetailView: View {
                         .foregroundColor(.secondary)
                 }
                 
-                VStack(alignment: .leading, spacing: 10) {
-                    StepRow(number: 1, text: "Click 'Automate Setup' below.")
-                    StepRow(number: 2, text: "WaveNotch will open your browser and fill out the forms.")
-                    StepRow(number: 3, text: "The Client ID will be automatically saved here when done!")
-                }
-                
-                Button(action: {
-                    SpotifyAuthManager.shared.automateSetup()
-                }) {
-                    HStack {
-                        Image(systemName: "wand.and.stars")
-                        Text("Automate Setup for Me")
+                if !showManualSetup {
+                    VStack(alignment: .leading, spacing: 10) {
+                        StepRow(number: 1, text: "Click 'Automate Setup' below.")
+                        StepRow(number: 2, text: "WaveNotch will open your browser and fill out the forms.")
+                        StepRow(number: 3, text: "The Client ID will be automatically saved here when done!")
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(.bordered)
-                .tint(.purple)
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Paste your Client ID here:")
-                        .font(.system(size: 12, weight: .bold))
                     
-                    TextField("Enter Client ID", text: SpotifyAuthManager.shared.$userClientID)
+                    Button(action: {
+                        spotifyManager.automateSetup()
+                    }) {
+                        HStack {
+                            Image(systemName: "wand.and.stars")
+                            Text("Automate Setup for Me")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.purple)
+                    } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        StepRow(number: 1, text: "Go to developer.spotify.com/dashboard")
+                        StepRow(number: 2, text: "Log in and click 'Create App'")
+                        StepRow(number: 3, text: "Set Name to 'WaveNotch' (or anything)")
+                        StepRow(number: 4, text: "Set Redirect URI to: wavenotch://callback")
+                        StepRow(number: 5, text: "Check 'Web API' and 'iOS' boxes")
+                        StepRow(number: 6, text: "Save, go to Settings, and copy 'Client ID'")
+                    }
+                    }
+
+                    Button(action: {
+                    withAnimation { showManualSetup.toggle() }
+                    }) {
+                    Text(showManualSetup ? "Hide Manual Setup" : "Having trouble? Set up manually.")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.gray)
+                        .underline()
+                    }
+                    .buttonStyle(.plain)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                    Text("Your Client ID:")
+                        .font(.system(size: 12, weight: .bold))
+
+                    TextField("Enter Client ID", text: $spotifyManager.userClientID)
                         .textFieldStyle(.roundedBorder)
                         .controlSize(.small)
-                }
-                .padding(.top, 4)
-            }
-            .padding(20)
-            .background(Color.white.opacity(0.05))
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(SpotifyAuthManager.shared.userClientID.isEmpty ? Color.orange.opacity(0.3) : Color.clear, lineWidth: 1)
-            )
-        }
-    }
-    
+                    }
+                    .padding(.top, 4)
+                    }
+                    .padding(20)
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(12)
+                    .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                    .stroke(spotifyManager.userClientID.isEmpty ? Color.orange.opacity(0.3) : Color.clear, lineWidth: 1)
+                    )
+                    }
+                    }
+
+                    private var spotifyAuthSection: some View {
+        let hasClientID = spotifyManager.hasValidClientID
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("2. Account Connection")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(hasClientID ? .secondary : .secondary.opacity(0.5))
+
+            VStack {
+                if !hasClientID {
+                    VStack(spacing: 8) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(.gray.opacity(0.5))
+                        Text("Developer Setup Required")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.gray)
+                        Text("Please provide your Spotify Client ID above before you can connect your account.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.gray.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    } else if !spotifyManager.accessToken.isEmpty {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Connected to Spotify")
+                                .font(.system(size: 13, weight: .medium))
+                            Text("Your playback and data are syncing perfectly.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button("Log Out") {
+                            spotifyManager.accessToken = ""
+                            spotifyManager.refreshToken = ""
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    } else {
+                    Button(action: {
+                        spotifyManager.authenticate { _ in }
+                    }) {
+                        HStack {
+                            Image(systemName: "music.note")
+                            Text("Sign in with Spotify")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    }
+                    }
+                    .padding(16)
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(12)
+                    .opacity(hasClientID ? 1.0 : 0.5)
+                    }
+                    }    
     private var googleAuthSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Account Connection")
@@ -312,13 +342,15 @@ struct PluginDetailView: View {
                     PluginSettingToggle(
                         title: "Auto-hide when not playing Spotify",
                         description: "The queue widget will only appear when Spotify is active.",
-                        key: "plugin_spotify_queue_auto_hide"
+                        key: "plugin_spotify_queue_auto_hide",
+                        defaultValue: true
                     )
                 } else if plugin.id == "spotify_playlists" {
                     PluginSettingToggle(
                         title: "Auto-hide when not playing Spotify",
                         description: "The playlists widget will only appear when Spotify is active.",
-                        key: "plugin_spotify_playlists_auto_hide"
+                        key: "plugin_spotify_playlists_auto_hide",
+                        defaultValue: true
                     )
                 } else {
                     Text("No additional settings for this plugin.")
@@ -398,11 +430,11 @@ struct PluginSettingToggle: View {
     
     @AppStorage var isOn: Bool
     
-    init(title: String, description: String, key: String) {
+    init(title: String, description: String, key: String, defaultValue: Bool = false) {
         self.title = title
         self.description = description
         self.key = key
-        self._isOn = AppStorage(wrappedValue: false, key)
+        self._isOn = AppStorage(wrappedValue: defaultValue, key)
     }
     
     var body: some View {
