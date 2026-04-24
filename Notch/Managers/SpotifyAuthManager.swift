@@ -9,20 +9,41 @@ class SpotifyAuthManager: NSObject, ObservableObject {
     @AppStorage("spotify_access_token") var accessToken: String = ""
     @AppStorage("spotify_refresh_token") var refreshToken: String = ""
     @AppStorage("spotify_token_expiry") var tokenExpiry: Double = 0
+    @AppStorage("spotify_client_id") var userClientID: String = "" // ⚡️ REQUIRED: Users must provide their own
     
     @Published var playlists: [SpotifyPlaylist] = []
     @Published var currentQueue: [SpotifyTrack] = []
     @Published var currentQueueItems: [SpotifyQueueItem] = []
     @Published var currentlyPlaying: SpotifyTrack?
     
-    private let clientID = "46f0d686e3194a918e5396e0715dd599" // ⚡️ Using your previously mentioned ID
+    private var clientID: String {
+        userClientID.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
     private let redirectURI = "wavenotch://callback"
-    private let scopes = "user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative"
+    private let scopes = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-read"
     
     private var authSession: ASWebAuthenticationSession?
     private var codeVerifier: String = ""
     
+    override init() {
+        super.init()
+        
+        // ⚡️ URL Callback Listener
+        NotificationCenter.default.addObserver(forName: NSNotification.Name("SpotifyAuthCallback"), object: nil, queue: .main) { notification in
+            if let code = notification.object as? String {
+                self.exchangeCodeForToken(code: code) { _ in }
+            }
+        }
+    }
+    
     func authenticate(completion: @escaping (Bool) -> Void) {
+        guard !clientID.isEmpty else {
+            print("⚠️ Spotify Error: Client ID is missing.")
+            completion(false)
+            return
+        }
+        
         // 1. Generate PKCE Verifier and Challenge
         self.codeVerifier = generateRandomString(length: 64)
         let codeChallenge = generateCodeChallenge(from: codeVerifier)
@@ -143,6 +164,152 @@ class SpotifyAuthManager: NSObject, ObservableObject {
         }
     }
     
+    // MARK: - Automation
+    
+    func automateSetup() {
+        let browser = getPreferredBrowser()
+        let isSafari = browser == "Safari"
+        
+        let jsCode = """
+        (function() {
+            function setNativeValue(element, value) {
+                if (!element) return;
+                element.value = value;
+                element.dispatchEvent(new Event('input', { bubbles: true }));
+                element.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            var checkExist = setInterval(function() {
+                /* 1. Developer Terms */
+                var acceptedCheck = document.getElementById('accepted');
+                if (acceptedCheck) {
+                    if (!acceptedCheck.checked) acceptedCheck.click();
+                    var btns = Array.from(document.querySelectorAll('button[data-encore-id=\"buttonPrimary\"]'));
+                    var acceptBtn = btns.find(b => b.innerText.includes('Accept'));
+                    if (acceptBtn) acceptBtn.click();
+                    return;
+                }
+                
+                /* 2. Create App Form */
+                var nameInput = document.getElementById('name');
+                if (nameInput && nameInput.value !== 'WaveNotch') {
+                    setNativeValue(nameInput, 'WaveNotch');
+                    
+                    var descInput = document.getElementById('description');
+                    setNativeValue(descInput, 'Dynamic Island for Mac');
+                    
+                    var uriInput = document.getElementById('newRedirectUri');
+                    if (uriInput) {
+                        setNativeValue(uriInput, 'wavenotch://callback');
+                        setTimeout(() => {
+                            var addButton = document.querySelector('button[aria-label=\"Add redirect URI\"]');
+                            if (addButton) addButton.click();
+                        }, 200);
+                    }
+                    
+                    /* API Checkboxes & Terms */
+                    ['apis-used-1', 'apis-used-4', 'termsAccepted'].forEach(id => {
+                        var el = document.getElementById(id);
+                        if (el && !el.checked) el.click();
+                    });
+                    
+                    /* Final Save Button */
+                    setTimeout(() => {
+                        var saveBtn = document.querySelector('button[type=\"submit\"]');
+                        if (!saveBtn) {
+                            var btns = Array.from(document.querySelectorAll('button[data-encore-id=\"buttonPrimary\"]'));
+                            saveBtn = btns.find(b => b.textContent && b.textContent.includes('Save'));
+                        }
+                        if (saveBtn) saveBtn.click();
+                    }, 1500);
+                }
+                
+                /* 3. Stop interval if client ID is visible */
+                var clientIdSpan = document.querySelector('span[id=\"client-id\"]');
+                if (clientIdSpan && clientIdSpan.innerText) {
+                    clearInterval(checkExist);
+                }
+            }, 1000);
+        })();
+        """.replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+        
+        let fetchIdJsCode = """
+        (function() {
+            var span = document.querySelector('span[id=\"client-id\"]');
+            if (span && span.innerText && span.innerText.trim().length > 0) {
+                return span.innerText.trim();
+            }
+            var settingsBtn = Array.from(document.querySelectorAll('a, button, span')).find(el => el.innerText.includes('Settings'));
+            if (settingsBtn) settingsBtn.click();
+            return '';
+        })();
+        """.replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: " ")
+        
+        let script: String
+        if isSafari {
+            script = """
+            tell application "Safari"
+                activate
+                if not (exists window 1) then make new window
+                set URL of current tab of window 1 to "https://developer.spotify.com/dashboard/create"
+                delay 3
+                do JavaScript "\(jsCode)" in current tab of window 1
+                
+                set clientID to ""
+                repeat 30 times
+                    delay 1
+                    set clientID to do JavaScript "\(fetchIdJsCode)" in current tab of window 1
+                    if clientID is not missing value and clientID is not "" then exit repeat
+                end repeat
+                return clientID
+            end tell
+            """
+        } else {
+            script = """
+            tell application "\(browser)"
+                activate
+                if not (exists window 1) then make new window
+                set URL of active tab of window 1 to "https://developer.spotify.com/dashboard/create"
+                delay 3
+                tell active tab of window 1 to execute javascript "\(jsCode)"
+                
+                set clientID to ""
+                repeat 30 times
+                    delay 1
+                    tell active tab of window 1
+                        set clientID to execute javascript "\(fetchIdJsCode)"
+                    end tell
+                    if clientID is not missing value and clientID is not "" then exit repeat
+                end repeat
+                return clientID
+            end tell
+            """
+        }
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            var error: NSDictionary?
+            if let scriptObject = NSAppleScript(source: script) {
+                let result = scriptObject.executeAndReturnError(&error)
+                if let id = result.stringValue, !id.isEmpty {
+                    DispatchQueue.main.async {
+                        self.userClientID = id
+                        print("Successfully auto-grabbed Client ID: \(id)")
+                    }
+                } else if let err = error {
+                    print("AppleScript Error: \(err)")
+                }
+            }
+        }
+    }
+    
+    private func getPreferredBrowser() -> String {
+        if UserDefaults.standard.bool(forKey: "enableChrome") { return "Google Chrome" }
+        if UserDefaults.standard.bool(forKey: "enableSafari") { return "Safari" }
+        if UserDefaults.standard.bool(forKey: "enableBrave") { return "Brave Browser" }
+        if UserDefaults.standard.bool(forKey: "enableEdge") { return "Microsoft Edge" }
+        return "Safari"
+    }
+    
     // MARK: - Player Controls
     
     func playContext(uri: String, completion: @escaping (Bool) -> Void = { _ in }) {
@@ -180,10 +347,6 @@ class SpotifyAuthManager: NSObject, ObservableObject {
     
     func skipNext(completion: @escaping (Bool) -> Void = { _ in }) {
         performPlayerRequest(method: "POST", endpoint: "next", completion: completion)
-    }
-    
-    func skipPrevious(completion: @escaping (Bool) -> Void = { _ in }) {
-        performPlayerRequest(method: "POST", endpoint: "previous", completion: completion)
     }
     
     func fetchPlaylists() {

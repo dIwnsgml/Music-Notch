@@ -128,6 +128,7 @@ struct PluginDetailView: View {
                     
                     if plugin.id.contains("spotify") {
                         spotifyAuthSection
+                        spotifyDeveloperSection
                     } else if plugin.id == "google_calendar" {
                         googleAuthSection
                     }
@@ -167,6 +168,8 @@ struct PluginDetailView: View {
                         .controlSize(.small)
                     }
                 } else {
+                    let hasClientID = !SpotifyAuthManager.shared.userClientID.trimmingCharacters(in: .whitespaces).isEmpty
+                    
                     Button(action: {
                         SpotifyAuthManager.shared.authenticate { _ in }
                     }) {
@@ -179,11 +182,74 @@ struct PluginDetailView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.green)
+                    .disabled(!hasClientID)
+                    .opacity(hasClientID ? 1.0 : 0.5)
+                    
+                    if !hasClientID {
+                        Text("Please enter your Client ID below to enable sign-in.")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.orange)
+                            .padding(.top, 4)
+                    }
                 }
             }
             .padding(16)
             .background(Color.white.opacity(0.05))
             .cornerRadius(12)
+        }
+    }
+
+    private var spotifyDeveloperSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Developer Setup (Required)")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.secondary)
+            
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Why is this required?")
+                        .font(.system(size: 12, weight: .bold))
+                    Text("Spotify strictly limits new apps to 25 people during development. To allow everyone to use WaveNotch, you must create your own 'App' in their dashboard.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                
+                VStack(alignment: .leading, spacing: 10) {
+                    StepRow(number: 1, text: "Click 'Automate Setup' below.")
+                    StepRow(number: 2, text: "WaveNotch will open your browser and fill out the forms.")
+                    StepRow(number: 3, text: "The Client ID will be automatically saved here when done!")
+                }
+                
+                Button(action: {
+                    SpotifyAuthManager.shared.automateSetup()
+                }) {
+                    HStack {
+                        Image(systemName: "wand.and.stars")
+                        Text("Automate Setup for Me")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.bordered)
+                .tint(.purple)
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Paste your Client ID here:")
+                        .font(.system(size: 12, weight: .bold))
+                    
+                    TextField("Enter Client ID", text: SpotifyAuthManager.shared.$userClientID)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                }
+                .padding(.top, 4)
+            }
+            .padding(20)
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(SpotifyAuthManager.shared.userClientID.isEmpty ? Color.orange.opacity(0.3) : Color.clear, lineWidth: 1)
+            )
         }
     }
     
@@ -264,6 +330,26 @@ struct PluginDetailView: View {
             .padding(16)
             .background(Color.white.opacity(0.05))
             .cornerRadius(12)
+        }
+    }
+}
+
+struct StepRow: View {
+    let number: Int
+    let text: String
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\(number)")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(Color.accentColor.opacity(0.3)))
+            
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundColor(.white.opacity(0.9))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
