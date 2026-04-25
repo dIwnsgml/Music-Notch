@@ -98,3 +98,61 @@ struct GoogleCalendarTime: Codable {
     let dateTime: String?
     let date: String? // For all-day events
 }
+
+// MARK: - YouTube Music Models
+
+struct YTPlaylistResponse: Codable {
+    let items: [YTPlaylist]
+}
+
+struct YTPlaylist: Codable, Identifiable {
+    let id: String
+    let snippet: YTSnippet
+    
+    struct YTSnippet: Codable {
+        let title: String
+        let thumbnails: YTThumbnails?
+    }
+}
+
+struct YTPlaylistItemsResponse: Codable {
+    let items: [YTTrack]
+}
+
+struct YTTrack: Codable, Identifiable {
+    let id: String
+    let snippet: YTSnippet
+    
+    struct YTSnippet: Codable {
+        let title: String
+        let videoOwnerChannelTitle: String? // Artist name
+        let thumbnails: YTThumbnails?
+        let resourceId: YTResourceId
+    }
+    
+    struct YTResourceId: Codable {
+        let videoId: String
+    }
+}
+
+struct YTThumbnails: Codable {
+    let `default`: YTThumbnail?
+    let medium: YTThumbnails.YTThumbnail?
+    let high: YTThumbnails.YTThumbnail?
+    
+    struct YTThumbnail: Codable {
+        let url: String
+    }
+}
+
+struct YTQueueItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let artist: String
+    let imageURL: String?
+    let videoId: String
+    
+    static func == (lhs: YTQueueItem, rhs: YTQueueItem) -> Bool {
+        lhs.id == rhs.id
+    }
+}

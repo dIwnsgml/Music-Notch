@@ -134,6 +134,8 @@ struct PluginDetailView: View {
                         spotifyAuthSection
                     } else if plugin.id == "google_calendar" {
                         googleAuthSection
+                    } else if plugin.id.contains("youtube") {
+                        youtubeAuthSection
                     }
                     
                     pluginSettingsSection
@@ -331,6 +333,54 @@ struct PluginDetailView: View {
         }
     }
     
+    private var youtubeAuthSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Account Connection")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.secondary)
+            
+            VStack {
+                if YouTubeMusicManager.shared.isAuthenticated {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.red)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Connected to YouTube")
+                                .font(.system(size: 13, weight: .medium))
+                            Text("Your library is syncing.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button("Log Out") {
+                            YouTubeMusicManager.shared.accessToken = ""
+                            YouTubeMusicManager.shared.refreshToken = ""
+                            YouTubeMusicManager.shared.isAuthenticated = false
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                } else {
+                    Button(action: {
+                        YouTubeMusicManager.shared.authenticate { _ in }
+                    }) {
+                        HStack {
+                            Image(systemName: "play.circle.fill")
+                            Text("Sign in with Google")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                }
+            }
+            .padding(16)
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(12)
+        }
+    }
+    
     private var pluginSettingsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Plugin Settings")
@@ -350,6 +400,20 @@ struct PluginDetailView: View {
                         title: "Auto-hide when not playing Spotify",
                         description: "The playlists widget will only appear when Spotify is active.",
                         key: "plugin_spotify_playlists_auto_hide",
+                        defaultValue: true
+                    )
+                } else if plugin.id == "youtube_queue" {
+                    PluginSettingToggle(
+                        title: "Auto-hide when not playing YouTube Music",
+                        description: "The queue widget will only appear when YouTube Music is active.",
+                        key: "plugin_youtube_queue_auto_hide",
+                        defaultValue: true
+                    )
+                } else if plugin.id == "youtube_playlists" {
+                    PluginSettingToggle(
+                        title: "Auto-hide when not playing YouTube Music",
+                        description: "The playlists widget will only appear when YouTube Music is active.",
+                        key: "plugin_youtube_playlists_auto_hide",
                         defaultValue: true
                     )
                 } else {

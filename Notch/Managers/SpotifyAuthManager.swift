@@ -333,10 +333,21 @@ class SpotifyAuthManager: NSObject, ObservableObject {
     }
     
     func skipToQueueItem(index: Int) {
-        let remainingTracks = Array(currentQueueItems.suffix(from: index))
-        let uris = remainingTracks.map { $0.track.uri }
+        // Spotify API allows us to pass up to 100 URIs and start at a specific offset.
+        // By passing the entire current queue and telling it to start at `index`,
+        // we guarantee it plays the correct song immediately (even if Shuffle is on)
+        // and we preserve the rest of the queue context instead of truncating it.
+        let uris = currentQueueItems.map { $0.track.uri }
+        let body: [String: Any] = [
+            "uris": uris,
+            "offset": ["position": index]
+        ]
         
-        playTracks(uris: uris)
+        performPlayerRequest(method: "PUT", endpoint: "play", body: body) { success in
+            if success {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.fetchQueue() }
+            }
+        }
     }
     
     func playTracks(uris: [String], completion: @escaping (Bool) -> Void = { _ in }) {

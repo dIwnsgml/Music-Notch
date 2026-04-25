@@ -318,3 +318,197 @@ struct PlaceholderWidget: View {
         .cornerRadius(12)
     }
 }
+
+// MARK: - YouTube Music Widgets
+
+struct YouTubeQueueWidget: View {
+    @ObservedObject var nowPlaying: NowPlayingManager
+    @StateObject private var ytManager = YouTubeMusicManager.shared
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if ytManager.accessToken.isEmpty {
+                VStack(spacing: 8) {
+                    Spacer()
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.red.opacity(0.8))
+                    Text("Sign in to YouTube Music")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("Access your queue directly from the notch.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                    
+                    Button(action: {
+                        ytManager.authenticate { _ in }
+                    }) {
+                        Text("Connect Account")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(Color.red)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            } else if ytManager.currentPlaylistTracks.isEmpty {
+                VStack {
+                    Spacer()
+                    Text("Fetching library...")
+                        .font(.system(size: 11))
+                        .foregroundColor(.gray)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Array(ytManager.currentPlaylistTracks.prefix(50).enumerated()), id: \.element.id) { index, item in
+                            YTQueueRow(index: index + 1, item: item) {
+                                ytManager.play(videoId: item.videoId)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+struct YTQueueRow: View {
+    let index: Int
+    let item: YTQueueItem
+    let action: () -> Void
+    @State private var isHovering = false
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Text("\(index)")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(isHovering ? .red : .gray)
+                    .frame(width: 18, alignment: .trailing)
+                
+                if let urlString = item.imageURL, let url = URL(string: urlString) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Rectangle().fill(Color.gray.opacity(0.2))
+                    }
+                    .frame(width: 32, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                
+                VStack(alignment: .leading, spacing: 1) {
+                    if isHovering {
+                        MarqueeText(text: item.title, font: .system(size: 12, weight: .bold), alignment: .leading)
+                            .foregroundColor(.red)
+                            .frame(height: 14)
+                    } else {
+                        Text(item.title)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                            .frame(height: 14, alignment: .leading)
+                    }
+                    Text(item.artist)
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovering = hovering
+            }
+        }
+    }
+}
+
+struct YouTubePlaylistsWidget: View {
+    @ObservedObject var nowPlaying: NowPlayingManager
+    @StateObject private var ytManager = YouTubeMusicManager.shared
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if ytManager.accessToken.isEmpty {
+                VStack(spacing: 8) {
+                    Spacer()
+                    Image(systemName: "play.rectangle.on.rectangle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.red.opacity(0.8))
+                    Text("YouTube Playlists")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("Sign in to access your library.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                    
+                    Button(action: {
+                        ytManager.authenticate { _ in }
+                    }) {
+                        Text("Connect Account")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(Color.red)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 16) {
+                        ForEach(ytManager.playlists) { playlist in
+                            Button(action: {
+                                ytManager.fetchPlaylistItems(playlistId: playlist.id)
+                            }) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    if let urlString = playlist.snippet.thumbnails?.medium?.url ?? playlist.snippet.thumbnails?.default?.url, let url = URL(string: urlString) {
+                                        AsyncImage(url: url) { image in
+                                            image.resizable().aspectRatio(contentMode: .fill)
+                                        } placeholder: {
+                                            Rectangle().fill(Color.gray.opacity(0.2))
+                                        }
+                                        .frame(width: 80, height: 80)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    } else {
+                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .fill(Color.gray.opacity(0.2))
+                                            .frame(width: 80, height: 80)
+                                            .overlay(Image(systemName: "play.rectangle.on.rectangle.fill").foregroundColor(.gray))
+                                    }
+                                    
+                                    Text(playlist.snippet.title)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                        .frame(width: 80, alignment: .leading)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}

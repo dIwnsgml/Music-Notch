@@ -64,6 +64,11 @@ struct URLHandler: ViewModifier {
                            let code = components.queryItems?.first(where: { $0.name == "code" })?.value {
                             NotificationCenter.default.post(name: NSNotification.Name("GoogleAuthCallback"), object: code)
                         }
+                    } else if url.path == "/youtube-callback" {
+                        if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
+                           let code = components.queryItems?.first(where: { $0.name == "code" })?.value {
+                            NotificationCenter.default.post(name: NSNotification.Name("YouTubeAuthCallback"), object: code)
+                        }
                     }
                 }
             }

@@ -24,6 +24,24 @@ class PluginManager: ObservableObject {
             storageKeyBase: "plugin_spotify_playlists"
         ),
         WaveNotchPlugin(
+            id: "youtube_queue",
+            name: "YouTube Music Queue",
+            description: "View and manage your current YouTube Music play queue directly in the notch.",
+            iconName: "play.square.stack",
+            assetImageName: nil,
+            category: .media,
+            storageKeyBase: "plugin_youtube_queue"
+        ),
+        WaveNotchPlugin(
+            id: "youtube_playlists",
+            name: "YouTube Music Playlists",
+            description: "Quickly access your YouTube Music library and switch between playlists.",
+            iconName: "play.rectangle.on.rectangle",
+            assetImageName: nil,
+            category: .media,
+            storageKeyBase: "plugin_youtube_playlists"
+        ),
+        WaveNotchPlugin(
             id: "google_calendar",
             name: "Google Calendar",
             description: "View your upcoming events and schedule directly in the notch. Supports multiple calendars and provides timely meeting alerts.",
