@@ -5,6 +5,8 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
     case player
     case spotifyQueue
     case spotifyPlaylists
+    case youtubeQueue
+    case youtubePlaylists
     case calendar
     case weather
     
@@ -15,6 +17,8 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .player: return "Music Player"
         case .spotifyQueue: return "Spotify Queue"
         case .spotifyPlaylists: return "Spotify Playlists"
+        case .youtubeQueue: return "YouTube Music Queue"
+        case .youtubePlaylists: return "YouTube Music Playlists"
         case .calendar: return "Calendar"
         case .weather: return "Weather"
         }
@@ -71,14 +75,22 @@ class DashboardManager: ObservableObject {
         let playerEnabled = UserDefaults.standard.object(forKey: "plugin_player_enabled") as? Bool ?? true
         let queueEnabled = UserDefaults.standard.bool(forKey: "plugin_spotify_queue_enabled")
         let playlistsEnabled = UserDefaults.standard.bool(forKey: "plugin_spotify_playlists_enabled")
+        let ytQueueEnabled = UserDefaults.standard.bool(forKey: "plugin_youtube_queue_enabled")
+        let ytPlaylistsEnabled = UserDefaults.standard.bool(forKey: "plugin_youtube_playlists_enabled")
         let calendarEnabled = UserDefaults.standard.bool(forKey: "plugin_google_calendar_enabled")
         let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
         
         // ⚡️ NEW: Auto-hide logic for Spotify Plugins
-        let spotifyQueueAutoHide = UserDefaults.standard.bool(forKey: "plugin_spotify_queue_auto_hide")
-        let spotifyPlaylistsAutoHide = UserDefaults.standard.bool(forKey: "plugin_spotify_playlists_auto_hide")
+        let spotifyQueueAutoHide = UserDefaults.standard.object(forKey: "plugin_spotify_queue_auto_hide") as? Bool ?? true
+        let spotifyPlaylistsAutoHide = UserDefaults.standard.object(forKey: "plugin_spotify_playlists_auto_hide") as? Bool ?? true
+        
+        // ⚡️ Auto-hide logic for YouTube Plugins
+        let ytQueueAutoHide = UserDefaults.standard.object(forKey: "plugin_youtube_queue_auto_hide") as? Bool ?? true
+        let ytPlaylistsAutoHide = UserDefaults.standard.object(forKey: "plugin_youtube_playlists_auto_hide") as? Bool ?? true
+        
         let lastBrowser = NowPlayingManager.shared.lastActiveBrowser ?? ""
         let isSpotifyActive = lastBrowser == "SpotifyNative" || lastBrowser.contains("Spotify")
+        let isYTActive = lastBrowser.contains("YouTube Music") || lastBrowser.contains("Music.YouTube")
         
         let order = getWidgetOrder()
         var widgets: [NotchWidgetType] = []
@@ -100,6 +112,22 @@ class DashboardManager: ObservableObject {
                         // Skip adding it
                     } else {
                         widgets.append(.spotifyPlaylists)
+                    }
+                }
+            case .youtubeQueue:
+                if ytQueueEnabled {
+                    if ytQueueAutoHide && !isYTActive {
+                        // Skip adding it
+                    } else {
+                        widgets.append(.youtubeQueue)
+                    }
+                }
+            case .youtubePlaylists:
+                if ytPlaylistsEnabled {
+                    if ytPlaylistsAutoHide && !isYTActive {
+                        // Skip adding it
+                    } else {
+                        widgets.append(.youtubePlaylists)
                     }
                 }
             case .calendar: if calendarEnabled { widgets.append(.calendar) }

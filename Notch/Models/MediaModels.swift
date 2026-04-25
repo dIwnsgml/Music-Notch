@@ -151,6 +151,7 @@ struct YTQueueItem: Identifiable, Equatable {
     let artist: String
     let imageURL: String?
     let videoId: String
+    let playlistId: String? // ⚡️ NEW: To keep playback context
     
     static func == (lhs: YTQueueItem, rhs: YTQueueItem) -> Bool {
         lhs.id == rhs.id

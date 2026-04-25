@@ -526,6 +526,8 @@ struct DashboardSettingsView: View {
     @AppStorage("plugin_player_enabled") var playerEnabled = true
     @AppStorage("plugin_spotify_queue_enabled") var spotifyQueueEnabled = false
     @AppStorage("plugin_spotify_playlists_enabled") var spotifyPlaylistsEnabled = false
+    @AppStorage("plugin_youtube_queue_enabled") var ytQueueEnabled = false
+    @AppStorage("plugin_youtube_playlists_enabled") var ytPlaylistsEnabled = false
     @AppStorage("plugin_google_calendar_enabled") var calendarEnabled = false
     @AppStorage("plugin_weather_enabled") var weatherEnabled = false
     
@@ -586,6 +588,8 @@ struct DashboardSettingsView: View {
         case .player: return $playerEnabled
         case .spotifyQueue: return $spotifyQueueEnabled
         case .spotifyPlaylists: return $spotifyPlaylistsEnabled
+        case .youtubeQueue: return $ytQueueEnabled
+        case .youtubePlaylists: return $ytPlaylistsEnabled
         case .calendar: return $calendarEnabled
         case .weather: return $weatherEnabled
         }

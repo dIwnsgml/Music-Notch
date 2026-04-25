@@ -27,7 +27,7 @@ extension NowPlayingManager {
                 """
             
             if let rawBrowser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
-                let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+                let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
                 let fastScript = self.buildAppleScript(browser: cleanBrowser, jsCode: jsCode, wIdx: wIdx, tIdx: tIdx)
                 _ = NSAppleScript(source: fastScript)?.executeAndReturnError(nil)
             }
@@ -37,7 +37,7 @@ extension NowPlayingManager {
     
     func skipBackward() {
         let rawBrowser = self.lastActiveBrowser ?? ""
-        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
         
         if cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify" {
             DispatchQueue.global(qos: .userInitiated).async {
@@ -64,7 +64,7 @@ extension NowPlayingManager {
         DispatchQueue.main.async { self.lastControlAction = UUID() }
         
         let rawBrowser = self.lastActiveBrowser ?? ""
-        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
         
         if cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify" {
             DispatchQueue.global(qos: .userInitiated).async { _ = NSAppleScript(source: "tell application \"Spotify\" to playpause")?.executeAndReturnError(nil); DispatchQueue.main.async { self.isPlaying.toggle() }; self.triggerFastFetch() }
@@ -98,7 +98,7 @@ extension NowPlayingManager {
     
     func skipForward() {
         let rawBrowser = self.lastActiveBrowser ?? ""
-        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
         
         if cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify" {
             DispatchQueue.global(qos: .userInitiated).async { _ = NSAppleScript(source: "tell application \"Spotify\" to next track")?.executeAndReturnError(nil); DispatchQueue.main.async { self.currentTime = 0.0 }; self.triggerFastFetch() }
@@ -115,7 +115,7 @@ extension NowPlayingManager {
         }
         
         let rawBrowser = self.lastActiveBrowser ?? ""
-        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
         
         if cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify" {
             DispatchQueue.global(qos: .userInitiated).async {
@@ -140,7 +140,7 @@ extension NowPlayingManager {
     
     func toggleLoop() {
         let rawBrowser = self.lastActiveBrowser ?? ""
-        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
         let isTwoState = rawBrowser.hasSuffix("_YT") || cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify"
         
         // ⚡️ THE FIX: We calculate the next mode cleanly in Swift...

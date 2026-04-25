@@ -324,7 +324,12 @@ class SpotifyAuthManager: NSObject, ObservableObject {
     // MARK: - Player Controls
     
     func playContext(uri: String, completion: @escaping (Bool) -> Void = { _ in }) {
-        performPlayerRequest(method: "PUT", endpoint: "play", body: ["context_uri": uri]) { success in
+        let body: [String: Any] = [
+            "context_uri": uri,
+            "offset": ["position": 0]
+        ]
+        
+        performPlayerRequest(method: "PUT", endpoint: "play", body: body) { success in
             if success {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.fetchQueue() }
             }

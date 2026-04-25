@@ -159,22 +159,45 @@ class YouTubeMusicManager: NSObject, ObservableObject {
     
     func fetchPlaylists() {
         refreshAccessTokenIfNeeded { success in
-            guard success else { return }
+            guard success else {
+                print("YT Auth: Failed to refresh access token before fetching playlists.")
+                return
+            }
             
             let url = URL(string: "https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=20")!
             var request = URLRequest(url: url)
             request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
             
-            URLSession.shared.dataTask(with: request) { data, _, _ in
-                guard let data = data,
-                      let response = try? JSONDecoder().decode(YTPlaylistResponse.self, from: data) else {
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    print("YT FetchPlaylists Error: \(error.localizedDescription)")
+                    return
+                }
+                
+                if let httpResponse = response as? HTTPURLResponse {
+                    print("YT FetchPlaylists Status Code: \(httpResponse.statusCode)")
+                }
+                
+                guard let data = data else {
+                    print("YT FetchPlaylists: No data returned.")
+                    return
+                }
+                
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("YT FetchPlaylists JSON Response: \(jsonString)")
+                }
+                
+                guard let responseObj = try? JSONDecoder().decode(YTPlaylistResponse.self, from: data) else {
+                    print("YT FetchPlaylists: Failed to decode JSON into YTPlaylistResponse.")
                     return
                 }
                 
                 DispatchQueue.main.async {
-                    self.playlists = response.items
-                    if let first = response.items.first {
+                    self.playlists = responseObj.items
+                    if let first = responseObj.items.first {
                         self.fetchPlaylistItems(playlistId: first.id)
+                    } else {
+                        print("YT FetchPlaylists: No playlists found.")
                     }
                 }
             }.resume()
@@ -183,35 +206,70 @@ class YouTubeMusicManager: NSObject, ObservableObject {
     
     func fetchPlaylistItems(playlistId: String) {
         refreshAccessTokenIfNeeded { success in
-            guard success else { return }
+            guard success else {
+                print("YT Auth: Failed to refresh access token before fetching playlist items.")
+                return
+            }
             
             let url = URL(string: "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=\(playlistId)&maxResults=50")!
             var request = URLRequest(url: url)
             request.setValue("Bearer \(self.accessToken)", forHTTPHeaderField: "Authorization")
             
-            URLSession.shared.dataTask(with: request) { data, _, _ in
-                guard let data = data,
-                      let response = try? JSONDecoder().decode(YTPlaylistItemsResponse.self, from: data) else {
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    print("YT FetchPlaylistItems Error: \(error.localizedDescription)")
+                    return
+                }
+                
+                if let httpResponse = response as? HTTPURLResponse {
+                    print("YT FetchPlaylistItems Status Code: \(httpResponse.statusCode)")
+                }
+                
+                guard let data = data else {
+                    print("YT FetchPlaylistItems: No data returned.")
+                    return
+                }
+                
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("YT FetchPlaylistItems JSON Response: \(jsonString)")
+                }
+                
+                guard let responseObj = try? JSONDecoder().decode(YTPlaylistItemsResponse.self, from: data) else {
+                    print("YT FetchPlaylistItems: Failed to decode JSON into YTPlaylistItemsResponse.")
                     return
                 }
                 
                 DispatchQueue.main.async {
-                    self.currentPlaylistTracks = response.items.enumerated().map { (index, track) in
+                    self.currentPlaylistTracks = responseObj.items.enumerated().map { (index, track) in
                         YTQueueItem(
                             id: "\(index)-\(track.snippet.resourceId.videoId)",
                             title: track.snippet.title,
                             artist: track.snippet.videoOwnerChannelTitle ?? "Unknown Artist",
                             imageURL: track.snippet.thumbnails?.medium?.url ?? track.snippet.thumbnails?.default?.url,
-                            videoId: track.snippet.resourceId.videoId
+                            videoId: track.snippet.resourceId.videoId,
+                            playlistId: playlistId
                         )
                     }
+                    print("YT FetchPlaylistItems: Successfully fetched \(self.currentPlaylistTracks.count) tracks.")
                 }
             }.resume()
         }
     }
     
-    func play(videoId: String) {
-        if let url = URL(string: "https://music.youtube.com/watch?v=\(videoId)") {
+    func playPlaylist(playlistId: String) {
+        if let url = URL(string: "https://music.youtube.com/playlist?list=\(playlistId)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    func play(videoId: String, playlistId: String? = nil, index: Int = 0) {
+        var urlString = "https://music.youtube.com/watch?v=\(videoId)"
+        
+        if let pid = playlistId {
+            urlString += "&list=\(pid)&index=\(index + 1)"
+        }
+        
+        if let url = URL(string: urlString) {
             NSWorkspace.shared.open(url)
         }
     }

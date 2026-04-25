@@ -32,6 +32,10 @@ struct WidgetFactoryView: View {
                     SpotifyQueueWidget(nowPlaying: nowPlaying)
                 case .spotifyPlaylists:
                     PlaylistTabView(nowPlaying: nowPlaying)
+                case .youtubeQueue:
+                    YouTubeQueueWidget(nowPlaying: nowPlaying)
+                case .youtubePlaylists:
+                    YouTubePlaylistsWidget(nowPlaying: nowPlaying)
                 case .calendar:
                     CalendarWidget()
                 case .weather:
@@ -369,7 +373,7 @@ struct YouTubeQueueWidget: View {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(Array(ytManager.currentPlaylistTracks.prefix(50).enumerated()), id: \.element.id) { index, item in
                             YTQueueRow(index: index + 1, item: item) {
-                                ytManager.play(videoId: item.videoId)
+                                ytManager.play(videoId: item.videoId, playlistId: item.playlistId, index: index)
                             }
                         }
                     }
@@ -476,6 +480,7 @@ struct YouTubePlaylistsWidget: View {
                     HStack(spacing: 16) {
                         ForEach(ytManager.playlists) { playlist in
                             Button(action: {
+                                ytManager.playPlaylist(playlistId: playlist.id)
                                 ytManager.fetchPlaylistItems(playlistId: playlist.id)
                             }) {
                                 VStack(alignment: .leading, spacing: 8) {
