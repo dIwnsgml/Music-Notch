@@ -41,7 +41,7 @@ mkdir -p "$RELEASE_FOLDER_PATH"
 # 4. Xcode Build & Archive
 echo "🏗️ Archiving WaveNotch..."
 rm -rf "$ARCHIVE_PATH" 
-xcodebuild -project Notch.xcodeproj -scheme Notch -configuration Release -archivePath "$ARCHIVE_PATH" archive 
+xcodebuild -project Notch.xcodeproj -scheme Notch -configuration Release -archivePath "$ARCHIVE_PATH" archive MARKETING_VERSION="$VERSION_NUM"
 
 # 5. Xcode Export
 echo "📦 Exporting .app bundle using your Developer ID..."
