@@ -23,6 +23,18 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .weather: return "Weather"
         }
     }
+    
+    var isInstalled: Bool {
+        switch self {
+        case .player: return true // Built-in
+        case .spotifyQueue: return UserDefaults.standard.bool(forKey: "plugin_spotify_queue_installed")
+        case .spotifyPlaylists: return UserDefaults.standard.bool(forKey: "plugin_spotify_playlists_installed")
+        case .youtubeQueue: return UserDefaults.standard.bool(forKey: "plugin_youtube_queue_installed")
+        case .youtubePlaylists: return UserDefaults.standard.bool(forKey: "plugin_youtube_playlists_installed")
+        case .calendar: return UserDefaults.standard.bool(forKey: "plugin_google_calendar_installed")
+        case .weather: return UserDefaults.standard.bool(forKey: "plugin_weather_installed")
+        }
+    }
 }
 
 class DashboardManager: ObservableObject {
@@ -52,16 +64,20 @@ class DashboardManager: ObservableObject {
     }
     
     func getWidgetOrder() -> [NotchWidgetType] {
+        var fullOrder: [NotchWidgetType]
+        
         if let data = UserDefaults.standard.data(forKey: "dashboard_widget_order"),
            let savedOrder = try? JSONDecoder().decode([NotchWidgetType].self, from: data) {
             
             // Ensure all enum cases are accounted for (e.g., if new plugins were added in an update)
-            var fullOrder = savedOrder
+            fullOrder = savedOrder
             let missing = NotchWidgetType.allCases.filter { !fullOrder.contains($0) }
             fullOrder.append(contentsOf: missing)
-            return fullOrder
+        } else {
+            fullOrder = NotchWidgetType.allCases
         }
-        return NotchWidgetType.allCases
+        
+        return fullOrder.filter { $0.isInstalled }
     }
     
     func saveWidgetOrder(_ order: [NotchWidgetType]) {

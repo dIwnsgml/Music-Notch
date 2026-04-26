@@ -9,10 +9,12 @@ struct PluginStoreView: View {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
                     ForEach(manager.plugins) { plugin in
-                        PluginCardView(plugin: plugin)
-                            .onTapGesture {
-                                selectedPlugin = plugin
-                            }
+                        PluginCardView(plugin: plugin, onSetup: {
+                            selectedPlugin = plugin
+                        })
+                        .onTapGesture {
+                            selectedPlugin = plugin
+                        }
                     }
                 }
                 .padding(24)
@@ -28,12 +30,14 @@ struct PluginStoreView: View {
 
 struct PluginCardView: View {
     let plugin: WaveNotchPlugin
+    var onSetup: (() -> Void)? = nil
     
     @AppStorage var isInstalled: Bool
     @AppStorage var isEnabled: Bool
     
-    init(plugin: WaveNotchPlugin) {
+    init(plugin: WaveNotchPlugin, onSetup: (() -> Void)? = nil) {
         self.plugin = plugin
+        self.onSetup = onSetup
         self._isInstalled = AppStorage(wrappedValue: false, plugin.installedKey)
         self._isEnabled = AppStorage(wrappedValue: false, plugin.enabledKey)
     }
@@ -67,12 +71,35 @@ struct PluginCardView: View {
                 .lineLimit(2)
                 .frame(height: 32, alignment: .top)
             
-            HStack {
-                Spacer()
-                PluginActionButton(plugin: plugin)
+            Spacer(minLength: 12)
+            
+            if isInstalled {
+                VStack(spacing: 8) {
+                    Button(action: { onSetup?() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "gearshape.fill")
+                            Text("Setup")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    .controlSize(.regular)
+                    
+                    PluginActionButton(plugin: plugin, onInstall: {
+                        onSetup?()
+                    })
+                }
+            } else {
+                VStack(spacing: 8) {
+                    PluginActionButton(plugin: plugin, onInstall: {
+                        onSetup?()
+                    })
+                }
             }
         }
         .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color(NSColor.controlBackgroundColor))
         .cornerRadius(16)
         .overlay(
@@ -523,13 +550,15 @@ struct PluginSettingToggle: View {
 
 struct PluginActionButton: View {
     let plugin: WaveNotchPlugin
+    var onInstall: (() -> Void)? = nil
     
     @AppStorage var isInstalled: Bool
     @AppStorage var isEnabled: Bool
     @State private var isSimulating = false
     
-    init(plugin: WaveNotchPlugin) {
+    init(plugin: WaveNotchPlugin, onInstall: (() -> Void)? = nil) {
         self.plugin = plugin
+        self.onInstall = onInstall
         self._isInstalled = AppStorage(wrappedValue: false, plugin.installedKey)
         self._isEnabled = AppStorage(wrappedValue: false, plugin.enabledKey)
     }
@@ -539,19 +568,26 @@ struct PluginActionButton: View {
             if isSimulating {
                 ProgressView()
                     .controlSize(.small)
-                    .frame(width: 60)
+                    .frame(maxWidth: .infinity)
             } else if !isInstalled {
-                Button("Install Plugin") {
+                Button(action: {
                     simulateAction {
                         isInstalled = true
                         isEnabled = true
+                        onInstall?()
                     }
+                }) {
+                    Text("Install Plugin")
+                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
             } else {
-                Button(isEnabled ? "Disable" : "Enable") {
+                Button(action: {
                     withAnimation { isEnabled.toggle() }
+                }) {
+                    Text(isEnabled ? "Disable" : "Enable")
+                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
