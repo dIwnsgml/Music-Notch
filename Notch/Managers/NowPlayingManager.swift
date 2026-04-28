@@ -55,10 +55,17 @@ class NowPlayingManager: ObservableObject {
     @Published var lastActiveBrowser: String? = nil
     var lastWindowIndex: Int? = nil
     var lastTabIndex: Int? = nil
-    
+
     init() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            self?.fetchTitle()
+        self.lastActiveBrowser = UserDefaults.standard.string(forKey: "lastActiveBrowser")
+        if UserDefaults.standard.object(forKey: "lastWindowIndex") != nil {
+            self.lastWindowIndex = UserDefaults.standard.integer(forKey: "lastWindowIndex")
+        }
+        if UserDefaults.standard.object(forKey: "lastTabIndex") != nil {
+            self.lastTabIndex = UserDefaults.standard.integer(forKey: "lastTabIndex")
+        }
+
+        timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in            self?.fetchTitle()
         }
     }
     

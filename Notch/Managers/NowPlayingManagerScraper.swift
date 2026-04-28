@@ -173,8 +173,8 @@ extension NowPlayingManager {
             var playlistString = ""
             if components.count >= 7 { playlistString = components[6] }
             
-            if browser == "SpotifyNative" {
-                self.lastActiveBrowser = "SpotifyNative"
+            if browser == "SpotifyNative" || browser == "AppleMusicNative" {
+                self.lastActiveBrowser = browser
                 self.lastWindowIndex = nil
                 self.lastTabIndex = nil
             } else if components.count >= 9 {
@@ -189,6 +189,19 @@ extension NowPlayingManager {
                 }
                 self.lastWindowIndex = Int(components[7])
                 self.lastTabIndex = Int(components[8])
+            }
+            
+            // ⚡️ PERSIST STATE FOR WAKE/RESTART
+            UserDefaults.standard.set(self.lastActiveBrowser, forKey: "lastActiveBrowser")
+            if let w = self.lastWindowIndex { 
+                UserDefaults.standard.set(w, forKey: "lastWindowIndex") 
+            } else {
+                UserDefaults.standard.removeObject(forKey: "lastWindowIndex")
+            }
+            if let t = self.lastTabIndex { 
+                UserDefaults.standard.set(t, forKey: "lastTabIndex") 
+            } else {
+                UserDefaults.standard.removeObject(forKey: "lastTabIndex")
             }
             
             let trackStrings = playlistString.components(separatedBy: "&&&")

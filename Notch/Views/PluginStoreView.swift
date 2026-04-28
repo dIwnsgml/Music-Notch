@@ -112,10 +112,16 @@ struct PluginCardView: View {
 struct PluginDetailView: View {
     let plugin: WaveNotchPlugin
     @Environment(\.dismiss) var dismiss
-    
+
     @State private var showManualSetup = false // ⚡️ Added state for manual setup toggle
     @ObservedObject var spotifyManager = SpotifyAuthManager.shared // ⚡️ Reactivity fix
-    
+
+    @AppStorage("enableChrome") var enableChrome = false
+    @AppStorage("enableBrave") var enableBrave = false
+    @AppStorage("enableEdge") var enableEdge = false
+    @AppStorage("enableSafari") var enableSafari = false
+
+    var hasAnyBrowser: Bool { enableChrome || enableBrave || enableEdge || enableSafari }    
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -188,13 +194,22 @@ struct PluginDetailView: View {
                         .foregroundColor(.secondary)
                 }
                 
-                if !showManualSetup {
+                if !hasAnyBrowser {
+                    VStack(alignment: .leading, spacing: 10) {
+                        StepRow(number: 1, text: "Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)")
+                        StepRow(number: 2, text: "Log in and click 'Create App'")
+                        StepRow(number: 3, text: "Set Name to 'WaveNotch' (or anything)")
+                        StepRow(number: 4, text: "Set Redirect URI to: wavenotch://callback")
+                        StepRow(number: 5, text: "Check 'Web API' and 'iOS' boxes")
+                        StepRow(number: 6, text: "Save, go to Settings, and copy 'Client ID'")
+                    }
+                } else if !showManualSetup {
                     VStack(alignment: .leading, spacing: 10) {
                         StepRow(number: 1, text: "Click 'Automate Setup' below.")
                         StepRow(number: 2, text: "WaveNotch will open your browser and fill out the forms.")
                         StepRow(number: 3, text: "The Client ID will be automatically saved here when done!")
                     }
-                    
+
                     Button(action: {
                         spotifyManager.automateSetup()
                     }) {
@@ -207,27 +222,29 @@ struct PluginDetailView: View {
                     }
                     .buttonStyle(.bordered)
                     .tint(.purple)
-                    } else {
+                } else {
                     VStack(alignment: .leading, spacing: 10) {
-                        StepRow(number: 1, text: "Go to developer.spotify.com/dashboard")
+                        StepRow(number: 1, text: "Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)")
                         StepRow(number: 2, text: "Log in and click 'Create App'")
                         StepRow(number: 3, text: "Set Name to 'WaveNotch' (or anything)")
                         StepRow(number: 4, text: "Set Redirect URI to: wavenotch://callback")
                         StepRow(number: 5, text: "Check 'Web API' and 'iOS' boxes")
                         StepRow(number: 6, text: "Save, go to Settings, and copy 'Client ID'")
                     }
-                    }
+                }
 
+                if hasAnyBrowser {
                     Button(action: {
-                    withAnimation { showManualSetup.toggle() }
+                        withAnimation { showManualSetup.toggle() }
                     }) {
-                    Text(showManualSetup ? "Hide Manual Setup" : "Having trouble? Set up manually.")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.gray)
-                        .underline()
+                        Text(showManualSetup ? "Hide Manual Setup" : "Set up manually instead")
+                            .font(.system(size: 12, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
                     }
-                    .buttonStyle(.plain)
-
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                }
                     VStack(alignment: .leading, spacing: 6) {
                     Text("Your Client ID:")
                         .font(.system(size: 12, weight: .bold))
@@ -459,10 +476,9 @@ struct PluginDetailView: View {
 
 struct StepRow: View {
     let number: Int
-    let text: String
-    
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+    let text: LocalizedStringKey
+
+    var body: some View {        HStack(alignment: .top, spacing: 10) {
             Text("\(number)")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(.white)

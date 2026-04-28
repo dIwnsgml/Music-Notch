@@ -17,30 +17,33 @@ struct WidgetFactoryView: View {
                 Spacer(minLength: 0)
             }
             
-            Group {
-                switch widgetType {
-                case .player:
-                    PlayerTabView(
-                        nowPlaying: nowPlaying,
-                        expandedWidth: expandedWidth,
-                        isCompact: isCompact,
-                        skipDirection: $skipDirection,
-                        glowOpacity: $glowOpacity,
-                        onSwipe: onSwipe
-                    )
-                case .spotifyQueue:
-                    SpotifyQueueWidget(nowPlaying: nowPlaying)
-                case .spotifyPlaylists:
-                    PlaylistTabView(nowPlaying: nowPlaying)
-                case .youtubeQueue:
-                    YouTubeQueueWidget(nowPlaying: nowPlaying)
-                case .youtubePlaylists:
-                    YouTubePlaylistsWidget(nowPlaying: nowPlaying)
-                case .calendar:
-                    CalendarWidget()
-                case .weather:
-                    PlaceholderWidget(name: "Weather", icon: "cloud.sun.fill")
+            if widgetType == .player {
+                PlayerTabView(
+                    nowPlaying: nowPlaying,
+                    expandedWidth: expandedWidth,
+                    isCompact: isCompact,
+                    skipDirection: $skipDirection,
+                    glowOpacity: $glowOpacity,
+                    onSwipe: onSwipe
+                )
+            } else {
+                Group {
+                    switch widgetType {
+                    case .player: EmptyView() // Handled above
+                    case .spotifyQueue: SpotifyQueueWidget(nowPlaying: nowPlaying)
+                    case .spotifyPlaylists: PlaylistTabView(nowPlaying: nowPlaying)
+                    case .youtubeQueue: YouTubeQueueWidget(nowPlaying: nowPlaying)
+                    case .youtubePlaylists: YouTubePlaylistsWidget(nowPlaying: nowPlaying)
+                    case .calendar: CalendarWidget()
+                    case .weather: PlaceholderWidget(name: "Weather", icon: "cloud.sun.fill")
+                    }
                 }
+                .background(Color.white.opacity(0.03))
+                .cornerRadius(16)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                )
             }
             
             Spacer(minLength: 0)

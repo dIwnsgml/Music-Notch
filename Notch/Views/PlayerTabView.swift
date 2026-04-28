@@ -102,10 +102,15 @@ struct PlayerTabView: View {
                                     .transition(.dynamicPanRotate(direction: skipDirection))
                                 
                             } else {
-                                Image(systemName: "music.note")
-                                    .foregroundColor(nowPlaying.isPlaying ? Color.red : Color.gray)
-                                    .font(.system(size: 20, weight: .bold))
-                                    .transition(.opacity)
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(Color.white.opacity(0.1))
+                                    Image(systemName: "music.note")
+                                        .foregroundColor(nowPlaying.isPlaying ? .white : .gray)
+                                        .font(.system(size: 18, weight: .bold))
+                                }
+                                .frame(width: 40, height: 40)
+                                .transition(.opacity)
                             }
                         }
                         .frame(width: 40, height: 40)

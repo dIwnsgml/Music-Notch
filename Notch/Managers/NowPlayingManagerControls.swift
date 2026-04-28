@@ -72,7 +72,12 @@ extension NowPlayingManager {
         }
         
         DispatchQueue.global(qos: .userInitiated).async {
-            let jsCode = "(function() { var host = window.location.hostname; if (host.includes('music.youtube.com')) { var playBtn = document.querySelector('#play-pause-button'); if (playBtn) { playBtn.click(); return 'TOGGLED'; } } else if (host.includes('spotify.com')) { var spotBtn = document.querySelector('[data-testid=\"control-button-playpause\"]'); if (spotBtn) { spotBtn.click(); return 'TOGGLED'; } } var active = null; if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (media[i].duration > 1) { active = media[i]; break; } } if(!active && media.length > 0) active = media[0]; } if (active) { if (active.paused || active.ended) { active.play(); return 'PLAYED'; } else { active.pause(); return 'PAUSED'; } } return 'NOT_PLAYING'; })();"
+            var hostCheck = ""
+            if rawBrowser.hasSuffix("_YouTube Music") { hostCheck = "if (!host.includes('music.youtube.com')) return 'NOT_PLAYING';" }
+            else if rawBrowser.hasSuffix("_Spotify Web") { hostCheck = "if (!host.includes('spotify.com')) return 'NOT_PLAYING';" }
+            else if rawBrowser.hasSuffix("_YT") { hostCheck = "if (!host.includes('youtube.com')) return 'NOT_PLAYING';" }
+
+            let jsCode = "(function() { var host = window.location.hostname; \(hostCheck) if (host.includes('music.youtube.com')) { var playBtn = document.querySelector('#play-pause-button'); if (playBtn) { playBtn.click(); return 'TOGGLED'; } } else if (host.includes('spotify.com')) { var spotBtn = document.querySelector('[data-testid=\"control-button-playpause\"]'); if (spotBtn) { spotBtn.click(); return 'TOGGLED'; } } var active = null; if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (media[i].duration > 1) { active = media[i]; break; } } if(!active && media.length > 0) active = media[0]; } if (active) { if (active.paused || active.ended) { active.play(); return 'PLAYED'; } else { active.pause(); return 'PAUSED'; } } return 'NOT_PLAYING'; })();"
             
             if let _ = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
                 let fastScript = self.buildAppleScript(browser: cleanBrowser, jsCode: jsCode, wIdx: wIdx, tIdx: tIdx)

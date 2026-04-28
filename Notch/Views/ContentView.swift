@@ -323,7 +323,14 @@ struct ContentView: View {
                             .id(nowPlaying.currentSong)
                             .transition(.panRotate(direction: skipDirection))
                     } else {
-                        Image(systemName: "music.note").foregroundColor(nowPlaying.isPlaying ? .white : .gray).font(.system(size: 14, weight: .bold))
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.white.opacity(0.1))
+                            Image(systemName: "music.note")
+                                .foregroundColor(nowPlaying.isPlaying ? .white : .gray)
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .frame(width: 20, height: 20)
                     }
                 }
                 .frame(width: 24, alignment: .leading)
