@@ -137,6 +137,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        SettingsWindowManager.shared.showSettings()
+        return true
+    }
+    
     func centerPanel() {
         guard let screen = NSScreen.main else { return }
         let x = screen.frame.origin.x + (screen.frame.width - panel.frame.width) / 2

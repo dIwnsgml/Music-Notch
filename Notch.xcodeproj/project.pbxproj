@@ -457,7 +457,7 @@
 				INFOPLIST_FILE = Notch/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = WaveNotch;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
-				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_LSUIElement = NO;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "WaveNotch needs to see what song is playing";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -509,7 +509,7 @@
 				INFOPLIST_FILE = Notch/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = WaveNotch;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
-				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_LSUIElement = NO;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "WaveNotch needs to see what song is playing";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
