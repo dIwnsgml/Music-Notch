@@ -44,9 +44,13 @@ struct WidgetFactoryView: View {
                 .background(
                     Group {
                         if themeBackgroundType == "image" && themeGlassyWidgets {
-                            ZStack {
-                                VisualEffectView(material: .popover, blendingMode: .withinWindow, alpha: 0.5)
-                                LinearGradient(colors: [Color.white.opacity(0.15), Color.clear], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            if #available(macOS 26.0, *) {
+                                Color.clear.glassEffect(in: .rect(cornerRadius: 16))
+                            } else {
+                                ZStack {
+                                    VisualEffectView(material: .popover, blendingMode: .withinWindow, alpha: 0.5)
+                                    LinearGradient(colors: [Color.white.opacity(0.15), Color.clear], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                }
                             }
                         } else {
                             Color.white.opacity(0.03)

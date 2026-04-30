@@ -90,16 +90,16 @@ struct ContentView: View {
     }
     
     var expandedWidth: CGFloat {
-        activeWidgetsCount <= 1 ? 400 : 520
+        activeWidgetsCount <= 1 ? 420 : 540
     }
     
     var expandedHeight: CGFloat {
         let widgets = dashboardManager.activeWidgets
-        if widgets.isEmpty { return notchHeight + 12 }
+        if widgets.isEmpty { return notchHeight + 24 }
         
         // ⚡️ DYNAMIC HEIGHT ENGINE
         let rows = widgets.chunked(into: 2)
-        var totalH: CGFloat = notchHeight + 12 // Start with top padding
+        var totalH: CGFloat = notchHeight + 24 // Start with top padding
         
         let playerH: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (80 + 12 + CGFloat(visibleLyricLines) * 26.0) : 80
         
@@ -120,7 +120,7 @@ struct ContentView: View {
         }
         
         totalH += CGFloat(max(0, rows.count - 1)) * 6 // add row spacing
-        totalH += 12 // bottom padding
+        totalH += 24 // bottom padding
         
         return totalH
     }
@@ -408,7 +408,7 @@ struct ContentView: View {
     @ViewBuilder
     private func expandedLayer(expandedHeight: CGFloat) -> some View {
         let widgets = dashboardManager.activeWidgets
-        let availableWidth = expandedWidth - 32 - 6 // total horizontal padding (16*2) and inner spacing (6)
+        let availableWidth = expandedWidth - 48 - 6 // total horizontal padding (24*2) and inner spacing (6)
         
         VStack(spacing: 0) {
             if widgets.isEmpty {
@@ -482,10 +482,10 @@ struct ContentView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 24)
             }
         }
-        .padding(.top, notchHeight + 12)
+        .padding(.top, notchHeight + 24)
         .frame(width: expandedWidth, height: expandedHeight)
         .opacity(isExpanded ? 1 : 0)
         .scaleEffect(isExpanded ? 1.0 : 0.95, anchor: .top)
