@@ -34,6 +34,7 @@ struct ContentView: View {
     @AppStorage("themeBackgroundColorHex") var themeBackgroundColorHex: String = "000000"
     @AppStorage("themeBackgroundImagePath") var themeBackgroundImagePath: String = ""
     @AppStorage("themeBackgroundOpacity") var themeBackgroundOpacity: Double = 1.0
+    @AppStorage("themeBackgroundBlur") var themeBackgroundBlur: Double = 0.0
 
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
@@ -306,6 +307,7 @@ struct ContentView: View {
                             .scaledToFill()
                             .frame(width: currentWidth, height: currentHeight)
                             .opacity(themeBackgroundOpacity)
+                            .blur(radius: themeBackgroundBlur)
                             .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
                     }
                 }

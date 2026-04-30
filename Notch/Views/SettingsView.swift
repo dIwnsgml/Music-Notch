@@ -51,6 +51,7 @@ struct SettingsView: View {
     @AppStorage("themeBackgroundColorHex") var themeBackgroundColorHex: String = "000000"
     @AppStorage("themeBackgroundImagePath") var themeBackgroundImagePath: String = ""
     @AppStorage("themeBackgroundOpacity") var themeBackgroundOpacity: Double = 1.0
+    @AppStorage("themeBackgroundBlur") var themeBackgroundBlur: Double = 0.0
     @AppStorage("themeGlassyWidgets") var themeGlassyWidgets: Bool = true
     
     // ⚡️ LYRICS & BANNER
@@ -347,7 +348,19 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
-            } header: { Text("Opacity") }
+                
+                if themeBackgroundType == "image" {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Background Blur: \(Int(themeBackgroundBlur))")
+                        HStack(spacing: 8) {
+                            Text("0").font(.caption).foregroundColor(.secondary).frame(width: 30, alignment: .leading)
+                            Slider(value: $themeBackgroundBlur, in: 0.0...40.0, step: 1.0).labelsHidden()
+                            Text("40").font(.caption).foregroundColor(.secondary).frame(width: 30, alignment: .trailing)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            } header: { Text("Visuals") }
             
             Section {
                 Toggle("Glassy Widget Backgrounds", isOn: $themeGlassyWidgets)
