@@ -28,7 +28,13 @@ struct ContentView: View {
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
     @State private var isAppHidden = false
-    
+
+    // ⚡️ THEME
+    @AppStorage("themeBackgroundType") var themeBackgroundType: String = "color"
+    @AppStorage("themeBackgroundColorHex") var themeBackgroundColorHex: String = "000000"
+    @AppStorage("themeBackgroundImagePath") var themeBackgroundImagePath: String = ""
+    @AppStorage("themeBackgroundOpacity") var themeBackgroundOpacity: Double = 1.0
+
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
     @AppStorage("enableChrome") var enableChrome = false
@@ -44,6 +50,8 @@ struct ContentView: View {
     @State private var bannerTask: Task<Void, Never>? = nil
     @State private var isShowingLyricBanner = false
     @State private var currentLyricText: String = ""
+    
+    @State private var cachedThemeImage: NSImage? = nil
     
     @State private var hoverTask: Task<Void, Never>? = nil
     
@@ -187,10 +195,14 @@ struct ContentView: View {
                 handleSystemKey(event: event)
             }
             KeyboardShortcuts.onKeyDown(for: .toggleAppVisibility) { isAppHidden.toggle() }
+            loadThemeImage()
         }
         .onDisappear {
             if let keyLocal = localMediaKeyMonitor { NSEvent.removeMonitor(keyLocal) }
             if let keyGlobal = globalMediaKeyMonitor { NSEvent.removeMonitor(keyGlobal) }
+        }
+        .onChange(of: themeBackgroundImagePath) { _, _ in
+            loadThemeImage()
         }
         .onChange(of: isExpanded) { _, expanded in
             if !expanded {
@@ -284,9 +296,25 @@ struct ContentView: View {
     @ViewBuilder
     private func backgroundLayer(currentWidth: CGFloat, currentHeight: CGFloat) -> some View {
         DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
-            .fill(Color.black)
+            .fill(themeBackgroundType == "color" ? (Color(hex: themeBackgroundColorHex) ?? .black) : .black)
+            .opacity(themeBackgroundType == "color" ? themeBackgroundOpacity : 1.0)
+            .overlay(
+                Group {
+                    if themeBackgroundType == "image", let nsImage = cachedThemeImage {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: currentWidth, height: currentHeight)
+                            .opacity(themeBackgroundOpacity)
+                            .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
+                    }
+                }
+            )
             .frame(width: currentWidth, height: currentHeight)
             .contentShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
+            .onTapGesture(count: 2) {
+                SettingsWindowManager.shared.showSettings()
+            }
             .overlay(
                 DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16)
                     .stroke(
@@ -475,6 +503,33 @@ struct ContentView: View {
         triggerBanner(text: forward ? "Skipped Forward" : "Skipped Back", duration: 1.5)
     }
     
+    private func loadThemeImage() {
+        guard themeBackgroundType == "image", !themeBackgroundImagePath.isEmpty else {
+            cachedThemeImage = nil
+            return
+        }
+        
+        let path = themeBackgroundImagePath
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let image = NSImage(contentsOfFile: path) else { return }
+            
+            // ⚡️ DOWN-SAMPLE MASSIVE IMAGES
+            // Large 4K images cause massive rendering lag during fast layout updates in the Notch.
+            let maxWidth: CGFloat = 1200
+            if image.size.width > maxWidth {
+                let scale = maxWidth / image.size.width
+                let newSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+                let newImage = NSImage(size: newSize)
+                newImage.lockFocus()
+                image.draw(in: NSRect(origin: .zero, size: newSize), from: .zero, operation: .copy, fraction: 1.0)
+                newImage.unlockFocus()
+                DispatchQueue.main.async { self.cachedThemeImage = newImage }
+            } else {
+                DispatchQueue.main.async { self.cachedThemeImage = image }
+            }
+        }
+    }
+
     private func handleSystemKey(event: NSEvent) {
         if event.subtype.rawValue == 8 {
             let data = event.data1

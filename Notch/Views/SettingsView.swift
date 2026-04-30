@@ -5,9 +5,11 @@ import ServiceManagement
 import AppKit
 import KeyboardShortcuts // ⚡️ Import the package
 import Sparkle
+import UniformTypeIdentifiers
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
+    case theme = "Theme" // ⚡️ NEW: Custom backgrounds
     case lyrics = "Lyrics & Banner"
     case layout = "Layout" // ⚡️ NEW: Layout Editor
     case shortcuts = "Shortcuts"
@@ -19,6 +21,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: return "gearshape"
+        case .theme: return "paintbrush"
         case .lyrics: return "text.quote"
         case .layout: return "square.grid.2x2"
         case .shortcuts: return "keyboard"
@@ -42,6 +45,12 @@ struct SettingsView: View {
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
     @AppStorage("enableAnalytics") var enableAnalytics = true
+    
+    // ⚡️ THEME
+    @AppStorage("themeBackgroundType") var themeBackgroundType: String = "color"
+    @AppStorage("themeBackgroundColorHex") var themeBackgroundColorHex: String = "000000"
+    @AppStorage("themeBackgroundImagePath") var themeBackgroundImagePath: String = ""
+    @AppStorage("themeBackgroundOpacity") var themeBackgroundOpacity: Double = 1.0
     
     // ⚡️ LYRICS & BANNER
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
@@ -145,6 +154,7 @@ struct SettingsView: View {
                         Form {
                             switch selectedTab {
                             case .general: generalContent
+                            case .theme: themeContent
                             case .lyrics: lyricsContent
                             case .shortcuts: shortcutsContent
                             case .integrations: integrationsContent
@@ -238,6 +248,108 @@ struct SettingsView: View {
         }
     }
     
+    // ---------------------------------------------------------
+    // 🎨 THEME TAB
+    // ---------------------------------------------------------
+    private var themeContent: some View {
+        Group {
+            Section {
+                Picker("Background Type", selection: $themeBackgroundType) {
+                    Text("Solid Color").tag("color")
+                    Text("Image").tag("image")
+                }
+                .pickerStyle(.segmented)
+            } header: { Text("Background Mode") }
+            
+            if themeBackgroundType == "color" {
+                Section {
+                    ColorPicker("Notch Background Color", selection: Binding(
+                        get: { Color(hex: themeBackgroundColorHex) ?? .black },
+                        set: { themeBackgroundColorHex = $0.toHex() }
+                    ))
+                } header: { Text("Color Settings") }
+            } else {
+                Section {
+                    HStack {
+                        if !themeBackgroundImagePath.isEmpty, let image = NSImage(contentsOfFile: themeBackgroundImagePath) {
+                            Image(nsImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 80, height: 80)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .padding(.trailing, 8)
+                        } else {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.gray.opacity(0.2))
+                                .frame(width: 80, height: 80)
+                                .overlay(Image(systemName: "photo").foregroundColor(.gray))
+                                .padding(.trailing, 8)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(themeBackgroundImagePath.isEmpty ? "No image selected" : (URL(fileURLWithPath: themeBackgroundImagePath).lastPathComponent))
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                            
+                            HStack {
+                                Button("Choose Image...") {
+                                    let panel = NSOpenPanel()
+                                    panel.allowedContentTypes = [.image]
+                                    panel.allowsMultipleSelection = false
+                                    panel.canChooseDirectories = false
+                                    panel.canChooseFiles = true
+                                    
+                                    if panel.runModal() == .OK, let url = panel.url {
+                                        // Save a copy to our app support folder to ensure we always have access
+                                        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                                            let appFolder = appSupport.appendingPathComponent("WaveNotch", isDirectory: true)
+                                            try? FileManager.default.createDirectory(at: appFolder, withIntermediateDirectories: true)
+                                            
+                                            let destURL = appFolder.appendingPathComponent("custom_bg_\(UUID().uuidString).\(url.pathExtension)")
+                                            do {
+                                                try FileManager.default.copyItem(at: url, to: destURL)
+                                                
+                                                // Clean up old image if there was one
+                                                if !themeBackgroundImagePath.isEmpty {
+                                                    try? FileManager.default.removeItem(atPath: themeBackgroundImagePath)
+                                                }
+                                                
+                                                themeBackgroundImagePath = destURL.path
+                                            } catch {
+                                                print("Failed to copy background image: \(error)")
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                if !themeBackgroundImagePath.isEmpty {
+                                    Button("Clear") {
+                                        if !themeBackgroundImagePath.isEmpty {
+                                            try? FileManager.default.removeItem(atPath: themeBackgroundImagePath)
+                                        }
+                                        themeBackgroundImagePath = ""
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } header: { Text("Image Settings") }
+            }
+            
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Background Opacity: \(Int(themeBackgroundOpacity * 100))%")
+                    HStack(spacing: 8) {
+                        Text("0%").font(.caption).foregroundColor(.secondary).frame(width: 30, alignment: .leading)
+                        Slider(value: $themeBackgroundOpacity, in: 0.0...1.0, step: 0.05).labelsHidden()
+                        Text("100%").font(.caption).foregroundColor(.secondary).frame(width: 30, alignment: .trailing)
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: { Text("Opacity") }
+        }
+    }
+
     // ---------------------------------------------------------
     // ⚙️ GENERAL TAB
     // ---------------------------------------------------------
