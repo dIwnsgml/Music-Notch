@@ -51,6 +51,7 @@ struct SettingsView: View {
     @AppStorage("themeBackgroundColorHex") var themeBackgroundColorHex: String = "000000"
     @AppStorage("themeBackgroundImagePath") var themeBackgroundImagePath: String = ""
     @AppStorage("themeBackgroundOpacity") var themeBackgroundOpacity: Double = 1.0
+    @AppStorage("themeGlassyWidgets") var themeGlassyWidgets: Bool = true
     
     // ⚡️ LYRICS & BANNER
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
@@ -347,6 +348,13 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, 4)
             } header: { Text("Opacity") }
+            
+            Section {
+                Toggle("Glassy Widget Backgrounds", isOn: $themeGlassyWidgets)
+                Text("Applies a native macOS frosted glass effect to widgets when a custom theme is active, making text easier to read.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } header: { Text("Widget Style") }
         }
     }
 

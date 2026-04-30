@@ -25,6 +25,9 @@ struct PlayerTabView: View {
     @AppStorage("enableEdge") var enableEdge = false
     @AppStorage("enableSafari") var enableSafari = false
     
+    @AppStorage("themeBackgroundType") var themeBackgroundType: String = "color"
+    @AppStorage("themeGlassyWidgets") var themeGlassyWidgets: Bool = true
+    
     @State private var isDragging = false
     @State private var dragProgress: Double = 0.0
     @State private var isMouseOver = false
@@ -301,6 +304,25 @@ struct PlayerTabView: View {
             }
             Spacer(minLength: 0)
         }
+        .background(
+            Group {
+                if themeBackgroundType == "image" && themeGlassyWidgets {
+                    ZStack {
+                        VisualEffectView(material: .popover, blendingMode: .withinWindow, alpha: 0.5)
+                        LinearGradient(colors: [Color.white.opacity(0.15), Color.clear], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    }
+                }
+            }
+        )
+        .cornerRadius(16)
+        .overlay(
+            Group {
+                if themeBackgroundType == "image" && themeGlassyWidgets {
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                }
+            }
+        )
         .onReceive(localTimer) { _ in
             if nowPlaying.isPlaying && !isDragging {
                 nowPlaying.currentTime += 0.1

@@ -11,6 +11,9 @@ struct WidgetFactoryView: View {
     @Binding var glowOpacity: Double
     let onSwipe: (Bool) -> Void
     
+    @AppStorage("themeBackgroundType") var themeBackgroundType: String = "color"
+    @AppStorage("themeGlassyWidgets") var themeGlassyWidgets: Bool = true
+    
     var body: some View {
         VStack(spacing: 0) {
             if widgetType == .spotifyPlaylists {
@@ -38,7 +41,18 @@ struct WidgetFactoryView: View {
                     case .weather: PlaceholderWidget(name: "Weather", icon: "cloud.sun.fill")
                     }
                 }
-                .background(Color.white.opacity(0.03))
+                .background(
+                    Group {
+                        if themeBackgroundType == "image" && themeGlassyWidgets {
+                            ZStack {
+                                VisualEffectView(material: .popover, blendingMode: .withinWindow, alpha: 0.5)
+                                LinearGradient(colors: [Color.white.opacity(0.15), Color.clear], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            }
+                        } else {
+                            Color.white.opacity(0.03)
+                        }
+                    }
+                )
                 .cornerRadius(16)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
