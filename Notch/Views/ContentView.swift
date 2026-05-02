@@ -2,11 +2,6 @@ import SwiftUI
 import Combine
 import KeyboardShortcuts
 
-enum AppTab {
-    case player
-    case playlist
-}
-
 struct ContentView: View {
     @State private var isExpanded = false
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
@@ -75,8 +70,6 @@ struct ContentView: View {
     // camera notch, and grabs its exact pixel depth.
     // ---------------------------------------------------------
     var notchHeight: CGFloat {
-        // 1. Ask all connected screens for their top safe area (the notch)
-        // 2. Grab the highest number.
         let actualNotchDepth = NSScreen.screens.map { $0.safeAreaInsets.top }.max() ?? 0
 
         // 3. A physical notch is always taller than 24px.
@@ -156,6 +149,9 @@ struct ContentView: View {
                     .padding(.top, 10)
                     .zIndex(4)
                 }
+                .padding(.trailing, 20)
+                .padding(.top, notchHeight + 6)
+                .zIndex(5)
             }
             .frame(width: currentWidth, height: currentHeight, alignment: .top)
             .onChange(of: currentWidth) { _, _ in
@@ -182,6 +178,19 @@ struct ContentView: View {
 
             Spacer()
         }
+        .contextMenu {
+            Button(action: { SettingsWindowManager.shared.showSettings() }) {
+                Text("Settings")
+                Image(systemName: "gearshape")
+            }
+            Button(action: { NSApplication.shared.terminate(nil) }) {
+                Text("Quit WaveNotch")
+                Image(systemName: "power")
+            }
+        }
+        .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
+        .animation(.spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1), value: isExpanded)
+        .animation(.spring(response: 0.30, dampingFraction: 1.0, blendDuration: 0.1), value: isShowingBanner || isShowingLyricBanner)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .opacity(isAppHidden ? 0 : 1)
         .allowsHitTesting(!isAppHidden)
@@ -608,12 +617,9 @@ struct ContentView: View {
             let sleepTime = UInt64(duration * 1_000_000_000)
             bannerTask?.cancel()
             bannerTask = Task {
-                try? await Task.sleep(nanoseconds: sleepTime)
+                try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
                 guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) { isShowingBanner = false }
-                    updateLyricBanner()
-                }
+                await MainActor.run { withAnimation { isShowingBanner = false }; updateLyricBanner() }
             }
         }
     }

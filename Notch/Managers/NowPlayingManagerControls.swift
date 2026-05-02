@@ -228,4 +228,51 @@ extension NowPlayingManager {
         let evUp = NSEvent.otherEvent(with: .systemDefined, location: .zero, modifierFlags: .init(rawValue: 0xb00), timestamp: 0, windowNumber: 0, context: nil, subtype: 8, data1: dataUp, data2: -1)
         evDown?.cgEvent?.post(tap: .cghidEventTap); evUp?.cgEvent?.post(tap: .cghidEventTap)
     }
+    
+    // ---------------------------------------------------------
+    // 🟢 SPOTIFY NATIVE CONTROLS
+    // ---------------------------------------------------------
+    
+    // Toggles Spotify Shuffle
+    func toggleSpotifyShuffle() {
+        let script = """
+        tell application "Spotify"
+            if shuffling then
+                set shuffling to false
+            else
+                set shuffling to true
+            end if
+        end tell
+        """
+        DispatchQueue.global(qos: .userInitiated).async {
+            NSAppleScript(source: script)?.executeAndReturnError(nil)
+            // Trigger a UI refresh shortly after so the buttons update
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.fetchTitle() }
+        }
+    }
+    
+    // Toggles Spotify Loop
+    func toggleSpotifyRepeat() {
+        let script = """
+        tell application "Spotify"
+            if repeating then
+                set repeating to false
+            else
+                set repeating to true
+            end if
+        end tell
+        """
+        DispatchQueue.global(qos: .userInitiated).async {
+            NSAppleScript(source: script)?.executeAndReturnError(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.fetchTitle() }
+        }
+    }
+    
+    // Play a specific URI (Great for building a quick "Playlists" menu)
+    func playSpotifyURI(_ uri: String) {
+        let script = "tell application \"Spotify\" to play track \"\(uri)\""
+        DispatchQueue.global(qos: .userInitiated).async {
+            NSAppleScript(source: script)?.executeAndReturnError(nil)
+        }
+    }
 }
