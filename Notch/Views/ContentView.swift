@@ -106,10 +106,25 @@ struct ContentView: View {
 
         for row in rows {
             let isCompact = row.count > 1
-            let baseH: CGFloat = isCompact ? 100 : 64
-            let playerH: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (baseH + 12 + CGFloat(visibleLyricLines) * 26.0) : baseH
+            let baseH: CGFloat = isCompact ? 116 : 78
+            let lyricsH: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (8 + CGFloat(visibleLyricLines) * 26.0) : 0
+            let playerH: CGFloat = baseH + lyricsH
             
-            totalH += playerH
+            var rowMaxH: CGFloat = 0
+            for widget in row {
+                let widgetH: CGFloat
+                switch widget {
+                case .player: widgetH = playerH
+                case .spotifyQueue: widgetH = 250
+                case .spotifyPlaylists: widgetH = isCompact ? 120 : 120
+                case .youtubeQueue: widgetH = 250
+                case .youtubePlaylists: widgetH = isCompact ? 120 : 120
+                case .weather: widgetH = 100
+                default: widgetH = 160 // Fallback for Calendar
+                }
+                rowMaxH = max(rowMaxH, widgetH)
+            }
+            totalH += rowMaxH
         }
 
         totalH += CGFloat(max(0, rows.count - 1)) * 6 // add row spacing
@@ -426,8 +441,21 @@ struct ContentView: View {
                     ForEach(0..<rows.count, id: \.self) { rowIndex in
                         let row = rows[rowIndex]
                         let isCompact = row.count > 1
-                        let baseH: CGFloat = isCompact ? 100 : 64
-                        let playerH: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (baseH + 12 + CGFloat(visibleLyricLines) * 26.0) : baseH
+                        let baseH: CGFloat = isCompact ? 116 : 78
+                        let lyricsH: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (8 + CGFloat(visibleLyricLines) * 26.0) : 0
+                        let playerH: CGFloat = baseH + lyricsH
+                        
+                        let rowMaxH = row.map { widget -> CGFloat in
+                            switch widget {
+                            case .player: return playerH
+                            case .spotifyQueue: return 250
+                            case .spotifyPlaylists: return isCompact ? 120 : 120
+                            case .youtubeQueue: return 250
+                            case .youtubePlaylists: return isCompact ? 120 : 120
+                            case .weather: return 100
+                            default: return 160
+                            }
+                        }.max() ?? playerH
                         
                         HStack(alignment: .center, spacing: 6) {
                             if row.count == 2 {
@@ -451,7 +479,7 @@ struct ContentView: View {
                                     glowOpacity: $glowOpacity,
                                     onSwipe: { forward in self.executeSkip(forward: forward) }
                                 )
-                                .frame(width: availableWidth * r1, height: playerH)
+                                .frame(width: availableWidth * r1, height: rowMaxH)
                                 
                                 WidgetFactoryView(
                                     widgetType: w2,
@@ -462,7 +490,7 @@ struct ContentView: View {
                                     glowOpacity: $glowOpacity,
                                     onSwipe: { forward in self.executeSkip(forward: forward) }
                                 )
-                                .frame(width: availableWidth * r2, height: playerH)
+                                .frame(width: availableWidth * r2, height: rowMaxH)
                                 
                             } else {
                                 // Single widget row (e.g. last item in odd-count list)
@@ -475,7 +503,7 @@ struct ContentView: View {
                                     glowOpacity: $glowOpacity,
                                     onSwipe: { forward in self.executeSkip(forward: forward) }
                                 )
-                                .frame(width: availableWidth, height: playerH)
+                                .frame(width: availableWidth, height: rowMaxH)
                             }
                         }
                     }
