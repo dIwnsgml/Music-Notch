@@ -302,8 +302,8 @@ struct PlayerTabView: View {
                 }
                 .padding(.top, 12)
             }
-            Spacer(minLength: 0)
         }
+        .frame(maxHeight: .infinity)
         .background(
             Group {
                 if themeBackgroundType == "image" && themeGlassyWidgets {

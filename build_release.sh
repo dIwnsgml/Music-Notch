@@ -16,9 +16,20 @@ NOTARY_PROFILE="WaveNotchNotary" # ⚡️ Your secure keychain profile
 
 echo "🚀 Starting 100% Automated WaveNotch Release Pipeline..."
 
-# 1. Ask for version number
-read -p "Enter the new visible version (e.g., 2.3): " VERSION_NUM
+# Move into project directory early to read the current version
+cd "$PROJECT_DIR"
+
+# 1. Auto-Detect and Ask for version number
+CURRENT_VERSION=$(agvtool what-marketing-version -terse1 | head -n 1)
+SUGGESTED_VERSION=$(echo "$CURRENT_VERSION" | awk -F. '{$NF = $NF + 1;} 1' OFS=.)
+
+read -p "Enter the new visible version (Press Enter for $SUGGESTED_VERSION): " INPUT_VERSION
+
+# If the user just presses Enter, use the SUGGESTED_VERSION. Otherwise, use what they typed.
+VERSION_NUM=${INPUT_VERSION:-$SUGGESTED_VERSION}
+
 RELEASE_FOLDER_NAME="WaveNotch_Release_$VERSION_NUM"
+
 RELEASE_FOLDER_PATH="$RELEASES_DIR/$RELEASE_FOLDER_NAME"
 DMG_NAME="${RELEASE_FOLDER_NAME}.dmg"
 DMG_PATH="$RELEASES_DIR/$DMG_NAME"

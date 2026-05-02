@@ -16,10 +16,6 @@ struct WidgetFactoryView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            if widgetType == .spotifyPlaylists {
-                Spacer(minLength: 0)
-            }
-            
             if widgetType == .player {
                 PlayerTabView(
                     nowPlaying: nowPlaying,
@@ -41,6 +37,7 @@ struct WidgetFactoryView: View {
                     case .weather: PlaceholderWidget(name: "Weather", icon: "cloud.sun.fill")
                     }
                 }
+                .frame(maxHeight: .infinity)
                 .background(
                     Group {
                         if themeBackgroundType == "image" && themeGlassyWidgets {
@@ -63,8 +60,6 @@ struct WidgetFactoryView: View {
                         .stroke(Color.white.opacity(0.05), lineWidth: 1)
                 )
             }
-            
-            Spacer(minLength: 0)
         }
     }
 }

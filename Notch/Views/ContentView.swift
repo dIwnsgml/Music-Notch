@@ -36,6 +36,8 @@ struct ContentView: View {
     @AppStorage("themeBackgroundOpacity") var themeBackgroundOpacity: Double = 1.0
     @AppStorage("themeBackgroundBlur") var themeBackgroundBlur: Double = 0.0
 
+    @AppStorage("expandedPadding") var expandedPadding: Double = 16.0
+
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
     @AppStorage("enableChrome") var enableChrome = false
@@ -96,36 +98,29 @@ struct ContentView: View {
     
     var expandedHeight: CGFloat {
         let widgets = dashboardManager.activeWidgets
-        if widgets.isEmpty { return notchHeight + 24 }
-        
+        if widgets.isEmpty { return notchHeight + CGFloat(expandedPadding) * 2 }
+
         // ⚡️ DYNAMIC HEIGHT ENGINE
         let rows = widgets.chunked(into: 2)
-        var totalH: CGFloat = notchHeight + 24 // Start with top padding
-        
-        let playerH: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (80 + 12 + CGFloat(visibleLyricLines) * 26.0) : 80
-        
+        var totalH: CGFloat = notchHeight + CGFloat(expandedPadding) // Start with top padding
+
         for row in rows {
+            let isCompact = row.count > 1
+            let baseH: CGFloat = isCompact ? 100 : 64
+            let playerH: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (baseH + 12 + CGFloat(visibleLyricLines) * 26.0) : baseH
+            
             var rowMaxH: CGFloat = 0
-            for widget in row {
-                let widgetH: CGFloat
-                switch widget {
-                case .player: widgetH = (row.count == 1) ? playerH : playerH + 20
-                case .spotifyQueue: widgetH = 250
-                case .spotifyPlaylists: widgetH = (row.count == 1) ? 120 : 120 
-                case .weather: widgetH = 100
-                default: widgetH = 160 // Fallback for Calendar
-                }
-                rowMaxH = max(rowMaxH, widgetH)
+            for _ in row {
+                rowMaxH = max(rowMaxH, playerH)
             }
             totalH += rowMaxH
         }
-        
+
         totalH += CGFloat(max(0, rows.count - 1)) * 6 // add row spacing
-        totalH += 24 // bottom padding
-        
+        totalH += CGFloat(expandedPadding) // bottom padding
+
         return totalH
-    }
-    
+    }    
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
         
@@ -410,7 +405,8 @@ struct ContentView: View {
     @ViewBuilder
     private func expandedLayer(expandedHeight: CGFloat) -> some View {
         let widgets = dashboardManager.activeWidgets
-        let availableWidth = expandedWidth - 48 - 6 // total horizontal padding (24*2) and inner spacing (6)
+        let pad = CGFloat(expandedPadding)
+        let availableWidth = expandedWidth - (pad * 2) - 6 // total horizontal padding and inner spacing
         
         VStack(spacing: 0) {
             if widgets.isEmpty {
@@ -433,6 +429,10 @@ struct ContentView: View {
                 VStack(spacing: 6) {
                     ForEach(0..<rows.count, id: \.self) { rowIndex in
                         let row = rows[rowIndex]
+                        let isCompact = row.count > 1
+                        let baseH: CGFloat = isCompact ? 100 : 64
+                        let playerH: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (baseH + 12 + CGFloat(visibleLyricLines) * 26.0) : baseH
+                        
                         HStack(alignment: .center, spacing: 6) {
                             if row.count == 2 {
                                 let w1 = row[0]
@@ -455,7 +455,7 @@ struct ContentView: View {
                                     glowOpacity: $glowOpacity,
                                     onSwipe: { forward in self.executeSkip(forward: forward) }
                                 )
-                                .frame(width: availableWidth * r1)
+                                .frame(width: availableWidth * r1, height: playerH)
                                 
                                 WidgetFactoryView(
                                     widgetType: w2,
@@ -466,7 +466,7 @@ struct ContentView: View {
                                     glowOpacity: $glowOpacity,
                                     onSwipe: { forward in self.executeSkip(forward: forward) }
                                 )
-                                .frame(width: availableWidth * r2)
+                                .frame(width: availableWidth * r2, height: playerH)
                                 
                             } else {
                                 // Single widget row (e.g. last item in odd-count list)
@@ -479,16 +479,17 @@ struct ContentView: View {
                                     glowOpacity: $glowOpacity,
                                     onSwipe: { forward in self.executeSkip(forward: forward) }
                                 )
-                                .frame(width: availableWidth)
+                                .frame(width: availableWidth, height: playerH)
                             }
                         }
                     }
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, pad)
             }
         }
-        .padding(.top, notchHeight + 24)
-        .frame(width: expandedWidth, height: expandedHeight)
+        .padding(.top, notchHeight + pad)
+        .padding(.bottom, pad)
+        .frame(width: expandedWidth, height: expandedHeight, alignment: .top)
         .opacity(isExpanded ? 1 : 0)
         .scaleEffect(isExpanded ? 1.0 : 0.95, anchor: .top)
         .allowsHitTesting(isExpanded)

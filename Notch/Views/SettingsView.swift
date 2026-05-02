@@ -45,6 +45,7 @@ struct SettingsView: View {
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
     @AppStorage("enableAnalytics") var enableAnalytics = true
+    @AppStorage("expandedPadding") var expandedPadding: Double = 16.0
     
     // ⚡️ THEME
     @AppStorage("themeBackgroundType") var themeBackgroundType: String = "color"
@@ -386,6 +387,17 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Expanded View Padding: \(Int(expandedPadding))px")
+                    HStack(spacing: 8) {
+                        Text("8px").font(.caption).foregroundColor(.secondary).frame(width: 40, alignment: .leading)
+                        Slider(value: $expandedPadding, in: 8...40, step: 2).labelsHidden()
+                        Text("40px").font(.caption).foregroundColor(.secondary).frame(width: 40, alignment: .trailing)
+                    }
+                }
+                .padding(.vertical, 4)
+                
                 Toggle("Show Settings Gear in Expanded View", isOn: $showSettingsButton)
             } header: { Text("Appearance") }
             
