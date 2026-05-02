@@ -93,7 +93,7 @@ struct ContentView: View {
     }
     
     var expandedWidth: CGFloat {
-        activeWidgetsCount <= 1 ? 420 : 540
+        activeWidgetsCount <= 1 ? 340 : 540
     }
     
     var expandedHeight: CGFloat {
@@ -109,11 +109,7 @@ struct ContentView: View {
             let baseH: CGFloat = isCompact ? 100 : 64
             let playerH: CGFloat = (!nowPlaying.lyrics.isEmpty && showLyrics) ? (baseH + 12 + CGFloat(visibleLyricLines) * 26.0) : baseH
             
-            var rowMaxH: CGFloat = 0
-            for _ in row {
-                rowMaxH = max(rowMaxH, playerH)
-            }
-            totalH += rowMaxH
+            totalH += playerH
         }
 
         totalH += CGFloat(max(0, rows.count - 1)) * 6 // add row spacing

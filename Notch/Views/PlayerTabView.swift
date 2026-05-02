@@ -303,6 +303,7 @@ struct PlayerTabView: View {
                 .padding(.top, 12)
             }
         }
+        .padding(.bottom, 12)
         .frame(maxHeight: .infinity)
         .background(
             Group {

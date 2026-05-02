@@ -61,6 +61,7 @@ struct WidgetFactoryView: View {
                 )
             }
         }
+        .frame(maxHeight: .infinity)
     }
 }
 
