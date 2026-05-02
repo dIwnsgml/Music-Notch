@@ -18,51 +18,142 @@ struct PlaylistTrack: Identifiable, Equatable {
     let imageURL: String?
 }
 
-// 🟢 NEW: Spotify Data Models
+// MARK: - Spotify Models
+
+struct SpotifyPlaylist: Codable, Identifiable, Equatable {
+    let id: String
+    let name: String
+    let images: [SpotifyImage]?
+    let uri: String
+    
+    var imageUrl: String? {
+        images?.first?.url
+    }
+}
+
 struct SpotifyPlaylistResponse: Codable {
     let items: [SpotifyPlaylist]
 }
 
-struct SpotifyPlaylist: Codable, Identifiable, Equatable {
-    let id: String
-    let name: String?
-    let uri: String?
-    let images: [SpotifyImage]?
-    
-    var imageURL: URL? {
-        if let urlString = images?.first?.url {
-            return URL(string: urlString)
-        }
-        return nil
-    }
-}
-
 struct SpotifyImage: Codable, Equatable {
     let url: String
+    let height: Int?
+    let width: Int?
 }
 
-// 🟢 NEW: Spotify Queue Models
-struct SpotifyQueueResponse: Codable {
+struct SpotifyQueue: Codable {
     let currently_playing: SpotifyTrack?
     let queue: [SpotifyTrack]
 }
 
 struct SpotifyTrack: Codable, Identifiable, Equatable {
-    var id: String { uri + (name ?? "") }
-    let name: String?
+    var id: String { uri }
+    let name: String
     let uri: String
-    let artists: [SpotifyArtist]?
+    let artists: [SpotifyArtist]
     let album: SpotifyAlbum?
     
-    var artistNames: String {
-        artists?.map { $0.name }.joined(separator: ", ") ?? "Unknown Artist"
+    struct SpotifyArtist: Codable, Equatable {
+        let name: String
+    }
+    
+    struct SpotifyAlbum: Codable, Equatable {
+        let images: [SpotifyImage]?
     }
 }
 
-struct SpotifyArtist: Codable, Equatable {
-    let name: String
+struct SpotifyQueueItem: Identifiable, Equatable {
+    let id: String // Unique ID (index + uri)
+    let track: SpotifyTrack
 }
 
-struct SpotifyAlbum: Codable, Equatable {
-    let images: [SpotifyImage]?
+// MARK: - Google Calendar Models
+
+struct GoogleCalendarListResponse: Codable {
+    let items: [GoogleCalendar]
+}
+
+struct GoogleCalendar: Codable, Identifiable {
+    let id: String
+    let summary: String
+    let backgroundColor: String?
+}
+
+struct GoogleCalendarEventsResponse: Codable {
+    let items: [GoogleCalendarEvent]
+}
+
+struct GoogleCalendarEvent: Codable, Identifiable {
+    let id: String
+    let summary: String
+    let description: String?
+    let start: GoogleCalendarTime
+    let end: GoogleCalendarTime
+    let htmlLink: String?
+    let calendarId: String? // Custom field to track source
+    let calendarColor: String? // Custom field to track color
+}
+
+struct GoogleCalendarTime: Codable {
+    let dateTime: String?
+    let date: String? // For all-day events
+}
+
+// MARK: - YouTube Music Models
+
+struct YTPlaylistResponse: Codable {
+    let items: [YTPlaylist]
+}
+
+struct YTPlaylist: Codable, Identifiable {
+    let id: String
+    let snippet: YTSnippet
+    
+    struct YTSnippet: Codable {
+        let title: String
+        let thumbnails: YTThumbnails?
+    }
+}
+
+struct YTPlaylistItemsResponse: Codable {
+    let items: [YTTrack]
+}
+
+struct YTTrack: Codable, Identifiable {
+    let id: String
+    let snippet: YTSnippet
+    
+    struct YTSnippet: Codable {
+        let title: String
+        let videoOwnerChannelTitle: String? // Artist name
+        let thumbnails: YTThumbnails?
+        let resourceId: YTResourceId
+    }
+    
+    struct YTResourceId: Codable {
+        let videoId: String
+    }
+}
+
+struct YTThumbnails: Codable {
+    let `default`: YTThumbnail?
+    let medium: YTThumbnails.YTThumbnail?
+    let high: YTThumbnails.YTThumbnail?
+    
+    struct YTThumbnail: Codable {
+        let url: String
+    }
+}
+
+struct YTQueueItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let artist: String
+    let imageURL: String?
+    let videoId: String
+    let playlistId: String? // ⚡️ NEW: To keep playback context
+    
+    static func == (lhs: YTQueueItem, rhs: YTQueueItem) -> Bool {
+        lhs.id == rhs.id
+    }
 }

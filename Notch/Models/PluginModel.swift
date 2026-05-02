@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum PluginCategory: String, CaseIterable {
+enum PluginCategory: String, CaseIterable, Codable {
     case media = "Media & Music"
     case productivity = "Productivity"
     case system = "System Utilities"
@@ -10,11 +10,11 @@ struct WaveNotchPlugin: Identifiable, Equatable {
     let id: String
     let name: String
     let description: String
-    let assetImageName: String 
+    let iconName: String // SFSymbol fallback
+    let assetImageName: String? // Real asset name
     let category: PluginCategory
-    let isPremium: Bool
-    let storageKey: String 
+    let storageKeyBase: String // Used for @AppStorage
     
-    var installedKey: String { "\(storageKey)_installed" }
-    var enabledKey: String { "\(storageKey)_enabled" }
+    var installedKey: String { "\(storageKeyBase)_installed" }
+    var enabledKey: String { "\(storageKeyBase)_enabled" }
 }

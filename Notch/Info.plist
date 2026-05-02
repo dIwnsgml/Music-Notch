@@ -4,8 +4,6 @@
 <dict>
 	<key>SUFeedURL</key>
 	<string>https://wavenotch.com/appcast.xml</string>
-	<key>NSCalendarsUsageDescription</key>
-	<string>WaveNotch needs access to display your upcoming events.</string>
 	<key>SUPublicEDKey</key>
 	<string>61r/qxZuSY/imacPrlbNhTOLzs7X6/Cz8B6tM9kLfeY=</string>
 	<key>CFBundleURLTypes</key>
@@ -14,10 +12,11 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>wavenotch</string>
+			<string>com.jason.WaveNotch</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>wavenotch</string>
+				<string>com.googleusercontent.apps.989490326013-4ukfahi6t9cplb3mujovrrbtb1onoif0</string>
 			</array>
 		</dict>
 	</array>

@@ -4,18 +4,60 @@ import Combine
 class PluginManager: ObservableObject {
     static let shared = PluginManager()
     
-    @Published var availablePlugins: [WaveNotchPlugin] = [
-        // 🎵 MEDIA
-        WaveNotchPlugin(id: "spotify_plus", name: "Spotify Plus", description: "Premium OAuth 2.0 integration. Read private playlists and control playback using the official Spotify API.", assetImageName: "spotify_plus_logo", category: .media, isPremium: true, storageKey: "enableSpotifyPlus"),
-        WaveNotchPlugin(id: "applemusic", name: "Apple Music", description: "Deep macOS integration. View your active queue, skip tracks, and read live lyrics without ever switching windows.", assetImageName: "apple_music_logo", category: .media, isPremium: false, storageKey: "enableAppleMusic"),
-        
-        // 🛠 PRODUCTIVITY
-        WaveNotchPlugin(id: "calendar", name: "Apple & Google Calendar", description: "Your day at a glance. View your upcoming meetings and schedule natively in the expanded notch.", assetImageName: "calendar_logo", category: .productivity, isPremium: false, storageKey: "enableCalendar"),
-        WaveNotchPlugin(id: "canvas", name: "Canvas LMS", description: "Stay on top of your coursework. Get transient notch alerts for upcoming assignment deadlines and newly posted grades.", assetImageName: "canvas_logo", category: .productivity, isPremium: false, storageKey: "enableCanvas"),
-        WaveNotchPlugin(id: "gmail", name: "Gmail", description: "Quickly preview the subject and sender of unread emails without opening your web browser.", assetImageName: "gmail_logo", category: .productivity, isPremium: false, storageKey: "enableGmail"),
-        
-        // ⚙️ SYSTEM
-        WaveNotchPlugin(id: "weather", name: "Local Weather", description: "Live local temperature, AQI, and upcoming rain alerts right in the menu bar.", assetImageName: "weather_logo", category: .system, isPremium: false, storageKey: "enableWeather"),
-        WaveNotchPlugin(id: "battery", name: "Smart Battery", description: "Get critical warnings when your Mac, Magic Mouse, or AirPods drop below 20%.", assetImageName: "battery_logo", category: .system, isPremium: false, storageKey: "enableBattery")
+    @Published var plugins: [WaveNotchPlugin] = [
+        WaveNotchPlugin(
+            id: "spotify_queue",
+            name: "Spotify Queue",
+            description: "View and manage your real-time Spotify play queue directly in the notch.",
+            iconName: "list.bullet.indent",
+            assetImageName: nil, // Use SF Symbol for now
+            category: .media,
+            storageKeyBase: "plugin_spotify_queue"
+        ),
+        WaveNotchPlugin(
+            id: "spotify_playlists",
+            name: "Spotify Playlists",
+            description: "Quickly access and switch between your favorite Spotify playlists with one tap.",
+            iconName: "music.note.list",
+            assetImageName: nil,
+            category: .media,
+            storageKeyBase: "plugin_spotify_playlists"
+        ),
+        WaveNotchPlugin(
+            id: "youtube_queue",
+            name: "YouTube Music Queue",
+            description: "View and manage your current YouTube Music play queue directly in the notch.",
+            iconName: "play.square.stack",
+            assetImageName: nil,
+            category: .media,
+            storageKeyBase: "plugin_youtube_queue"
+        ),
+        WaveNotchPlugin(
+            id: "youtube_playlists",
+            name: "YouTube Music Playlists",
+            description: "Quickly access your YouTube Music library and switch between playlists.",
+            iconName: "play.rectangle.on.rectangle",
+            assetImageName: nil,
+            category: .media,
+            storageKeyBase: "plugin_youtube_playlists"
+        ),
+        WaveNotchPlugin(
+            id: "google_calendar",
+            name: "Google Calendar",
+            description: "View your upcoming events and schedule directly in the notch. Supports multiple calendars and provides timely meeting alerts.",
+            iconName: "calendar",
+            assetImageName: nil,
+            category: .productivity,
+            storageKeyBase: "plugin_google_calendar"
+        ),
+        WaveNotchPlugin(
+            id: "weather",
+            name: "Weather",
+            description: "Real-time local weather conditions, temperature, and precipitation forecasts displayed beautifully in your Dynamic Island.",
+            iconName: "cloud.sun.fill",
+            assetImageName: nil,
+            category: .system,
+            storageKeyBase: "plugin_weather"
+        )
     ]
 }

@@ -2,19 +2,37 @@ import SwiftUI
 import Combine
 
 enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
-    case nowPlaying
-    case playlist
+    case player
+    case spotifyQueue
+    case spotifyPlaylists
+    case youtubeQueue
+    case youtubePlaylists
     case calendar
     case weather
     
-    var id: String { rawValue }
+    var id: String { self.rawValue }
     
     var displayName: String {
         switch self {
-        case .nowPlaying: return "Now Playing"
-        case .playlist: return "Playlists & Queue"
+        case .player: return "Music Player"
+        case .spotifyQueue: return "Spotify Queue"
+        case .spotifyPlaylists: return "Spotify Playlists"
+        case .youtubeQueue: return "YouTube Music Queue"
+        case .youtubePlaylists: return "YouTube Music Playlists"
         case .calendar: return "Calendar"
         case .weather: return "Weather"
+        }
+    }
+    
+    var isInstalled: Bool {
+        switch self {
+        case .player: return true // Built-in
+        case .spotifyQueue: return UserDefaults.standard.bool(forKey: "plugin_spotify_queue_installed")
+        case .spotifyPlaylists: return UserDefaults.standard.bool(forKey: "plugin_spotify_playlists_installed")
+        case .youtubeQueue: return UserDefaults.standard.bool(forKey: "plugin_youtube_queue_installed")
+        case .youtubePlaylists: return UserDefaults.standard.bool(forKey: "plugin_youtube_playlists_installed")
+        case .calendar: return UserDefaults.standard.bool(forKey: "plugin_google_calendar_installed")
+        case .weather: return UserDefaults.standard.bool(forKey: "plugin_weather_installed")
         }
     }
 }
@@ -22,83 +40,125 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
 class DashboardManager: ObservableObject {
     static let shared = DashboardManager()
     
-    @Published var activeLayout: [NotchWidgetType] = [] {
-        didSet {
-            saveLayout()
-        }
-    }
+    @Published var activeWidgets: [NotchWidgetType] = [.player]
     
-    @AppStorage("enableSpotifyPlus_enabled") private var enableSpotifyPlus: Bool = false
-    @AppStorage("enableCalendar_enabled") private var enableCalendar: Bool = false
-    @AppStorage("enableWeather_enabled") private var enableWeather: Bool = false
+    private var cancellables = Set<AnyCancellable>()
     
     init() {
-        loadLayout()
-        refreshAvailableWidgets()
+        // Observe key AppStorage changes to trigger live refresh
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .debounce(for: .milliseconds(100), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.refreshWidgets()
+            }
+            .store(in: &cancellables)
+        
+        // ⚡️ NEW: Observe media source changes to handle auto-hiding logic
+        NowPlayingManager.shared.$lastActiveBrowser
+            .sink { [weak self] _ in
+                self?.refreshWidgets()
+            }
+            .store(in: &cancellables)
+        
+        refreshWidgets()
     }
     
-    private func saveLayout() {
-        if let data = try? JSONEncoder().encode(activeLayout) {
-            UserDefaults.standard.set(data, forKey: "dashboardActiveLayout")
+    func getWidgetOrder() -> [NotchWidgetType] {
+        var fullOrder: [NotchWidgetType]
+        
+        if let data = UserDefaults.standard.data(forKey: "dashboard_widget_order"),
+           let savedOrder = try? JSONDecoder().decode([NotchWidgetType].self, from: data) {
+            
+            // Ensure all enum cases are accounted for (e.g., if new plugins were added in an update)
+            fullOrder = savedOrder
+            let missing = NotchWidgetType.allCases.filter { !fullOrder.contains($0) }
+            fullOrder.append(contentsOf: missing)
+        } else {
+            fullOrder = NotchWidgetType.allCases
         }
+        
+        return fullOrder.filter { $0.isInstalled }
     }
     
-    private func loadLayout() {
-        if let data = UserDefaults.standard.data(forKey: "dashboardActiveLayout"),
-           let savedLayout = try? JSONDecoder().decode([NotchWidgetType].self, from: data) {
-            activeLayout = savedLayout
-        } else {
-            activeLayout = [.nowPlaying]
+    func saveWidgetOrder(_ order: [NotchWidgetType]) {
+        if let data = try? JSONEncoder().encode(order) {
+            UserDefaults.standard.set(data, forKey: "dashboard_widget_order")
         }
+        refreshWidgets() // Live sync the notch!
     }
     
-    func refreshAvailableWidgets() {
-        var newLayout = activeLayout
-        var didChange = false
+    func refreshWidgets() {
+        let playerEnabled = UserDefaults.standard.object(forKey: "plugin_player_enabled") as? Bool ?? true
+        let queueEnabled = UserDefaults.standard.bool(forKey: "plugin_spotify_queue_enabled")
+        let playlistsEnabled = UserDefaults.standard.bool(forKey: "plugin_spotify_playlists_enabled")
+        let ytQueueEnabled = UserDefaults.standard.bool(forKey: "plugin_youtube_queue_enabled")
+        let ytPlaylistsEnabled = UserDefaults.standard.bool(forKey: "plugin_youtube_playlists_enabled")
+        let calendarEnabled = UserDefaults.standard.bool(forKey: "plugin_google_calendar_enabled")
+        let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
         
-        if !newLayout.contains(.nowPlaying) {
-            newLayout.insert(.nowPlaying, at: 0)
-            didChange = true
+        // ⚡️ NEW: Auto-hide logic for Spotify Plugins
+        let spotifyQueueAutoHide = UserDefaults.standard.object(forKey: "plugin_spotify_queue_auto_hide") as? Bool ?? true
+        let spotifyPlaylistsAutoHide = UserDefaults.standard.object(forKey: "plugin_spotify_playlists_auto_hide") as? Bool ?? true
+        
+        // ⚡️ Auto-hide logic for YouTube Plugins
+        let ytQueueAutoHide = UserDefaults.standard.object(forKey: "plugin_youtube_queue_auto_hide") as? Bool ?? true
+        let ytPlaylistsAutoHide = UserDefaults.standard.object(forKey: "plugin_youtube_playlists_auto_hide") as? Bool ?? true
+        
+        let lastBrowser = NowPlayingManager.shared.lastActiveBrowser ?? ""
+        let isSpotifyActive = lastBrowser == "SpotifyNative" || lastBrowser.contains("Spotify")
+        let isYTActive = lastBrowser.contains("YouTube Music") || lastBrowser.contains("Music.YouTube")
+        
+        let order = getWidgetOrder()
+        var widgets: [NotchWidgetType] = []
+        
+        for widget in order {
+            switch widget {
+            case .player: if playerEnabled { widgets.append(.player) }
+            case .spotifyQueue:
+                if queueEnabled {
+                    if spotifyQueueAutoHide && !isSpotifyActive {
+                        // Skip adding it if auto-hide is on and Spotify isn't playing
+                    } else {
+                        widgets.append(.spotifyQueue)
+                    }
+                }
+            case .spotifyPlaylists:
+                if playlistsEnabled {
+                    if spotifyPlaylistsAutoHide && !isSpotifyActive {
+                        // Skip adding it
+                    } else {
+                        widgets.append(.spotifyPlaylists)
+                    }
+                }
+            case .youtubeQueue:
+                if ytQueueEnabled {
+                    if ytQueueAutoHide && !isYTActive {
+                        // Skip adding it
+                    } else {
+                        widgets.append(.youtubeQueue)
+                    }
+                }
+            case .youtubePlaylists:
+                if ytPlaylistsEnabled {
+                    if ytPlaylistsAutoHide && !isYTActive {
+                        // Skip adding it
+                    } else {
+                        widgets.append(.youtubePlaylists)
+                    }
+                }
+            case .calendar: if calendarEnabled { widgets.append(.calendar) }
+            case .weather: if weatherEnabled { widgets.append(.weather) }
+            }
         }
         
-        if enableSpotifyPlus {
-            if !newLayout.contains(.playlist) {
-                newLayout.append(.playlist)
-                didChange = true
+        DispatchQueue.main.async {
+            if self.activeWidgets != widgets {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    self.activeWidgets = widgets
+                    // Notify window centering logic
+                    NotificationCenter.default.post(name: NSNotification.Name("UpdateNotchLayout"), object: nil)
+                }
             }
-        } else {
-            if newLayout.contains(.playlist) {
-                newLayout.removeAll { $0 == .playlist }
-                didChange = true
-            }
-        }
-        
-        if enableCalendar {
-            if !newLayout.contains(.calendar) {
-                newLayout.append(.calendar)
-                didChange = true
-            }
-        } else {
-            if newLayout.contains(.calendar) {
-                newLayout.removeAll { $0 == .calendar }
-                didChange = true
-            }
-        }
-        
-        if enableWeather {
-            if !newLayout.contains(.weather) {
-                newLayout.append(.weather)
-                didChange = true
-            }
-        } else {
-            if newLayout.contains(.weather) {
-                newLayout.removeAll { $0 == .weather }
-                didChange = true
-            }
-        }
-        
-        if didChange {
-            activeLayout = newLayout
         }
     }
 }

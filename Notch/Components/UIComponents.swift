@@ -109,7 +109,6 @@ struct MarqueeText: View {
             }
         }
         .clipped()
-        .id(text)
         .background(
             Text(text)
                 .font(font)
@@ -122,5 +121,28 @@ struct MarqueeText: View {
                 })
                 .hidden()
         )
+    }
+}
+
+// ⚡️ NATIVE MACOS GLASS EFFECT
+struct VisualEffectView: NSViewRepresentable {
+    var material: NSVisualEffectView.Material
+    var blendingMode: NSVisualEffectView.BlendingMode
+    var alpha: CGFloat = 1.0
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = blendingMode
+        view.state = .active
+        view.appearance = NSAppearance(named: .vibrantDark)
+        view.alphaValue = alpha
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+        nsView.blendingMode = blendingMode
+        nsView.alphaValue = alpha
     }
 }

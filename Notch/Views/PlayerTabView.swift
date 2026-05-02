@@ -1,23 +1,22 @@
 import SwiftUI
 import Combine
-import EventKit
 import ApplicationServices // ⚡️ Needed for the Accessibility check
 
 struct PlayerTabView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
-    @ObservedObject var calendarManager: CalendarManager
     
     var expandedWidth: CGFloat
+    var isCompact: Bool
     @Binding var skipDirection: Int
     @Binding var glowOpacity: Double
-    let onSwipe: (Bool) -> Void
+    let onSwipe: (Bool) -> Void // ⚡️ ADDED: Scoped skip trigger
     
-    @AppStorage("enableCalendar") var enableCalendar = false
     @AppStorage("showLyrics") var showLyrics = true
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     @AppStorage("lyricDimming") var lyricDimming: Double = 0.3
     @AppStorage("lyricBlurAmount") var lyricBlurAmount: Double = 0.4
     @AppStorage("enableDoubleClickToOpen") var enableDoubleClickToOpen = true
+    @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
     
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
@@ -26,77 +25,76 @@ struct PlayerTabView: View {
     @AppStorage("enableEdge") var enableEdge = false
     @AppStorage("enableSafari") var enableSafari = false
     
+    @AppStorage("themeBackgroundType") var themeBackgroundType: String = "color"
+    @AppStorage("themeGlassyWidgets") var themeGlassyWidgets: Bool = true
+    
     @State private var isDragging = false
     @State private var dragProgress: Double = 0.0
+    @State private var isMouseOver = false
+    @State private var lastSwipeTime: Date = Date()
+    @State private var localEventMonitor: Any?
+    
     let localTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     
     var body: some View {
         let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
-        let showSplitView = enableCalendar && calendarManager.hasAccess
         
-        let hPad: CGFloat = showSplitView ? 20 : 36
-        let calendarWidth: CGFloat = 170
-        let playerPanelWidth: CGFloat = showSplitView ? (expandedWidth - calendarWidth) : expandedWidth
+        let hPad: CGFloat = 6 // ⚡️ VERY LOW PADDING
+        let playerPanelWidth: CGFloat = expandedWidth
         
-        if !hasAnyAccess {
-            HStack(spacing: 16) {
-                // 1. Icon Badge (Left Side)
-                ZStack {
-                    Circle()
-                        .fill(LinearGradient(colors: [Color.orange, Color.red], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 44, height: 44)
-                        .shadow(color: Color.orange.opacity(0.4), radius: 6, x: 0, y: 3)
-                    
-                    Image(systemName: "puzzlepiece.extension.fill")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(.white)
-                        .offset(x: -0.5, y: -0.5)
-                }
-                
-                // 2. Text & Button (Right Side)
-                VStack(alignment: .leading, spacing: 6) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Welcome to WaveNotch")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.white)
+        VStack(spacing: 0) {
+            if !hasAnyAccess {
+                HStack(spacing: 16) {
+                    // 1. Icon Badge (Left Side)
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient(colors: [Color.orange, Color.red], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 44, height: 44)
+                            .shadow(color: Color.orange.opacity(0.4), radius: 6, x: 0, y: 3)
                         
-                        Text("Enable a player or browser to begin.")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.gray)
+                        Image(systemName: "puzzlepiece.extension.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(.white)
+                            .offset(x: -0.5, y: -0.5)
                     }
                     
-                    Button(action: {
-                        SettingsWindowManager.shared.showSettings()
-                    }) {
-                        Text("Open Settings")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.black)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 4)
-                            .background(Color.white)
-                            .clipShape(Capsule())
-                            .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
+                    // 2. Text & Button (Right Side)
+                    VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Welcome to WaveNotch")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.white)
+                            
+                            Text("Enable a player or browser to begin.")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.gray)
+                        }
+                        
+                        Button(action: {
+                            SettingsWindowManager.shared.showSettings()
+                        }) {
+                            Text("Open Settings")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 4)
+                                .background(Color.white)
+                                .clipShape(Capsule())
+                                .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            .padding(.bottom, 8)
-            
-        } else {
-            HStack(alignment: .top, spacing: 0) {
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
                 
-                // ==========================================
-                // 🎵 LEFT SIDE: THE PLAYER
-                // ==========================================
+            } else {
                 VStack(spacing: 0) {
-                    
                     // 1. TOP ROW: Artwork + Title
                     HStack(alignment: .center) {
                         ZStack {
                             if hasMedia && nowPlaying.artworkURL != nil {
-                                // ⚡️ THE FIX: Removed the Button wrapper entirely!
                                 AsyncImage(url: nowPlaying.artworkURL) { image in
                                     image.resizable().aspectRatio(contentMode: .fill)
                                 } placeholder: { Color.gray.opacity(0.3) }
@@ -107,10 +105,15 @@ struct PlayerTabView: View {
                                     .transition(.dynamicPanRotate(direction: skipDirection))
                                 
                             } else {
-                                Image(systemName: "music.note")
-                                    .foregroundColor(nowPlaying.isPlaying ? Color.red : Color.gray)
-                                    .font(.system(size: 20, weight: .bold))
-                                    .transition(.opacity)
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(Color.white.opacity(0.1))
+                                    Image(systemName: "music.note")
+                                        .foregroundColor(nowPlaying.isPlaying ? .white : .gray)
+                                        .font(.system(size: 18, weight: .bold))
+                                }
+                                .frame(width: 40, height: 40)
+                                .transition(.opacity)
                             }
                         }
                         .frame(width: 40, height: 40)
@@ -155,12 +158,23 @@ struct PlayerTabView: View {
                         .padding(.leading, 6)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         
-                        if hasMedia && !showSplitView {
+                        if hasMedia && !isCompact {
                             Spacer()
                             mediaControls
                         }
                     }
                     .padding(.horizontal, hPad)
+                    
+                    // Stacking controls under title if space is constrained
+                    if hasMedia && isCompact {
+                        HStack {
+                            Spacer()
+                            mediaControls
+                            Spacer()
+                        }
+                        .padding(.top, 12)
+                        .padding(.bottom, 2)
+                    }
                     
                     // 2. THE PROGRESS BAR
                     if hasMedia {
@@ -206,16 +220,6 @@ struct PlayerTabView: View {
                         }
                         .padding(.horizontal, hPad)
                         .padding(.top, 8)
-                        
-                        if showSplitView {
-                            HStack {
-                                Spacer()
-                                mediaControls
-                                Spacer()
-                            }
-                            .padding(.top, 12)
-                            .padding(.bottom, 4)
-                        }
                     }
                     
                     // 3. LYRICS
@@ -268,79 +272,66 @@ struct PlayerTabView: View {
                 }
                 .frame(width: playerPanelWidth)
                 .contentShape(Rectangle())
+                .onHover { isMouseOver = $0 }
+                .onAppear {
+                    localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                        handleScroll(event: event)
+                        return event
+                    }
+                }
+                .onDisappear {
+                    if let monitor = localEventMonitor {
+                        NSEvent.removeMonitor(monitor)
+                    }
+                }
                 .gesture(
                     DragGesture(minimumDistance: 30)
                         .onEnded { value in
                             guard hasMedia else { return }
                             if value.translation.width > 30 {
-                                onSwipe(false) // Backward (based on executeSkip logic)
+                                onSwipe(false)
                             } else if value.translation.width < -30 {
-                                onSwipe(true) // Forward
+                                onSwipe(true)
                             }
                         }
                 )
-                
-                // ==========================================
-                // 📅 RIGHT SIDE: THE CALENDAR
-                // ==========================================
-                if showSplitView {
-                    Divider()
-                        .background(Color.white.opacity(0.1))
-                        .padding(.vertical, 8)
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image(systemName: "calendar")
-                                .foregroundColor(.accentColor)
-                            Text("Today")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 2)
-                        
-                        if calendarManager.todaysEvents.isEmpty {
-                            Text("No upcoming events today.")
-                                .font(.system(size: 11))
-                                .foregroundColor(.gray)
-                                .padding(.horizontal, 16)
-                        } else {
-                            ScrollView(.vertical, showsIndicators: false) {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    ForEach(calendarManager.todaysEvents, id: \.eventIdentifier) { event in
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(event.title)
-                                                .font(.system(size: 12, weight: .semibold))
-                                                .foregroundColor(.white)
-                                                .lineLimit(1)
-                                            
-                                            Text(formatEventTime(event))
-                                                .font(.system(size: 10))
-                                                .foregroundColor(.gray)
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal, 16)
-                            }
+                .onTapGesture(count: 2) {
+                    if hasMedia && enableDoubleClickToOpen {
+                        nowPlaying.openPlayingApp()
+                    }
+                }
+                .padding(.top, 12)
+            }
+        }
+        .padding(.bottom, 12)
+        .frame(maxHeight: .infinity)
+        .background(
+            Group {
+                if themeBackgroundType == "image" && themeGlassyWidgets {
+                    if #available(macOS 26.0, *) {
+                        Color.clear.glassEffect(in: .rect(cornerRadius: 16))
+                    } else {
+                        ZStack {
+                            VisualEffectView(material: .popover, blendingMode: .withinWindow, alpha: 0.5)
+                            LinearGradient(colors: [Color.white.opacity(0.15), Color.clear], startPoint: .topLeading, endPoint: .bottomTrailing)
                         }
                     }
-                    .frame(width: calendarWidth - 1)
-                    .padding(.top, 4)
                 }
             }
-            // ⚡️ THE FIX: Added global double-tap gesture to the entire expanded area!
-            .contentShape(Rectangle())
-            .onTapGesture(count: 2) {
-                if hasMedia && enableDoubleClickToOpen {
-                    nowPlaying.openPlayingApp()
+        )
+        .cornerRadius(16)
+        .overlay(
+            Group {
+                if themeBackgroundType == "image" && themeGlassyWidgets {
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
                 }
             }
-            // ---------------------------------------------------------
-            .onReceive(localTimer) { _ in
-                if nowPlaying.isPlaying && !isDragging {
-                    nowPlaying.currentTime += 0.1
-                    nowPlaying.updateActiveLyric()
-                }
+        )
+        .onReceive(localTimer) { _ in
+            if nowPlaying.isPlaying && !isDragging {
+                nowPlaying.currentTime += 0.1
+                nowPlaying.updateActiveLyric()
             }
         }
     }
@@ -398,10 +389,20 @@ struct PlayerTabView: View {
         return String(format: "%d:%02d", ts / 60, ts % 60)
     }
     
-    private func formatEventTime(_ event: EKEvent) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        if event.isAllDay { return "All Day" }
-        return "\(formatter.string(from: event.startDate)) - \(formatter.string(from: event.endDate))"
+    private func handleScroll(event: NSEvent) {
+        guard isMouseOver else { return }
+        let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
+        guard hasMedia else { return }
+        
+        guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }
+        guard Date().timeIntervalSince(lastSwipeTime) > 0.6 else { return }
+        
+        if event.scrollingDeltaX > 15 {
+            onSwipe(invertSwipeDirection ? false : true)
+            lastSwipeTime = Date()
+        } else if event.scrollingDeltaX < -15 {
+            onSwipe(invertSwipeDirection ? true : false)
+            lastSwipeTime = Date()
+        }
     }
 }

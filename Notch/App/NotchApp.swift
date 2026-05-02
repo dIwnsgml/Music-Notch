@@ -8,23 +8,18 @@ import PostHog
 struct DynamicIslandApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
-    // ⚡️ PostHog Privacy Toggle
     @AppStorage("enableAnalytics") var enableAnalytics = true
     
     // ⚡️ Onboarding Tracker
     @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
     
     init() {
-        // 1. Configure PostHog
         let configuration = PostHogConfig(
             apiKey: "phc_tptR6JFYUrtWPDsY4Mo2rZNF9BHnUduUirV58uaLpAjT",
             host: "https://us.i.posthog.com"
         )
-        
-        // 2. Start the engine
         PostHogSDK.shared.setup(configuration)
         
-        // 3. Opt the user out immediately if they disabled it in settings
         if !enableAnalytics {
             PostHogSDK.shared.optOut()
         } else {
@@ -59,6 +54,37 @@ struct DynamicIslandApp: App {
     }
 }
 
+// ⚡️ URL Handling for OAuth
+struct URLHandler: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .onOpenURL { url in
+                print("Received URL: \(url.absoluteString)")
+                
+                if url.scheme == "wavenotch" {
+                    if url.host == "callback" {
+                        if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
+                           let code = components.queryItems?.first(where: { $0.name == "code" })?.value {
+                            NotificationCenter.default.post(name: NSNotification.Name("SpotifyAuthCallback"), object: code)
+                        }
+                    }
+                } else if url.scheme == "com.googleusercontent.apps.989490326013-4ukfahi6t9cplb3mujovrrbtb1onoif0" {
+                    if url.path == "/google-callback" {
+                        if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
+                           let code = components.queryItems?.first(where: { $0.name == "code" })?.value {
+                            NotificationCenter.default.post(name: NSNotification.Name("GoogleAuthCallback"), object: code)
+                        }
+                    } else if url.path == "/youtube-callback" {
+                        if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
+                           let code = components.queryItems?.first(where: { $0.name == "code" })?.value {
+                            NotificationCenter.default.post(name: NSNotification.Name("YouTubeAuthCallback"), object: code)
+                        }
+                    }
+                }
+            }
+    }
+}
+
 class IslandPanel: NSPanel {
     override var canBecomeKey: Bool { return true }
     override var canBecomeMain: Bool { return true }
@@ -75,8 +101,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         
-        let panelWidth: CGFloat = 800
-        let panelHeight: CGFloat = 600
+        // ⚡️ Large transparent window to allow dynamic sizing of content within it
+        let panelWidth: CGFloat = 1000 
+        let panelHeight: CGFloat = 800
         
         panel = IslandPanel(
             contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
@@ -100,13 +127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hasShadow = false
         panel.isMovable = false
         
-        if let screen = NSScreen.main {
-            let x = (screen.frame.width - panelWidth) / 2
-            let y = screen.frame.height - panelHeight
-            panel.setFrameOrigin(NSPoint(x: x, y: y))
-        }
-        
-        let hostingView = NSHostingView(rootView: ContentView())
+        let hostingView = NSHostingView(rootView: ContentView().modifier(URLHandler()))
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         
@@ -117,16 +138,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         _ = SkyLightOperator.shared.delegateWindow(panel)
         
-        // ⚡️ Listen for manual centering requests from SwiftUI
-        NotificationCenter.default.addObserver(forName: NSNotification.Name("CenterApp"), object: nil, queue: .main) { _ in
+        // ⚡️ Initial center
+        centerPanel()
+        
+        // ⚡️ Listen for layout changes to re-center the window
+        NotificationCenter.default.addObserver(forName: NSNotification.Name("CenterAppWindow"), object: nil, queue: .main) { _ in
             self.centerPanel()
         }
     }
     
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        SettingsWindowManager.shared.showSettings()
+        return true
+    }
+    
     func centerPanel() {
         guard let screen = NSScreen.main else { return }
-        let x = (screen.frame.width - panel.frame.width) / 2
-        let y = screen.frame.height - panel.frame.height
+        let x = screen.frame.origin.x + (screen.frame.width - panel.frame.width) / 2
+        let y = screen.frame.maxY - panel.frame.height
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 }

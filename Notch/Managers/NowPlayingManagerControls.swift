@@ -27,7 +27,7 @@ extension NowPlayingManager {
                 """
             
             if let rawBrowser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
-                let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+                let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
                 let fastScript = self.buildAppleScript(browser: cleanBrowser, jsCode: jsCode, wIdx: wIdx, tIdx: tIdx)
                 _ = NSAppleScript(source: fastScript)?.executeAndReturnError(nil)
             }
@@ -37,7 +37,7 @@ extension NowPlayingManager {
     
     func skipBackward() {
         let rawBrowser = self.lastActiveBrowser ?? ""
-        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
         
         if cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify" {
             DispatchQueue.global(qos: .userInitiated).async {
@@ -64,7 +64,7 @@ extension NowPlayingManager {
         DispatchQueue.main.async { self.lastControlAction = UUID() }
         
         let rawBrowser = self.lastActiveBrowser ?? ""
-        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
         
         if cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify" {
             DispatchQueue.global(qos: .userInitiated).async { _ = NSAppleScript(source: "tell application \"Spotify\" to playpause")?.executeAndReturnError(nil); DispatchQueue.main.async { self.isPlaying.toggle() }; self.triggerFastFetch() }
@@ -72,7 +72,12 @@ extension NowPlayingManager {
         }
         
         DispatchQueue.global(qos: .userInitiated).async {
-            let jsCode = "(function() { var host = window.location.hostname; if (host.includes('music.youtube.com')) { var playBtn = document.querySelector('#play-pause-button'); if (playBtn) { playBtn.click(); return 'TOGGLED'; } } else if (host.includes('spotify.com')) { var spotBtn = document.querySelector('[data-testid=\"control-button-playpause\"]'); if (spotBtn) { spotBtn.click(); return 'TOGGLED'; } } var active = null; if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (media[i].duration > 1) { active = media[i]; break; } } if(!active && media.length > 0) active = media[0]; } if (active) { if (active.paused || active.ended) { active.play(); return 'PLAYED'; } else { active.pause(); return 'PAUSED'; } } return 'NOT_PLAYING'; })();"
+            var hostCheck = ""
+            if rawBrowser.hasSuffix("_YouTube Music") { hostCheck = "if (!host.includes('music.youtube.com')) return 'NOT_PLAYING';" }
+            else if rawBrowser.hasSuffix("_Spotify Web") { hostCheck = "if (!host.includes('spotify.com')) return 'NOT_PLAYING';" }
+            else if rawBrowser.hasSuffix("_YT") { hostCheck = "if (!host.includes('youtube.com')) return 'NOT_PLAYING';" }
+
+            let jsCode = "(function() { var host = window.location.hostname; \(hostCheck) if (host.includes('music.youtube.com')) { var playBtn = document.querySelector('#play-pause-button'); if (playBtn) { playBtn.click(); return 'TOGGLED'; } } else if (host.includes('spotify.com')) { var spotBtn = document.querySelector('[data-testid=\"control-button-playpause\"]'); if (spotBtn) { spotBtn.click(); return 'TOGGLED'; } } var active = null; if (host.includes('youtube.com')) { active = document.querySelector('.html5-main-video'); } else { var media = document.querySelectorAll('video, audio'); for(var i=0; i<media.length; i++) { if (media[i].duration > 1) { active = media[i]; break; } } if(!active && media.length > 0) active = media[0]; } if (active) { if (active.paused || active.ended) { active.play(); return 'PLAYED'; } else { active.pause(); return 'PAUSED'; } } return 'NOT_PLAYING'; })();"
             
             if let _ = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
                 let fastScript = self.buildAppleScript(browser: cleanBrowser, jsCode: jsCode, wIdx: wIdx, tIdx: tIdx)
@@ -98,7 +103,7 @@ extension NowPlayingManager {
     
     func skipForward() {
         let rawBrowser = self.lastActiveBrowser ?? ""
-        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
         
         if cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify" {
             DispatchQueue.global(qos: .userInitiated).async { _ = NSAppleScript(source: "tell application \"Spotify\" to next track")?.executeAndReturnError(nil); DispatchQueue.main.async { self.currentTime = 0.0 }; self.triggerFastFetch() }
@@ -115,7 +120,7 @@ extension NowPlayingManager {
         }
         
         let rawBrowser = self.lastActiveBrowser ?? ""
-        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
         
         if cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify" {
             DispatchQueue.global(qos: .userInitiated).async {
@@ -140,7 +145,7 @@ extension NowPlayingManager {
     
     func toggleLoop() {
         let rawBrowser = self.lastActiveBrowser ?? ""
-        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "")
+        let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
         let isTwoState = rawBrowser.hasSuffix("_YT") || cleanBrowser == "SpotifyNative" || cleanBrowser == "Spotify"
         
         // ⚡️ THE FIX: We calculate the next mode cleanly in Swift...
