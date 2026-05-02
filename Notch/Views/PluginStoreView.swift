@@ -460,6 +460,52 @@ struct PluginDetailView: View {
                         key: "plugin_youtube_playlists_auto_hide",
                         defaultValue: true
                     )
+                } else if plugin.id == "pomodoro_timer" {
+                    PluginSettingToggle(
+                        title: "Show timer in collapsed notch",
+                        description: "Use a clock progress icon on the left and the remaining time on the right.",
+                        key: "pomodoro_show_notch_timer",
+                        defaultValue: true
+                    )
+                    Divider().opacity(0.15)
+                    PluginSettingToggle(
+                        title: "Show timer banner while running",
+                        description: "Show the active Pomodoro countdown in the collapsed banner row.",
+                        key: "pomodoro_show_timer_banner",
+                        defaultValue: false
+                    )
+                    Divider().opacity(0.15)
+                    PomodoroSettingStepper(
+                        title: "Focus Session",
+                        key: "pomodoro_focus_minutes",
+                        range: 5...90,
+                        defaultValue: 25,
+                        suffix: "min"
+                    )
+                    Divider().opacity(0.15)
+                    PomodoroSettingStepper(
+                        title: "Short Break",
+                        key: "pomodoro_short_break_minutes",
+                        range: 1...30,
+                        defaultValue: 5,
+                        suffix: "min"
+                    )
+                    Divider().opacity(0.15)
+                    PomodoroSettingStepper(
+                        title: "Long Break",
+                        key: "pomodoro_long_break_minutes",
+                        range: 5...60,
+                        defaultValue: 15,
+                        suffix: "min"
+                    )
+                    Divider().opacity(0.15)
+                    PomodoroSettingStepper(
+                        title: "Long Break Every",
+                        key: "pomodoro_long_break_every",
+                        range: 2...8,
+                        defaultValue: 4,
+                        suffix: "rounds"
+                    )
                 } else {
                     Text("No additional settings for this plugin.")
                         .font(.system(size: 12))
@@ -522,11 +568,72 @@ struct PluginIcon: View {
             return .green
         case let id where id.contains("calendar"):
             return .blue
+        case let id where id.contains("pomodoro"):
+            return .red
         case let id where id.contains("weather"):
             return .orange
         default:
             return .accentColor
         }
+    }
+}
+
+struct PomodoroSettingStepper: View {
+    let title: String
+    let key: String
+    let range: ClosedRange<Int>
+    let suffix: String
+
+    @AppStorage var value: Int
+
+    private var numberFormatter: NumberFormatter {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .none
+        formatter.maximumFractionDigits = 0
+        return formatter
+    }
+
+    init(title: String, key: String, range: ClosedRange<Int>, defaultValue: Int, suffix: String) {
+        self.title = title
+        self.key = key
+        self.range = range
+        self.suffix = suffix
+        self._value = AppStorage(wrappedValue: defaultValue, key)
+    }
+
+    var body: some View {
+        Stepper(value: clampedValue, in: range, step: 1) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Spacer()
+                HStack(spacing: 6) {
+                    TextField("", value: clampedValue, formatter: numberFormatter)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .multilineTextAlignment(.trailing)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 58)
+                    Text(suffix)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .onAppear {
+            value = clamp(value)
+        }
+    }
+
+    private var clampedValue: Binding<Int> {
+        Binding(
+            get: { clamp(value) },
+            set: { value = clamp($0) }
+        )
+    }
+
+    private func clamp(_ rawValue: Int) -> Int {
+        min(max(rawValue, range.lowerBound), range.upperBound)
     }
 }
 

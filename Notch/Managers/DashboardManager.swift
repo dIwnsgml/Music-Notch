@@ -8,6 +8,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
     case youtubeQueue
     case youtubePlaylists
     case calendar
+    case pomodoro
     case weather
     
     var id: String { self.rawValue }
@@ -20,6 +21,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .youtubeQueue: return "YouTube Music Queue"
         case .youtubePlaylists: return "YouTube Music Playlists"
         case .calendar: return "Calendar"
+        case .pomodoro: return "Pomodoro Timer"
         case .weather: return "Weather"
         }
     }
@@ -32,6 +34,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .youtubeQueue: return UserDefaults.standard.bool(forKey: "plugin_youtube_queue_installed")
         case .youtubePlaylists: return UserDefaults.standard.bool(forKey: "plugin_youtube_playlists_installed")
         case .calendar: return UserDefaults.standard.bool(forKey: "plugin_google_calendar_installed")
+        case .pomodoro: return UserDefaults.standard.bool(forKey: "plugin_pomodoro_timer_installed")
         case .weather: return UserDefaults.standard.bool(forKey: "plugin_weather_installed")
         }
     }
@@ -94,6 +97,7 @@ class DashboardManager: ObservableObject {
         let ytQueueEnabled = UserDefaults.standard.bool(forKey: "plugin_youtube_queue_enabled")
         let ytPlaylistsEnabled = UserDefaults.standard.bool(forKey: "plugin_youtube_playlists_enabled")
         let calendarEnabled = UserDefaults.standard.bool(forKey: "plugin_google_calendar_enabled")
+        let pomodoroEnabled = UserDefaults.standard.bool(forKey: "plugin_pomodoro_timer_enabled")
         let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
         
         // ⚡️ NEW: Auto-hide logic for Spotify Plugins
@@ -147,6 +151,7 @@ class DashboardManager: ObservableObject {
                     }
                 }
             case .calendar: if calendarEnabled { widgets.append(.calendar) }
+            case .pomodoro: if pomodoroEnabled { widgets.append(.pomodoro) }
             case .weather: if weatherEnabled { widgets.append(.weather) }
             }
         }

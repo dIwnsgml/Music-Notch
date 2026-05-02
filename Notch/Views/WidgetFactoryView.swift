@@ -34,6 +34,7 @@ struct WidgetFactoryView: View {
                     case .youtubeQueue: YouTubeQueueWidget(nowPlaying: nowPlaying)
                     case .youtubePlaylists: YouTubePlaylistsWidget(nowPlaying: nowPlaying)
                     case .calendar: CalendarWidget()
+                    case .pomodoro: PomodoroTimerWidget(isCompact: isCompact)
                     case .weather: PlaceholderWidget(name: "Weather", icon: "cloud.sun.fill")
                     }
                 }
@@ -170,6 +171,298 @@ struct CalendarWidget: View {
         }
         
         return "All Day"
+    }
+}
+
+enum PomodoroMode: String {
+    case focus
+    case shortBreak
+    case longBreak
+
+    var title: String {
+        switch self {
+        case .focus: return "Focus"
+        case .shortBreak: return "Short Break"
+        case .longBreak: return "Long Break"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .focus: return "Study session"
+        case .shortBreak: return "Quick reset"
+        case .longBreak: return "Long reset"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .focus: return .red
+        case .shortBreak: return .green
+        case .longBreak: return .blue
+        }
+    }
+}
+
+final class PomodoroTimerManager: ObservableObject {
+    static let shared = PomodoroTimerManager()
+
+    @Published private(set) var mode: PomodoroMode
+    @Published private(set) var remainingSeconds: Int
+    @Published private(set) var totalSeconds: Int
+    @Published private(set) var isRunning = false
+    @Published private(set) var completedFocusSessions: Int
+    @Published private(set) var longBreakEvery: Int
+
+    private var timer: Timer?
+    private let defaults = UserDefaults.standard
+
+    private enum Key {
+        static let mode = "pomodoro_mode"
+        static let remainingSeconds = "pomodoro_remaining_seconds"
+        static let completedFocusSessions = "pomodoro_completed_focus_sessions"
+        static let focusMinutes = "pomodoro_focus_minutes"
+        static let shortBreakMinutes = "pomodoro_short_break_minutes"
+        static let longBreakMinutes = "pomodoro_long_break_minutes"
+        static let longBreakEvery = "pomodoro_long_break_every"
+    }
+
+    private init() {
+        let storedMode = defaults.string(forKey: Key.mode).flatMap(PomodoroMode.init(rawValue:)) ?? .focus
+        let storedCompleted = defaults.integer(forKey: Key.completedFocusSessions)
+        let total = Self.duration(for: storedMode, defaults: defaults)
+        let storedRemaining = defaults.object(forKey: Key.remainingSeconds) as? Int
+        let storedLongBreakEvery = Self.storedLongBreakEvery(defaults: defaults)
+
+        mode = storedMode
+        completedFocusSessions = storedCompleted
+        totalSeconds = total
+        remainingSeconds = min(max(storedRemaining ?? total, 0), total)
+        longBreakEvery = storedLongBreakEvery
+    }
+
+    var progress: Double {
+        guard totalSeconds > 0 else { return 0 }
+        return 1.0 - (Double(remainingSeconds) / Double(totalSeconds))
+    }
+
+    var timeText: String {
+        let minutes = remainingSeconds / 60
+        let seconds = remainingSeconds % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    var roundText: String {
+        let round = (completedFocusSessions % longBreakEvery) + 1
+        return "Round \(round)/\(longBreakEvery)"
+    }
+
+    func startPause() {
+        isRunning ? pause() : start()
+    }
+
+    func start() {
+        syncSettings()
+        if remainingSeconds <= 0 {
+            reset()
+        }
+        isRunning = true
+        scheduleTimer()
+    }
+
+    func pause() {
+        isRunning = false
+        timer?.invalidate()
+        timer = nil
+        persist()
+    }
+
+    func reset() {
+        pause()
+        totalSeconds = Self.duration(for: mode, defaults: defaults)
+        remainingSeconds = totalSeconds
+        persist()
+    }
+
+    func skip() {
+        advanceSession(keepRunning: isRunning)
+    }
+
+    func syncSettings() {
+        let newTotal = Self.duration(for: mode, defaults: defaults)
+        let newLongBreakEvery = Self.storedLongBreakEvery(defaults: defaults)
+        guard newTotal != totalSeconds || newLongBreakEvery != longBreakEvery else { return }
+
+        if newLongBreakEvery != longBreakEvery {
+            longBreakEvery = newLongBreakEvery
+        }
+
+        if newTotal != totalSeconds {
+            totalSeconds = newTotal
+            if isRunning {
+                remainingSeconds = min(remainingSeconds, newTotal)
+            } else {
+                remainingSeconds = newTotal
+            }
+        }
+
+        persist()
+    }
+
+    private func scheduleTimer() {
+        timer?.invalidate()
+        let newTimer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            self?.tick()
+        }
+        timer = newTimer
+        RunLoop.main.add(newTimer, forMode: .common)
+    }
+
+    private func tick() {
+        guard isRunning else { return }
+
+        if remainingSeconds > 0 {
+            remainingSeconds -= 1
+        }
+
+        if remainingSeconds <= 0 {
+            advanceSession(keepRunning: true)
+        } else {
+            persist()
+        }
+    }
+
+    private func advanceSession(keepRunning: Bool) {
+        if mode == .focus {
+            completedFocusSessions += 1
+            mode = completedFocusSessions % longBreakEvery == 0 ? .longBreak : .shortBreak
+        } else {
+            mode = .focus
+        }
+
+        totalSeconds = Self.duration(for: mode, defaults: defaults)
+        remainingSeconds = totalSeconds
+        isRunning = keepRunning
+        persist()
+
+        if keepRunning && timer == nil {
+            scheduleTimer()
+        }
+    }
+
+    private func persist() {
+        defaults.set(mode.rawValue, forKey: Key.mode)
+        defaults.set(remainingSeconds, forKey: Key.remainingSeconds)
+        defaults.set(completedFocusSessions, forKey: Key.completedFocusSessions)
+    }
+
+    private static func duration(for mode: PomodoroMode, defaults: UserDefaults) -> Int {
+        let minutes: Int
+        switch mode {
+        case .focus:
+            minutes = storedMinutes(forKey: Key.focusMinutes, defaultValue: 25, defaults: defaults)
+        case .shortBreak:
+            minutes = storedMinutes(forKey: Key.shortBreakMinutes, defaultValue: 5, defaults: defaults)
+        case .longBreak:
+            minutes = storedMinutes(forKey: Key.longBreakMinutes, defaultValue: 15, defaults: defaults)
+        }
+        return minutes * 60
+    }
+
+    private static func storedMinutes(forKey key: String, defaultValue: Int, defaults: UserDefaults) -> Int {
+        let stored = defaults.integer(forKey: key)
+        return stored > 0 ? stored : defaultValue
+    }
+
+    private static func storedLongBreakEvery(defaults: UserDefaults) -> Int {
+        let stored = defaults.integer(forKey: Key.longBreakEvery)
+        return min(max(stored > 0 ? stored : 4, 2), 8)
+    }
+}
+
+struct PomodoroTimerWidget: View {
+    @StateObject private var timer = PomodoroTimerManager.shared
+    let isCompact: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: isCompact ? 8 : 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "timer")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(timer.mode.color)
+                Text("Pomodoro")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white.opacity(0.9))
+                Spacer()
+                Text(timer.roundText)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.55))
+            }
+
+            HStack(spacing: isCompact ? 10 : 12) {
+                progressRing
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(timer.mode.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(timer.mode.color)
+                    Text(timer.timeText)
+                        .font(.system(size: isCompact ? 26 : 30, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(.white)
+                    Text(timer.isRunning ? "In progress" : timer.mode.subtitle)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.55))
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 8) {
+                pomodoroButton(
+                    systemName: timer.isRunning ? "pause.fill" : "play.fill",
+                    label: timer.isRunning ? "Pause" : "Start",
+                    isPrimary: true,
+                    action: timer.startPause
+                )
+                pomodoroButton(systemName: "arrow.counterclockwise", label: "Reset", action: timer.reset)
+                pomodoroButton(systemName: "forward.end.fill", label: "Skip", action: timer.skip)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            timer.syncSettings()
+        }
+    }
+
+    private var progressRing: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.10), lineWidth: 6)
+            Circle()
+                .trim(from: 0, to: max(0.001, timer.progress))
+                .stroke(timer.mode.color, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(Int(timer.progress * 100))%")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundColor(.white.opacity(0.75))
+        }
+        .frame(width: isCompact ? 54 : 58, height: isCompact ? 54 : 58)
+    }
+
+    private func pomodoroButton(systemName: String, label: String, isPrimary: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(isPrimary ? .black : .white.opacity(0.85))
+                .frame(width: 32, height: 26)
+                .background(isPrimary ? timer.mode.color : Color.white.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(label)
     }
 }
 

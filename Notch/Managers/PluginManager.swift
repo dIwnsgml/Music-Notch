@@ -51,6 +51,15 @@ class PluginManager: ObservableObject {
             storageKeyBase: "plugin_google_calendar"
         ),
         WaveNotchPlugin(
+            id: "pomodoro_timer",
+            name: "Pomodoro Timer",
+            description: "A focused study timer with work sessions, short breaks, long breaks, and quick controls directly in the notch.",
+            iconName: "timer",
+            assetImageName: nil,
+            category: .productivity,
+            storageKeyBase: "plugin_pomodoro_timer"
+        ),
+        WaveNotchPlugin(
             id: "weather",
             name: "Weather",
             description: "Real-time local weather conditions, temperature, and precipitation forecasts displayed beautifully in your Dynamic Island.",

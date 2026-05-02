@@ -12,6 +12,7 @@ struct ContentView: View {
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
     @State private var currentTab: AppTab = .player
     @StateObject private var dashboardManager = DashboardManager.shared
+    @ObservedObject private var pomodoroTimer = PomodoroTimerManager.shared
 
     // ⚡️ USER SETTINGS
     @AppStorage("collapsedWidth") var storedCollapsedWidth: Double = 300.0
@@ -47,6 +48,9 @@ struct ContentView: View {
 
     @AppStorage("plugin_spotify_queue_enabled") var spotifyQueueEnabled = false
     @AppStorage("plugin_spotify_playlists_enabled") var spotifyPlaylistsEnabled = false
+    @AppStorage("plugin_pomodoro_timer_enabled") var pomodoroPluginEnabled = false
+    @AppStorage("pomodoro_show_notch_timer") var showPomodoroNotchTimer = true
+    @AppStorage("pomodoro_show_timer_banner") var showPomodoroTimerBanner = false
 
     @State private var isShowingBanner = false
     @State private var bannerText: String = ""
@@ -86,6 +90,7 @@ struct ContentView: View {
     let notchBlendRadius: CGFloat = 16
     let expandedRowSpacing: CGFloat = 6
     let playlistWidgetHeight: CGFloat = 144
+    let pomodoroWidgetHeight: CGFloat = 160
     let playerWidgetHeightBuffer: CGFloat = 18
 
     var collapsedWidth: CGFloat { CGFloat(storedCollapsedWidth) }
@@ -126,7 +131,8 @@ struct ContentView: View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
 
         let currentWidth: CGFloat = isExpanded ? expandedWidth : collapsedWidth
-        let currentCollapsedHeight: CGFloat = (isShowingBanner || isShowingLyricBanner) ? (notchHeight + bannerHeightAddon) : notchHeight
+        let showsCollapsedBanner = isShowingBanner || isShowingLyricBanner || shouldShowPomodoroTimerBanner
+        let currentCollapsedHeight: CGFloat = showsCollapsedBanner ? (notchHeight + bannerHeightAddon) : notchHeight
         let currentHeight: CGFloat = isExpanded ? expandedHeight : currentCollapsedHeight
 
         VStack(spacing: 0) {
@@ -161,7 +167,7 @@ struct ContentView: View {
                 : .spring(response: 0.30, dampingFraction: 1.0, blendDuration: 0.1),
                 value: isExpanded
             )
-            .animation(.spring(response: 0.30, dampingFraction: 1.0, blendDuration: 0.1), value: isShowingBanner || isShowingLyricBanner)
+            .animation(.spring(response: 0.30, dampingFraction: 1.0, blendDuration: 0.1), value: showsCollapsedBanner)
 
             Spacer()
         }
@@ -334,10 +340,15 @@ struct ContentView: View {
 
     @ViewBuilder
     private func collapsedLayer(hasMedia: Bool, currentCollapsedHeight: CGFloat) -> some View {
+        let showTimerIndicator = shouldShowPomodoroNotchTimer
+        let showTimerBanner = shouldShowPomodoroTimerBanner
+
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 ZStack {
-                    if hasMedia && nowPlaying.artworkURL != nil {
+                    if showTimerIndicator {
+                        pomodoroCollapsedProgressIcon
+                    } else if hasMedia && nowPlaying.artworkURL != nil {
                         AsyncImage(url: nowPlaying.artworkURL) { image in
                             image.resizable().aspectRatio(contentMode: .fill)
                         } placeholder: { Color.gray.opacity(0.3) }
@@ -360,12 +371,20 @@ struct ContentView: View {
 
                 Spacer()
 
-                WaveformView(isPlaying: nowPlaying.isPlaying, color: nowPlaying.artworkDominantColor).frame(width: 24, alignment: .trailing)
+                if showTimerIndicator {
+                    Text(pomodoroTimer.timeText)
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(pomodoroTimer.mode.color)
+                        .frame(width: 56, alignment: .trailing)
+                } else {
+                    WaveformView(isPlaying: nowPlaying.isPlaying, color: nowPlaying.artworkDominantColor).frame(width: 24, alignment: .trailing)
+                }
             }
             .padding(.horizontal, 24)
             .frame(height: notchHeight)
 
-            let showAnyBanner: Bool = (isShowingBanner || isShowingLyricBanner) && hasMedia
+            let showAnyBanner: Bool = isShowingBanner || showTimerBanner || (isShowingLyricBanner && hasMedia)
             if showAnyBanner {
                 ZStack {
                     if isShowingBanner {
@@ -373,6 +392,19 @@ struct ContentView: View {
                             .foregroundColor(nowPlaying.artworkDominantColor)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                             .id("banner_\(bannerText)")
+                    } else if showTimerBanner {
+                        HStack(spacing: 6) {
+                            Image(systemName: "timer")
+                                .font(.system(size: 11, weight: .bold))
+                            Text("\(pomodoroTimer.mode.title) \(pomodoroTimer.timeText)")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                            Text(pomodoroTimer.roundText)
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white.opacity(0.45))
+                        }
+                        .foregroundColor(pomodoroTimer.mode.color)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                     } else if isShowingLyricBanner {
                         MarqueeText(text: currentLyricText, font: .system(size: 12, weight: .bold), alignment: .center)
                             .foregroundColor(nowPlaying.artworkDominantColor)
@@ -400,11 +432,35 @@ struct ContentView: View {
         .zIndex(2)
     }
 
+    private var shouldShowPomodoroNotchTimer: Bool {
+        pomodoroPluginEnabled && showPomodoroNotchTimer
+    }
+
+    private var shouldShowPomodoroTimerBanner: Bool {
+        pomodoroPluginEnabled && showPomodoroTimerBanner && pomodoroTimer.isRunning && !isExpanded
+    }
+
+    private var pomodoroCollapsedProgressIcon: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.14), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: max(0.001, pomodoroTimer.progress))
+                .stroke(pomodoroTimer.mode.color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Image(systemName: "clock.fill")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(.white.opacity(0.9))
+        }
+        .frame(width: 22, height: 22)
+    }
+
     private func expandedWidgetHeight(for widget: NotchWidgetType, playerHeight: CGFloat) -> CGFloat {
         switch widget {
         case .player: return playerHeight
         case .spotifyQueue, .youtubeQueue: return 250
         case .spotifyPlaylists, .youtubePlaylists: return playlistWidgetHeight
+        case .pomodoro: return pomodoroWidgetHeight
         case .weather: return 100
         default: return 160
         }
