@@ -29,6 +29,17 @@ extension Array {
     }
 }
 
+extension View {
+    @ViewBuilder
+    func clipped(when shouldClip: Bool) -> some View {
+        if shouldClip {
+            clipped()
+        } else {
+            self
+        }
+    }
+}
+
 extension Color {
     init?(hex: String) {
         var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)

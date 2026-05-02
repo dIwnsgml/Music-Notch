@@ -15,9 +15,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case shortcuts = "Shortcuts"
     case integrations = "Integrations"
     case plugins = "Plugins"
-    
+
     var id: String { self.rawValue }
-    
+
     var icon: String {
         switch self {
         case .general: return "gearshape"
@@ -34,7 +34,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @AppStorage("lastSettingsTab") var selectedTab: SettingsTab = .general
     @State private var showSidebar = true
-    
+
     // ⚡️ GENERAL
     @AppStorage("collapsedWidth") var collapsedWidth: Double = 300.0
     @AppStorage("showSettingsButton") var showSettingsButton = true
@@ -45,8 +45,7 @@ struct SettingsView: View {
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
     @AppStorage("enableAnalytics") var enableAnalytics = true
-    @AppStorage("expandedPadding") var expandedPadding: Double = 16.0
-    
+
     // ⚡️ THEME
     @AppStorage("themeBackgroundType") var themeBackgroundType: String = "color"
     @AppStorage("themeBackgroundColorHex") var themeBackgroundColorHex: String = "000000"
@@ -54,7 +53,7 @@ struct SettingsView: View {
     @AppStorage("themeBackgroundOpacity") var themeBackgroundOpacity: Double = 1.0
     @AppStorage("themeBackgroundBlur") var themeBackgroundBlur: Double = 0.0
     @AppStorage("themeGlassyWidgets") var themeGlassyWidgets: Bool = true
-    
+
     // ⚡️ LYRICS & BANNER
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
@@ -64,9 +63,9 @@ struct SettingsView: View {
     @AppStorage("lyricDimming") var lyricDimming: Double = 0.3
     @AppStorage("lyricBlurAmount") var lyricBlurAmount: Double = 0.4
     @AppStorage("lyricOffset") var lyricOffset: Double = 0.0
-    
+
     @State private var hasAccessibilityAccess = false
-    
+
     // ⚡️ INTEGRATIONS
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
@@ -74,19 +73,19 @@ struct SettingsView: View {
     @AppStorage("enableBrave") var enableBrave = false
     @AppStorage("enableEdge") var enableEdge = false
     @AppStorage("enableSafari") var enableSafari = false
-    
+
     @State private var isAppleMusicInstalled = true
     @State private var isSpotifyInstalled = false
     @State private var isChromeInstalled = false
     @State private var isBraveInstalled = false
     @State private var isEdgeInstalled = false
     @State private var isSafariInstalled = true
-    
+
     @State private var browserNeedingHelp: String? = nil
     @State private var showHelpAlert = false
-    
+
     @State private var updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
-    
+
     var body: some View {
         NavigationStack {
             HStack(spacing: 0) {
@@ -96,12 +95,12 @@ struct SettingsView: View {
                             Label(tab.rawValue, systemImage: tab.icon).tag(tab)
                         }
                         .listStyle(.sidebar)
-                        
+
                         Divider()
-                        
+
                         // ⚡️ NEW: Bottom Sidebar Actions
                         VStack(spacing: 0) {
-                            
+
                             // Check for Updates Button
                             Button(action: { updaterController.updater.checkForUpdates() }) {
                                 HStack {
@@ -114,7 +113,7 @@ struct SettingsView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            
+
                             // Quit Button
                             Button(action: { NSApplication.shared.terminate(nil) }) {
                                 HStack {
@@ -128,11 +127,11 @@ struct SettingsView: View {
                             }
                             .buttonStyle(.plain)
                             .foregroundColor(.red)
-                            
+
                             // ⚡️ NEW: Dynamic Version Label
                             let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
                             let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
-                            
+
                             Text("Version \(appVersion) (\(buildNumber))")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
@@ -147,7 +146,7 @@ struct SettingsView: View {
                     .transition(.move(edge: .leading))
                     Divider()
                 }
-                
+
                 Group {
                     if selectedTab == .plugins {
                         PluginStoreView()
@@ -203,7 +202,7 @@ struct SettingsView: View {
             )
         }
     }
-    
+
     // ---------------------------------------------------------
     // ⌨️ SHORTCUTS TAB
     // ---------------------------------------------------------
@@ -216,7 +215,7 @@ struct SettingsView: View {
             } footer: {
                 Text("Completely vanishes the notch from your screen until pressed again.")
             }
-            
+
             Section {
                 KeyboardShortcuts.Recorder("Toggle Live Lyrics in Player", name: .toggleLiveLyrics)
                 KeyboardShortcuts.Recorder("Toggle Menu Bar Lyrics", name: .toggleBannerLyrics)
@@ -224,24 +223,24 @@ struct SettingsView: View {
             } header: {
                 Text("Toggles")
             }
-            
+
             Section {
                 KeyboardShortcuts.Recorder("Increase Lyric Sync (+0.5s)", name: .increaseOffset)
                 KeyboardShortcuts.Recorder("Decrease Lyric Sync (-0.5s)", name: .decreaseOffset)
             } header: {
                 Text("Lyric Synchronization")
             }
-            
+
             Section {
                 KeyboardShortcuts.Recorder("Increase Visible Lines", name: .increaseLines)
                 KeyboardShortcuts.Recorder("Decrease Visible Lines", name: .decreaseLines)
-                
+
                 KeyboardShortcuts.Recorder("Increase Hover Delay", name: .increaseDelay)
                 KeyboardShortcuts.Recorder("Decrease Hover Delay", name: .decreaseDelay)
             } header: {
                 Text("UI Adjustments")
             }
-            
+
             Section {
                 Button("Reset All Shortcuts") {
                     KeyboardShortcuts.reset(.toggleAppVisibility, .toggleLiveLyrics, .toggleBannerLyrics, .toggleBanner, .increaseOffset, .decreaseOffset, .increaseLines, .decreaseLines, .increaseDelay, .decreaseDelay)
@@ -250,7 +249,7 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     // ---------------------------------------------------------
     // 🎨 THEME TAB
     // ---------------------------------------------------------
@@ -263,7 +262,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
             } header: { Text("Background Mode") }
-            
+
             if themeBackgroundType == "color" {
                 Section {
                     ColorPicker("Notch Background Color", selection: Binding(
@@ -288,12 +287,12 @@ struct SettingsView: View {
                                 .overlay(Image(systemName: "photo").foregroundColor(.gray))
                                 .padding(.trailing, 8)
                         }
-                        
+
                         VStack(alignment: .leading, spacing: 8) {
                             Text(themeBackgroundImagePath.isEmpty ? "No image selected" : (URL(fileURLWithPath: themeBackgroundImagePath).lastPathComponent))
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
-                            
+
                             HStack {
                                 Button("Choose Image...") {
                                     let panel = NSOpenPanel()
@@ -301,22 +300,22 @@ struct SettingsView: View {
                                     panel.allowsMultipleSelection = false
                                     panel.canChooseDirectories = false
                                     panel.canChooseFiles = true
-                                    
+
                                     if panel.runModal() == .OK, let url = panel.url {
                                         // Save a copy to our app support folder to ensure we always have access
                                         if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
                                             let appFolder = appSupport.appendingPathComponent("WaveNotch", isDirectory: true)
                                             try? FileManager.default.createDirectory(at: appFolder, withIntermediateDirectories: true)
-                                            
+
                                             let destURL = appFolder.appendingPathComponent("custom_bg_\(UUID().uuidString).\(url.pathExtension)")
                                             do {
                                                 try FileManager.default.copyItem(at: url, to: destURL)
-                                                
+
                                                 // Clean up old image if there was one
                                                 if !themeBackgroundImagePath.isEmpty {
                                                     try? FileManager.default.removeItem(atPath: themeBackgroundImagePath)
                                                 }
-                                                
+
                                                 themeBackgroundImagePath = destURL.path
                                             } catch {
                                                 print("Failed to copy background image: \(error)")
@@ -324,7 +323,7 @@ struct SettingsView: View {
                                         }
                                     }
                                 }
-                                
+
                                 if !themeBackgroundImagePath.isEmpty {
                                     Button("Clear") {
                                         if !themeBackgroundImagePath.isEmpty {
@@ -338,7 +337,7 @@ struct SettingsView: View {
                     }
                 } header: { Text("Image Settings") }
             }
-            
+
             Section {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Background Opacity: \(Int(themeBackgroundOpacity * 100))%")
@@ -349,7 +348,7 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
-                
+
                 if themeBackgroundType == "image" {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Background Blur: \(Int(themeBackgroundBlur))")
@@ -362,7 +361,7 @@ struct SettingsView: View {
                     .padding(.vertical, 4)
                 }
             } header: { Text("Visuals") }
-            
+
             Section {
                 Toggle("Glassy Widget Backgrounds", isOn: $themeGlassyWidgets)
                 Text("Applies a native macOS frosted glass effect to widgets when a custom theme is active, making text easier to read.")
@@ -387,20 +386,10 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Expanded View Padding: \(Int(expandedPadding))px")
-                    HStack(spacing: 8) {
-                        Text("8px").font(.caption).foregroundColor(.secondary).frame(width: 40, alignment: .leading)
-                        Slider(value: $expandedPadding, in: 8...40, step: 2).labelsHidden()
-                        Text("40px").font(.caption).foregroundColor(.secondary).frame(width: 40, alignment: .trailing)
-                    }
-                }
-                .padding(.vertical, 4)
-                
+
                 Toggle("Show Settings Gear in Expanded View", isOn: $showSettingsButton)
             } header: { Text("Appearance") }
-            
+
             Section {
                 Toggle("Expand Automatically on Hover", isOn: $enableHoverToExpand)
                 if enableHoverToExpand {
@@ -420,7 +409,7 @@ struct SettingsView: View {
                 Toggle("Show Cinematic Glow on Song Change", isOn: $showGlowEffect)
                 Toggle("Invert Swipe Direction", isOn: $invertSwipeDirection)
             } header: { Text("App Behavior") }
-            
+
             Section {
                 HStack {
                     Text("Accessibility Access")
@@ -432,7 +421,7 @@ struct SettingsView: View {
                     }
                 }
             } header: { Text("System Permissions") }
-            
+
             Section {
                 Toggle("Share Anonymous Usage Data", isOn: $enableAnalytics)
                     .onChange(of: enableAnalytics) { newValue in
@@ -449,7 +438,7 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     // ---------------------------------------------------------
     // 🎵 LYRICS & BANNER TAB
     // ---------------------------------------------------------
@@ -457,7 +446,7 @@ struct SettingsView: View {
         Group {
             Section {
                 Toggle("Show Banner on Media Control", isOn: $showBannerOnControl)
-                
+
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Banner Duration: \(bannerDuration, specifier: "%.1f") sec")
                     HStack(spacing: 8) {
@@ -467,18 +456,18 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
-                
+
             } header: {
                 Text("Notch Banner")
             }
-            
+
             Section {
                 Toggle("Enable Live Lyrics in Player", isOn: $showLyrics)
                 Toggle("Show Continuous Lyrics in Menu Bar", isOn: $showBannerLyrics)
             } header: {
                 Text("Lyrics Display")
             }
-            
+
             if showLyrics {
                 Section {
                     Picker("Visible Lines", selection: $visibleLyricLines) {
@@ -487,7 +476,7 @@ struct SettingsView: View {
                         Text("5 Lines").tag(5)
                     }
                     .pickerStyle(.segmented)
-                    
+
                     if visibleLyricLines > 1 {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Background Dimming")
@@ -498,7 +487,7 @@ struct SettingsView: View {
                             }
                         }
                         .padding(.vertical, 4)
-                        
+
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Background Blur")
                             HStack(spacing: 8) {
@@ -512,7 +501,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Lyrics Appearance")
                 }
-                
+
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
                         let offsetText = lyricOffset == 0.0 ? "0.0 s" : String(format: "%+.1f s", lyricOffset)
@@ -532,13 +521,13 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     // ---------------------------------------------------------
     // 🧩 INTEGRATIONS TAB
     // ---------------------------------------------------------
     private var integrationsContent: some View {
         Group {
-            
+
             Section {
                 if isAppleMusicInstalled {
                     Toggle("Apple Music App", isOn: $enableAppleMusic)
@@ -549,7 +538,7 @@ struct SettingsView: View {
                         .onChange(of: enableSpotify) { newValue in if newValue { triggerPermission(for: "Spotify") } }
                 }
             } header: { Text("Native Players") }
-            
+
             Section {
                 if isSafariInstalled { browserToggle(title: "Safari", isOn: $enableSafari, internalName: "Safari") }
                 if isChromeInstalled { browserToggle(title: "Google Chrome", isOn: $enableChrome, internalName: "Google Chrome") }
@@ -558,7 +547,7 @@ struct SettingsView: View {
             } header: { Text("Web Browsers") }
         }
     }
-    
+
     // ---------------------------------------------------------
     // ⚡️ HELPERS
     // ---------------------------------------------------------
@@ -572,7 +561,7 @@ struct SettingsView: View {
             .onChange(of: isOn.wrappedValue) { newValue in
                 if newValue {
                     triggerPermission(for: internalName)
-                    
+
                     if !testJavaScriptAccess(for: internalName) {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                             isOn.wrappedValue = false
@@ -582,9 +571,9 @@ struct SettingsView: View {
                     }
                 }
             }
-            
+
             Spacer()
-            
+
             Button(action: {
                 browserNeedingHelp = title
                 showHelpAlert = true
@@ -596,8 +585,8 @@ struct SettingsView: View {
             .help("Setup Instructions")
         }
     }
-    
-    
+
+
     func testJavaScriptAccess(for browser: String) -> Bool {
         let scriptSource: String
         if browser == "Safari" {
@@ -631,11 +620,11 @@ struct SettingsView: View {
         }
         return false
     }
-    
+
     func checkAppExists(bundleID: String) -> Bool {
         return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
     }
-    
+
     func toggleLaunchAtLogin(enabled: Bool) {
         do {
             if enabled { try SMAppService.mainApp.register() }
@@ -644,13 +633,13 @@ struct SettingsView: View {
             print("Login Item Error: \(error)")
         }
     }
-    
+
     func triggerPermission(for appName: String) {
         let script = "tell application \"\(appName)\" to running"
         var error: NSDictionary?
         if let appleScript = NSAppleScript(source: script) { appleScript.executeAndReturnError(&error) }
     }
-    
+
     func requestAccessibilityAccess() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         let accessEnabled = AXIsProcessTrustedWithOptions(options)
@@ -667,7 +656,7 @@ struct SettingsView: View {
 struct DashboardSettingsView: View {
     @ObservedObject var dashboardObject = DashboardManager.shared
     @State private var localOrder: [NotchWidgetType] = []
-    
+
     @AppStorage("plugin_player_enabled") var playerEnabled = true
     @AppStorage("plugin_spotify_queue_enabled") var spotifyQueueEnabled = false
     @AppStorage("plugin_spotify_playlists_enabled") var spotifyPlaylistsEnabled = false
@@ -675,16 +664,42 @@ struct DashboardSettingsView: View {
     @AppStorage("plugin_youtube_playlists_enabled") var ytPlaylistsEnabled = false
     @AppStorage("plugin_google_calendar_enabled") var calendarEnabled = false
     @AppStorage("plugin_weather_enabled") var weatherEnabled = false
-    
+    @AppStorage("expandedPadding") var expandedPadding: Double = 16.0
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Dashboard Layout")
                 .font(.system(size: 28, weight: .bold))
-            
+
             Text("Drag and drop to prioritize how widgets appear side-by-side. You can now also choose whether to display the Music Player.")
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
-            
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Expanded Padding: \(Int(expandedPadding))px")
+                    .font(.system(size: 14, weight: .semibold))
+
+                HStack(spacing: 8) {
+                    Text("8px")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 40, alignment: .leading)
+                    Slider(value: $expandedPadding, in: 8...40, step: 2)
+                        .labelsHidden()
+                    Text("40px")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 40, alignment: .trailing)
+                }
+            }
+            .padding(14)
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+
             VStack(spacing: 0) {
                 List {
                     ForEach(localOrder, id: \.self) { widget in
@@ -693,13 +708,13 @@ struct DashboardSettingsView: View {
                                 .foregroundColor(.gray)
                                 .font(.system(size: 16, weight: .bold))
                                 .frame(width: 20)
-                            
+
                             Text(widget.displayName)
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(.white)
-                            
+
                             Spacer()
-                            
+
                             Toggle("", isOn: binding(for: widget))
                                 .toggleStyle(.switch)
                                 .labelsHidden()
@@ -727,7 +742,7 @@ struct DashboardSettingsView: View {
             localOrder = dashboardObject.getWidgetOrder()
         }
     }
-    
+
     private func binding(for widget: NotchWidgetType) -> Binding<Bool> {
         switch widget {
         case .player: return $playerEnabled
