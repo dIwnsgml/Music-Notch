@@ -2,6 +2,11 @@ import SwiftUI
 import Combine
 import KeyboardShortcuts
 
+enum AppTab {
+    case player
+    case playlist
+}
+
 struct ContentView: View {
     @State private var isExpanded = false
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
@@ -133,25 +138,7 @@ struct ContentView: View {
                 collapsedLayer(hasMedia: hasMedia, currentCollapsedHeight: currentCollapsedHeight)
                 expandedLayer(expandedHeight: expandedHeight)
 
-                // 3. SETTINGS ICON
-                if isExpanded && showSettingsButton {
-                    HStack {
-                        Spacer()
-                        Button(action: { SettingsWindowManager.shared.showSettings() }) {
-                            Image(systemName: "gearshape.fill")
-                                .font(.system(size: 13))
-                                .foregroundColor(.white.opacity(0.3))
-                        }
-                        .buttonStyle(.plain)
-                        .frame(width: 24, height: 24)
-                    }
-                    .padding(.trailing, 20)
-                    .padding(.top, 10)
-                    .zIndex(4)
-                }
-                .padding(.trailing, 20)
-                .padding(.top, notchHeight + 6)
-                .zIndex(5)
+                settingsButtonLayer
             }
             .frame(width: currentWidth, height: currentHeight, alignment: .top)
             .onChange(of: currentWidth) { _, _ in
@@ -178,19 +165,6 @@ struct ContentView: View {
 
             Spacer()
         }
-        .contextMenu {
-            Button(action: { SettingsWindowManager.shared.showSettings() }) {
-                Text("Settings")
-                Image(systemName: "gearshape")
-            }
-            Button(action: { NSApplication.shared.terminate(nil) }) {
-                Text("Quit WaveNotch")
-                Image(systemName: "power")
-            }
-        }
-        .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: 16))
-        .animation(.spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1), value: isExpanded)
-        .animation(.spring(response: 0.30, dampingFraction: 1.0, blendDuration: 0.1), value: isShowingBanner || isShowingLyricBanner)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .opacity(isAppHidden ? 0 : 1)
         .allowsHitTesting(!isAppHidden)
@@ -235,14 +209,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: nowPlaying.currentSong) { _, newSong in
-            guard newSong != "No Music" && newSong != "NOT_PLAYING" else { return }
-            if showGlowEffect {
-                glowOpacity = 0.0; glowRotation = 0.0
-                withAnimation(.easeIn(duration: 1.2)) { glowOpacity = 1.0 }
-                withAnimation(.easeInOut(duration: 5.0)) { glowRotation = 360 }
-                withAnimation(.easeOut(duration: 2.0).delay(3.0)) { glowOpacity = 0.0 }
-            }
-            triggerBanner(text: newSong, duration: bannerDuration)
+            handleSongChange(newSong)
         }
         .onReceive(hoverCheckTimer) { _ in
             if !isExpanded && nowPlaying.isPlaying {
@@ -344,6 +311,25 @@ struct ContentView: View {
             )
             .shadow(color: Color.black.opacity(0.5), radius: 12, y: 6)
             .zIndex(1)
+    }
+
+    @ViewBuilder
+    private var settingsButtonLayer: some View {
+        if isExpanded && showSettingsButton {
+            HStack {
+                Spacer()
+                Button(action: { SettingsWindowManager.shared.showSettings() }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.3))
+                }
+                .buttonStyle(.plain)
+                .frame(width: 24, height: 24)
+            }
+            .padding(.trailing, 20)
+            .padding(.top, 10)
+            .zIndex(4)
+        }
     }
 
     @ViewBuilder
@@ -552,6 +538,21 @@ struct ContentView: View {
         triggerBanner(text: forward ? "Skipped Forward" : "Skipped Back", duration: 1.5)
     }
 
+    private func handleSongChange(_ newSong: String) {
+        guard newSong != "No Music" else { return }
+        guard newSong != "NOT_PLAYING" else { return }
+
+        if showGlowEffect {
+            glowOpacity = 0.0
+            glowRotation = 0.0
+            withAnimation(.easeIn(duration: 1.2)) { glowOpacity = 1.0 }
+            withAnimation(.easeInOut(duration: 5.0)) { glowRotation = 360 }
+            withAnimation(.easeOut(duration: 2.0).delay(3.0)) { glowOpacity = 0.0 }
+        }
+
+        triggerBanner(text: newSong, duration: bannerDuration)
+    }
+
     private func loadThemeImage() {
         guard themeBackgroundType == "image", !themeBackgroundImagePath.isEmpty else {
             cachedThemeImage = nil
@@ -617,7 +618,7 @@ struct ContentView: View {
             let sleepTime = UInt64(duration * 1_000_000_000)
             bannerTask?.cancel()
             bannerTask = Task {
-                try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: sleepTime)
                 guard !Task.isCancelled else { return }
                 await MainActor.run { withAnimation { isShowingBanner = false }; updateLyricBanner() }
             }
