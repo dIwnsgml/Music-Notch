@@ -9,6 +9,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
     case youtubePlaylists
     case calendar
     case pomodoro
+    case clipboard
     case weather
     
     var id: String { self.rawValue }
@@ -22,6 +23,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .youtubePlaylists: return "YouTube Music Playlists"
         case .calendar: return "Calendar"
         case .pomodoro: return "Pomodoro Timer"
+        case .clipboard: return "Clipboard History"
         case .weather: return "Weather"
         }
     }
@@ -35,6 +37,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .youtubePlaylists: return UserDefaults.standard.bool(forKey: "plugin_youtube_playlists_installed")
         case .calendar: return UserDefaults.standard.bool(forKey: "plugin_google_calendar_installed")
         case .pomodoro: return UserDefaults.standard.bool(forKey: "plugin_pomodoro_timer_installed")
+        case .clipboard: return UserDefaults.standard.bool(forKey: "plugin_clipboard_history_installed")
         case .weather: return UserDefaults.standard.bool(forKey: "plugin_weather_installed")
         }
     }
@@ -98,7 +101,11 @@ class DashboardManager: ObservableObject {
         let ytPlaylistsEnabled = UserDefaults.standard.bool(forKey: "plugin_youtube_playlists_enabled")
         let calendarEnabled = UserDefaults.standard.bool(forKey: "plugin_google_calendar_enabled")
         let pomodoroEnabled = UserDefaults.standard.bool(forKey: "plugin_pomodoro_timer_enabled")
+        let clipboardEnabled = UserDefaults.standard.bool(forKey: "plugin_clipboard_history_enabled")
         let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
+        if clipboardEnabled {
+            _ = ClipboardHistoryManager.shared
+        }
         
         // ⚡️ NEW: Auto-hide logic for Spotify Plugins
         let spotifyQueueAutoHide = UserDefaults.standard.object(forKey: "plugin_spotify_queue_auto_hide") as? Bool ?? true
@@ -152,6 +159,7 @@ class DashboardManager: ObservableObject {
                 }
             case .calendar: if calendarEnabled { widgets.append(.calendar) }
             case .pomodoro: if pomodoroEnabled { widgets.append(.pomodoro) }
+            case .clipboard: if clipboardEnabled { widgets.append(.clipboard) }
             case .weather: if weatherEnabled { widgets.append(.weather) }
             }
         }

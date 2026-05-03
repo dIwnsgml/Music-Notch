@@ -65,6 +65,7 @@ struct SettingsView: View {
     @AppStorage("lyricOffset") var lyricOffset: Double = 0.0
     @AppStorage("plugin_pomodoro_timer_installed") var pomodoroInstalled = false
     @AppStorage("pomodoro_show_notch_timer") var showPomodoroNotchTimer = true
+    @AppStorage("pomodoro_show_time_text") var showPomodoroTimeText = true
     @AppStorage("pomodoro_show_timer_banner") var showPomodoroTimerBanner = false
 
     @State private var hasAccessibilityAccess = false
@@ -473,7 +474,8 @@ struct SettingsView: View {
 
             if pomodoroInstalled {
                 Section {
-                    Toggle("Show Pomodoro Timer in Notch", isOn: $showPomodoroNotchTimer)
+                    Toggle("Show Pomodoro Icon in Notch", isOn: $showPomodoroNotchTimer)
+                    Toggle("Show Countdown next to Notch", isOn: $showPomodoroTimeText)
                     Toggle("Show Pomodoro Timer Banner", isOn: $showPomodoroTimerBanner)
                 } header: {
                     Text("Pomodoro Timer")
@@ -676,6 +678,7 @@ struct DashboardSettingsView: View {
     @AppStorage("plugin_youtube_playlists_enabled") var ytPlaylistsEnabled = false
     @AppStorage("plugin_google_calendar_enabled") var calendarEnabled = false
     @AppStorage("plugin_pomodoro_timer_enabled") var pomodoroEnabled = false
+    @AppStorage("plugin_clipboard_history_enabled") var clipboardEnabled = false
     @AppStorage("plugin_weather_enabled") var weatherEnabled = false
     @AppStorage("expandedPadding") var expandedPadding: Double = 16.0
 
@@ -765,6 +768,7 @@ struct DashboardSettingsView: View {
         case .youtubePlaylists: return $ytPlaylistsEnabled
         case .calendar: return $calendarEnabled
         case .pomodoro: return $pomodoroEnabled
+        case .clipboard: return $clipboardEnabled
         case .weather: return $weatherEnabled
         }
     }

@@ -60,9 +60,18 @@ class PluginManager: ObservableObject {
             storageKeyBase: "plugin_pomodoro_timer"
         ),
         WaveNotchPlugin(
+            id: "clipboard_history",
+            name: "Clipboard History",
+            description: "Keep recent copied text and links available directly in the notch.",
+            iconName: "doc.on.clipboard",
+            assetImageName: nil,
+            category: .productivity,
+            storageKeyBase: "plugin_clipboard_history"
+        ),
+        WaveNotchPlugin(
             id: "weather",
             name: "Weather",
-            description: "Real-time local weather conditions, temperature, and precipitation forecasts displayed beautifully in your Dynamic Island.",
+            description: "Real-time weather conditions, temperature, and short forecasts for your chosen location.",
             iconName: "cloud.sun.fill",
             assetImageName: nil,
             category: .system,

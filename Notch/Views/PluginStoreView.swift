@@ -462,9 +462,16 @@ struct PluginDetailView: View {
                     )
                 } else if plugin.id == "pomodoro_timer" {
                     PluginSettingToggle(
-                        title: "Show timer in collapsed notch",
-                        description: "Use a clock progress icon on the left and the remaining time on the right.",
+                        title: "Show timer icon in collapsed notch",
+                        description: "Use a circular progress icon on the left of the notch when running.",
                         key: "pomodoro_show_notch_timer",
+                        defaultValue: true
+                    )
+                    Divider().opacity(0.15)
+                    PluginSettingToggle(
+                        title: "Show countdown text next to notch",
+                        description: "Display the remaining time on the right side of the notch.",
+                        key: "pomodoro_show_time_text",
                         defaultValue: true
                     )
                     Divider().opacity(0.15)
@@ -506,6 +513,10 @@ struct PluginDetailView: View {
                         defaultValue: 4,
                         suffix: "rounds"
                     )
+                } else if plugin.id == "weather" {
+                    WeatherPluginSettingsView()
+                } else if plugin.id == "clipboard_history" {
+                    ClipboardPluginSettingsView()
                 } else {
                     Text("No additional settings for this plugin.")
                         .font(.system(size: 12))
@@ -570,6 +581,8 @@ struct PluginIcon: View {
             return .blue
         case let id where id.contains("pomodoro"):
             return .red
+        case let id where id.contains("clipboard"):
+            return .purple
         case let id where id.contains("weather"):
             return .orange
         default:
@@ -634,6 +647,144 @@ struct PomodoroSettingStepper: View {
 
     private func clamp(_ rawValue: Int) -> Int {
         min(max(rawValue, range.lowerBound), range.upperBound)
+    }
+}
+
+struct WeatherPluginSettingsView: View {
+    @AppStorage("weather_use_current_location") private var useCurrentLocation = true
+    @AppStorage("weather_location_query") private var locationQuery = "New York"
+    @AppStorage("weather_temperature_unit") private var temperatureUnit = "fahrenheit"
+    @StateObject private var weather = WeatherManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Use current location")
+                        .font(.system(size: 13, weight: .medium))
+                    Text(weather.locationStatusText)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $useCurrentLocation)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+            .onChange(of: useCurrentLocation) { _, _ in
+                WeatherManager.shared.fetchWeather(force: true)
+            }
+
+            Divider().opacity(0.15)
+
+            if useCurrentLocation {
+                Button {
+                    WeatherManager.shared.fetchWeather(force: true)
+                } label: {
+                    HStack {
+                        Image(systemName: "location")
+                        Text("Update Current Location")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Text("Uses macOS Location Services. If permission is denied, Weather falls back to the manual city below.")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+
+                Divider().opacity(0.15)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(useCurrentLocation ? "Fallback City" : "Location")
+                    .font(.system(size: 13, weight: .medium))
+                TextField("City, ZIP, or place name", text: $locationQuery)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+            }
+
+            Divider().opacity(0.15)
+
+            Picker("Temperature Unit", selection: $temperatureUnit) {
+                Text("Fahrenheit").tag("fahrenheit")
+                Text("Celsius").tag("celsius")
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: temperatureUnit) { _, _ in
+                WeatherManager.shared.fetchWeather(force: true)
+            }
+
+            Button {
+                WeatherManager.shared.fetchWeather(force: true)
+            } label: {
+                HStack {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Refresh Weather")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Text("Weather data by Open-Meteo.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+    }
+}
+
+struct ClipboardPluginSettingsView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PomodoroSettingStepper(
+                title: "History Limit",
+                key: "clipboard_history_limit",
+                range: 5...100,
+                defaultValue: 30,
+                suffix: "items"
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Track copied files",
+                description: "Save Finder file copies as file references that can be copied back later.",
+                key: "clipboard_history_track_files",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Track copied images",
+                description: "Save copied images up to 12 MB with a thumbnail preview.",
+                key: "clipboard_history_track_images",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            Button(role: .destructive) {
+                ClipboardHistoryManager.shared.clearHistory()
+            } label: {
+                HStack {
+                    Image(systemName: "trash")
+                    Text("Clear Clipboard History")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Text("Tracks text, links, files, and images while the plugin is enabled.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+        }
     }
 }
 

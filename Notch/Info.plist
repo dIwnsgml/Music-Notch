@@ -6,6 +6,10 @@
 	<string>https://wavenotch.com/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>61r/qxZuSY/imacPrlbNhTOLzs7X6/Cz8B6tM9kLfeY=</string>
+	<key>NSLocationUsageDescription</key>
+	<string>WaveNotch uses your location to show local weather when the Weather plugin is enabled.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>WaveNotch uses your location to show local weather when the Weather plugin is enabled.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

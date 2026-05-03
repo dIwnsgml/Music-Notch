@@ -50,6 +50,7 @@ struct ContentView: View {
     @AppStorage("plugin_spotify_playlists_enabled") var spotifyPlaylistsEnabled = false
     @AppStorage("plugin_pomodoro_timer_enabled") var pomodoroPluginEnabled = false
     @AppStorage("pomodoro_show_notch_timer") var showPomodoroNotchTimer = true
+    @AppStorage("pomodoro_show_time_text") var showPomodoroTimeText = true
     @AppStorage("pomodoro_show_timer_banner") var showPomodoroTimerBanner = false
 
     @State private var isShowingBanner = false
@@ -340,13 +341,14 @@ struct ContentView: View {
 
     @ViewBuilder
     private func collapsedLayer(hasMedia: Bool, currentCollapsedHeight: CGFloat) -> some View {
-        let showTimerIndicator = shouldShowPomodoroNotchTimer
+        let showTimerIcon = pomodoroPluginEnabled && showPomodoroNotchTimer
+        let showTimerText = pomodoroPluginEnabled && showPomodoroTimeText
         let showTimerBanner = shouldShowPomodoroTimerBanner
 
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 ZStack {
-                    if showTimerIndicator {
+                    if showTimerIcon {
                         pomodoroCollapsedProgressIcon
                     } else if hasMedia && nowPlaying.artworkURL != nil {
                         AsyncImage(url: nowPlaying.artworkURL) { image in
@@ -371,12 +373,14 @@ struct ContentView: View {
 
                 Spacer()
 
-                if showTimerIndicator {
+                if showTimerText {
                     Text(pomodoroTimer.timeText)
                         .font(.system(size: 12, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundColor(pomodoroTimer.mode.color)
                         .frame(width: 56, alignment: .trailing)
+                        .contentTransition(.numericText())
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pomodoroTimer.timeText)
                 } else {
                     WaveformView(isPlaying: nowPlaying.isPlaying, color: nowPlaying.artworkDominantColor).frame(width: 24, alignment: .trailing)
                 }
@@ -398,6 +402,8 @@ struct ContentView: View {
                                 .font(.system(size: 11, weight: .bold))
                             Text("\(pomodoroTimer.mode.title) \(pomodoroTimer.timeText)")
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .contentTransition(.numericText())
+                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pomodoroTimer.timeText)
                                 .monospacedDigit()
                             Text(pomodoroTimer.roundText)
                                 .font(.system(size: 10, weight: .semibold, design: .rounded))
@@ -461,7 +467,8 @@ struct ContentView: View {
         case .spotifyQueue, .youtubeQueue: return 250
         case .spotifyPlaylists, .youtubePlaylists: return playlistWidgetHeight
         case .pomodoro: return pomodoroWidgetHeight
-        case .weather: return 100
+        case .clipboard: return 220
+        case .weather: return 132
         default: return 160
         }
     }

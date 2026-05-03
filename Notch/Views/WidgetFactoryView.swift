@@ -1,5 +1,7 @@
 import SwiftUI
 import Combine
+import AppKit
+import CoreLocation
 
 struct WidgetFactoryView: View {
     let widgetType: NotchWidgetType
@@ -35,7 +37,8 @@ struct WidgetFactoryView: View {
                     case .youtubePlaylists: YouTubePlaylistsWidget(nowPlaying: nowPlaying)
                     case .calendar: CalendarWidget()
                     case .pomodoro: PomodoroTimerWidget(isCompact: isCompact)
-                    case .weather: PlaceholderWidget(name: "Weather", icon: "cloud.sun.fill")
+                    case .clipboard: ClipboardHistoryWidget()
+                    case .weather: WeatherWidget()
                     }
                 }
                 .frame(maxHeight: .infinity)
@@ -410,6 +413,8 @@ struct PomodoroTimerWidget: View {
                         .font(.system(size: isCompact ? 26 : 30, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundColor(.white)
+                        .contentTransition(.numericText())
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: timer.timeText)
                     Text(timer.isRunning ? "In progress" : timer.mode.subtitle)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.white.opacity(0.55))
@@ -463,6 +468,1322 @@ struct PomodoroTimerWidget: View {
         }
         .buttonStyle(.plain)
         .help(label)
+    }
+}
+
+enum ClipboardHistoryKind: String, Codable {
+    case text
+    case url
+    case file
+    case image
+}
+
+struct ClipboardHistoryItem: Codable, Identifiable, Equatable {
+    let id: UUID
+    let kind: ClipboardHistoryKind
+    let text: String
+    let filePaths: [String]
+    let imageFileName: String?
+    let imageWidth: Int?
+    let imageHeight: Int?
+    let imageByteCount: Int
+    let payloadHash: String
+    let createdAt: Date
+
+    init(
+        id: UUID = UUID(),
+        kind: ClipboardHistoryKind,
+        text: String = "",
+        filePaths: [String] = [],
+        imageFileName: String? = nil,
+        imageWidth: Int? = nil,
+        imageHeight: Int? = nil,
+        imageByteCount: Int = 0,
+        payloadHash: String? = nil,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.kind = kind
+        self.text = text
+        self.filePaths = filePaths
+        self.imageFileName = imageFileName
+        self.imageWidth = imageWidth
+        self.imageHeight = imageHeight
+        self.imageByteCount = imageByteCount
+        self.payloadHash = payloadHash ?? Self.makePayloadHash(
+            kind: kind,
+            text: text,
+            filePaths: filePaths,
+            imageFileName: imageFileName,
+            imageByteCount: imageByteCount
+        )
+        self.createdAt = createdAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case text
+        case filePaths
+        case imageFileName
+        case imageWidth
+        case imageHeight
+        case imageByteCount
+        case payloadHash
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedKind = try container.decodeIfPresent(ClipboardHistoryKind.self, forKey: .kind) ?? .text
+        let decodedText = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        let decodedFilePaths = try container.decodeIfPresent([String].self, forKey: .filePaths) ?? []
+        let decodedImageFileName = try container.decodeIfPresent(String.self, forKey: .imageFileName)
+        let decodedImageByteCount = try container.decodeIfPresent(Int.self, forKey: .imageByteCount) ?? 0
+
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        kind = decodedKind
+        text = decodedText
+        filePaths = decodedFilePaths
+        imageFileName = decodedImageFileName
+        imageWidth = try container.decodeIfPresent(Int.self, forKey: .imageWidth)
+        imageHeight = try container.decodeIfPresent(Int.self, forKey: .imageHeight)
+        imageByteCount = decodedImageByteCount
+        payloadHash = try container.decodeIfPresent(String.self, forKey: .payloadHash) ?? Self.makePayloadHash(
+            kind: decodedKind,
+            text: decodedText,
+            filePaths: decodedFilePaths,
+            imageFileName: decodedImageFileName,
+            imageByteCount: decodedImageByteCount
+        )
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+    }
+
+    var displayTitle: String {
+        switch kind {
+        case .text, .url:
+            let firstLine = text
+                .components(separatedBy: .newlines)
+                .first?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return firstLine.isEmpty ? "Copied Text" : firstLine
+        case .file:
+            if filePaths.count == 1, let path = filePaths.first {
+                return URL(fileURLWithPath: path).lastPathComponent
+            }
+            return "\(filePaths.count) Files"
+        case .image:
+            if let imageWidth, let imageHeight {
+                return "Image \(imageWidth)x\(imageHeight)"
+            }
+            return "Copied Image"
+        }
+    }
+
+    var preview: String {
+        switch kind {
+        case .text, .url:
+            return text
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\t", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        case .file:
+            let names = filePaths.prefix(3).map { URL(fileURLWithPath: $0).lastPathComponent }
+            let suffix = filePaths.count > 3 ? " +" + String(filePaths.count - 3) : ""
+            return names.joined(separator: ", ") + suffix
+        case .image:
+            return formattedByteCount
+        }
+    }
+
+    var formattedByteCount: String {
+        guard imageByteCount > 0 else { return "Image" }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(imageByteCount))
+    }
+
+    private static func makePayloadHash(
+        kind: ClipboardHistoryKind,
+        text: String,
+        filePaths: [String],
+        imageFileName: String?,
+        imageByteCount: Int
+    ) -> String {
+        switch kind {
+        case .text, .url:
+            return "\(kind.rawValue):\(text)"
+        case .file:
+            return "\(kind.rawValue):\(filePaths.joined(separator: "\n"))"
+        case .image:
+            return "\(kind.rawValue):\(imageFileName ?? ""):\(imageByteCount)"
+        }
+    }
+}
+
+final class ClipboardHistoryManager: ObservableObject {
+    static let shared = ClipboardHistoryManager()
+
+    @Published private(set) var items: [ClipboardHistoryItem] = []
+
+    private let pasteboard = NSPasteboard.general
+    private let defaults = UserDefaults.standard
+    private var lastChangeCount: Int
+    private var timer: Timer?
+
+    private enum Key {
+        static let storedItems = "clipboard_history_items"
+        static let historyLimit = "clipboard_history_limit"
+        static let pluginEnabled = "plugin_clipboard_history_enabled"
+        static let trackFiles = "clipboard_history_track_files"
+        static let trackImages = "clipboard_history_track_images"
+    }
+
+    private enum Constants {
+        static let maxStoredImageBytes = 12 * 1024 * 1024
+        static let fileNamesPasteboardType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+    }
+
+    private init() {
+        lastChangeCount = pasteboard.changeCount
+        loadItems()
+        schedulePolling()
+    }
+
+    var historyLimit: Int {
+        let stored = defaults.integer(forKey: Key.historyLimit)
+        return min(max(stored > 0 ? stored : 30, 5), 100)
+    }
+
+    var trackFiles: Bool {
+        defaults.object(forKey: Key.trackFiles) as? Bool ?? true
+    }
+
+    var trackImages: Bool {
+        defaults.object(forKey: Key.trackImages) as? Bool ?? true
+    }
+
+    func copyBack(_ item: ClipboardHistoryItem) {
+        pasteboard.clearContents()
+
+        switch item.kind {
+        case .text:
+            pasteboard.setString(item.text, forType: .string)
+        case .url:
+            if let url = URL(string: item.text) {
+                pasteboard.writeObjects([url as NSURL])
+            } else {
+                pasteboard.setString(item.text, forType: .string)
+            }
+        case .file:
+            let urls = item.filePaths.map { NSURL(fileURLWithPath: $0) }
+            if urls.isEmpty {
+                pasteboard.setString(item.text, forType: .string)
+            } else {
+                pasteboard.writeObjects(urls)
+            }
+        case .image:
+            if let data = imageData(for: item), let image = NSImage(data: data) {
+                pasteboard.writeObjects([image])
+            }
+        }
+
+        lastChangeCount = pasteboard.changeCount
+        moveExistingItemToTop(item)
+    }
+
+    func delete(_ item: ClipboardHistoryItem) {
+        if let removed = items.first(where: { $0.id == item.id }) {
+            removeImageFile(for: removed)
+        }
+        items.removeAll { $0.id == item.id }
+        persistItems()
+    }
+
+    func clearHistory() {
+        items.forEach(removeImageFile)
+        items.removeAll()
+        persistItems()
+    }
+
+    func syncSettings() {
+        let itemCount = items.count
+        pruneToLimit()
+        if items.count != itemCount {
+            persistItems()
+        }
+    }
+
+    func image(for item: ClipboardHistoryItem) -> NSImage? {
+        guard let data = imageData(for: item) else { return nil }
+        return NSImage(data: data)
+    }
+
+    private func schedulePolling() {
+        timer?.invalidate()
+        let newTimer = Timer(timeInterval: 0.8, repeats: true) { [weak self] _ in
+            self?.pollPasteboard()
+        }
+        timer = newTimer
+        RunLoop.main.add(newTimer, forMode: .common)
+    }
+
+    private func pollPasteboard() {
+        guard defaults.bool(forKey: Key.pluginEnabled) else {
+            lastChangeCount = pasteboard.changeCount
+            return
+        }
+
+        let changeCount = pasteboard.changeCount
+        guard changeCount != lastChangeCount else { return }
+        lastChangeCount = changeCount
+
+        guard let copiedItem = readClipboardItem() else { return }
+        record(copiedItem)
+    }
+
+    private func readClipboardItem() -> ClipboardHistoryItem? {
+        if let fileItem = readClipboardFiles() {
+            return fileItem
+        }
+        if let imageItem = readClipboardImage() {
+            return imageItem
+        }
+        return readClipboardText()
+    }
+
+    private func readClipboardText() -> ClipboardHistoryItem? {
+        if pasteboardContainsFileReferences() {
+            return nil
+        }
+
+        let rawText = pasteboard.string(forType: .string)
+            ?? pasteboard.string(forType: .URL)
+        let text = rawText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !text.isEmpty else { return nil }
+
+        let isURL = URL(string: text)?.scheme != nil
+        let kind: ClipboardHistoryKind = isURL ? .url : .text
+        return ClipboardHistoryItem(
+            kind: kind,
+            text: text,
+            payloadHash: "\(kind.rawValue):\(Self.hashString(text))"
+        )
+    }
+
+    private func readClipboardFiles() -> ClipboardHistoryItem? {
+        guard trackFiles else { return nil }
+
+        var filePaths: [String] = []
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [NSURL] {
+            filePaths.append(contentsOf: urls.map { ($0 as URL).path })
+        }
+
+        if let paths = pasteboard.propertyList(forType: Constants.fileNamesPasteboardType) as? [String] {
+            filePaths.append(contentsOf: paths)
+        }
+
+        let uniquePaths = NSOrderedSet(array: filePaths.filter { !$0.isEmpty }).array as? [String] ?? []
+        guard !uniquePaths.isEmpty else { return nil }
+
+        return ClipboardHistoryItem(
+            kind: .file,
+            text: uniquePaths.joined(separator: "\n"),
+            filePaths: uniquePaths,
+            payloadHash: "file:\(Self.hashString(uniquePaths.joined(separator: "\n")))"
+        )
+    }
+
+    private func readClipboardImage() -> ClipboardHistoryItem? {
+        guard trackImages else { return nil }
+
+        if let pngData = pasteboard.data(forType: .png),
+           let item = makeImageItem(from: pngData) {
+            return item
+        }
+
+        if let tiffData = pasteboard.data(forType: .tiff),
+           let image = NSImage(data: tiffData),
+           let pngData = pngData(from: image),
+           let item = makeImageItem(from: pngData, fallbackImage: image) {
+            return item
+        }
+
+        if let images = pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
+           let image = images.first,
+           let pngData = pngData(from: image),
+           let item = makeImageItem(from: pngData, fallbackImage: image) {
+            return item
+        }
+
+        return nil
+    }
+
+    private func makeImageItem(from data: Data, fallbackImage: NSImage? = nil) -> ClipboardHistoryItem? {
+        guard data.count <= Constants.maxStoredImageBytes else { return nil }
+
+        let id = UUID()
+        let image = fallbackImage ?? NSImage(data: data)
+        guard let fileName = storeImageData(data, id: id) else { return nil }
+
+        return ClipboardHistoryItem(
+            id: id,
+            kind: .image,
+            imageFileName: fileName,
+            imageWidth: image.map { Int($0.size.width.rounded()) },
+            imageHeight: image.map { Int($0.size.height.rounded()) },
+            imageByteCount: data.count,
+            payloadHash: "image:\(Self.hashData(data))"
+        )
+    }
+
+    private func record(_ item: ClipboardHistoryItem) {
+        let duplicates = items.filter { $0.payloadHash == item.payloadHash }
+        duplicates.forEach(removeImageFile)
+        items.removeAll { $0.payloadHash == item.payloadHash }
+        items.insert(item, at: 0)
+        pruneToLimit()
+        persistItems()
+    }
+
+    private func moveExistingItemToTop(_ item: ClipboardHistoryItem) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        let existingItem = items.remove(at: index)
+        items.insert(existingItem, at: 0)
+        persistItems()
+    }
+
+    private func pruneToLimit() {
+        if items.count > historyLimit {
+            items.dropFirst(historyLimit).forEach(removeImageFile)
+            items = Array(items.prefix(historyLimit))
+        }
+    }
+
+    private func loadItems() {
+        guard let data = defaults.data(forKey: Key.storedItems),
+              let decoded = try? JSONDecoder().decode([ClipboardHistoryItem].self, from: data) else {
+            items = []
+            return
+        }
+        items = Array(decoded.prefix(historyLimit))
+    }
+
+    private func persistItems() {
+        if let data = try? JSONEncoder().encode(items) {
+            defaults.set(data, forKey: Key.storedItems)
+        }
+    }
+
+    private func pasteboardContainsFileReferences() -> Bool {
+        pasteboard.availableType(from: [.fileURL, Constants.fileNamesPasteboardType]) != nil
+    }
+
+    private func storeImageData(_ data: Data, id: UUID) -> String? {
+        guard let directory = imageCacheDirectory() else { return nil }
+        let fileName = "\(id.uuidString).png"
+        do {
+            try data.write(to: directory.appendingPathComponent(fileName), options: .atomic)
+            return fileName
+        } catch {
+            return nil
+        }
+    }
+
+    private func imageData(for item: ClipboardHistoryItem) -> Data? {
+        guard let fileName = item.imageFileName,
+              let directory = imageCacheDirectory() else {
+            return nil
+        }
+        return try? Data(contentsOf: directory.appendingPathComponent(fileName))
+    }
+
+    private func removeImageFile(for item: ClipboardHistoryItem) {
+        guard let fileName = item.imageFileName,
+              let directory = imageCacheDirectory() else {
+            return
+        }
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent(fileName))
+    }
+
+    private func imageCacheDirectory() -> URL? {
+        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let directory = appSupport
+            .appendingPathComponent("WaveNotch", isDirectory: true)
+            .appendingPathComponent("ClipboardHistoryImages", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            return directory
+        } catch {
+            return nil
+        }
+    }
+
+    private func pngData(from image: NSImage) -> Data? {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData) else {
+            return nil
+        }
+        return bitmap.representation(using: .png, properties: [:])
+    }
+
+    private static func hashString(_ value: String) -> String {
+        hashData(Data(value.utf8))
+    }
+
+    private static func hashData(_ data: Data) -> String {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in data {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return String(hash, radix: 16)
+    }
+}
+
+struct ClipboardHistoryWidget: View {
+    @StateObject private var clipboard = ClipboardHistoryManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.on.clipboard")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.purple)
+                Text("Clipboard")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white.opacity(0.9))
+                Text("\(clipboard.items.count)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.5))
+                    .monospacedDigit()
+                Spacer()
+                Button {
+                    clipboard.clearHistory()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+                .help("Clear Clipboard History")
+                .disabled(clipboard.items.isEmpty)
+            }
+
+            if clipboard.items.isEmpty {
+                emptyState
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 8) {
+                        ForEach(clipboard.items) { item in
+                            ClipboardHistoryRow(item: item)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            clipboard.syncSettings()
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Spacer()
+            Image(systemName: "doc.on.clipboard")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundColor(.purple.opacity(0.8))
+            Text("Copy text, images, or files to save them here.")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white.opacity(0.55))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct ClipboardHistoryRow: View {
+    let item: ClipboardHistoryItem
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                ClipboardHistoryManager.shared.copyBack(item)
+            } label: {
+                HStack(spacing: 8) {
+                    leadingVisual
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.displayTitle)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                        Text(item.preview)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.white.opacity(0.48))
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Text(relativeTime)
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.35))
+                        .monospacedDigit()
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 7)
+                .background(isHovering ? Color.white.opacity(0.10) : Color.white.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help("Copy Back")
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isHovering = hovering
+                }
+            }
+
+            Button {
+                ClipboardHistoryManager.shared.delete(item)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.white.opacity(0.45))
+                    .frame(width: 18, height: 18)
+                    .background(Color.white.opacity(0.06))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Remove")
+        }
+    }
+
+    @ViewBuilder
+    private var leadingVisual: some View {
+        switch item.kind {
+        case .image:
+            if let image = ClipboardHistoryManager.shared.image(for: item) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 30, height: 30)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            } else {
+                symbolVisual
+            }
+        case .file:
+            if let path = item.filePaths.first {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 24, height: 24)
+                    .frame(width: 30, height: 30)
+            } else {
+                symbolVisual
+            }
+        case .text, .url:
+            symbolVisual
+        }
+    }
+
+    private var symbolVisual: some View {
+        Image(systemName: symbolName)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundColor(.purple.opacity(0.9))
+            .frame(width: 30, height: 30)
+            .background(Color.purple.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private var symbolName: String {
+        switch item.kind {
+        case .url:
+            return "link"
+        case .file:
+            return "doc"
+        case .image:
+            return "photo"
+        case .text:
+            return "doc.text"
+        }
+    }
+
+    private var relativeTime: String {
+        let seconds = max(0, Int(Date().timeIntervalSince(item.createdAt)))
+        if seconds < 60 { return "now" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h" }
+        return "\(hours / 24)d"
+    }
+}
+
+struct WeatherSnapshot: Equatable {
+    let locationName: String
+    let country: String?
+    let temperature: Double
+    let apparentTemperature: Double
+    let humidity: Int
+    let windSpeed: Double
+    let precipitation: Double
+    let weatherCode: Int
+    let high: Double?
+    let low: Double?
+    let unit: String
+    let fetchedAt: Date
+
+    var temperatureNumberText: String {
+        "\(Int(temperature.rounded()))"
+    }
+
+    var unitLetter: String {
+        unit == "fahrenheit" ? "F" : "C"
+    }
+
+    var temperatureText: String {
+        "\(Int(temperature.rounded()))\(unitSymbol)"
+    }
+
+    var apparentText: String {
+        "\(Int(apparentTemperature.rounded()))\(unitSymbol)"
+    }
+
+    var highLowText: String {
+        guard let high, let low else { return "" }
+        return "H \(Int(high.rounded()))\(unitSymbol)  L \(Int(low.rounded()))\(unitSymbol)"
+    }
+
+    var unitSymbol: String {
+        "°\(unitLetter)"
+    }
+
+    var windText: String {
+        let suffix = unit == "fahrenheit" ? "mph" : "km/h"
+        return "\(Int(windSpeed.rounded())) \(suffix)"
+    }
+}
+
+struct WeatherResolvedLocation {
+    let displayName: String
+    let latitude: Double
+    let longitude: Double
+    let country: String?
+}
+
+struct WeatherLocationResult: Decodable {
+    let name: String
+    let latitude: Double
+    let longitude: Double
+    let country: String?
+    let admin1: String?
+
+    var displayName: String {
+        if let admin1, !admin1.isEmpty {
+            return "\(name), \(admin1)"
+        }
+        return name
+    }
+
+    var resolvedLocation: WeatherResolvedLocation {
+        WeatherResolvedLocation(
+            displayName: displayName,
+            latitude: latitude,
+            longitude: longitude,
+            country: country
+        )
+    }
+}
+
+private struct WeatherGeocodingResponse: Decodable {
+    let results: [WeatherLocationResult]?
+}
+
+private struct OpenMeteoForecastResponse: Decodable {
+    let current: OpenMeteoCurrent
+    let daily: OpenMeteoDaily?
+}
+
+private struct OpenMeteoCurrent: Decodable {
+    let temperature: Double
+    let apparentTemperature: Double
+    let humidity: Int
+    let precipitation: Double
+    let weatherCode: Int
+    let windSpeed: Double
+
+    enum CodingKeys: String, CodingKey {
+        case temperature = "temperature_2m"
+        case apparentTemperature = "apparent_temperature"
+        case humidity = "relative_humidity_2m"
+        case precipitation
+        case weatherCode = "weather_code"
+        case windSpeed = "wind_speed_10m"
+    }
+}
+
+private struct OpenMeteoDaily: Decodable {
+    let weatherCode: [Int]?
+    let temperatureMax: [Double]?
+    let temperatureMin: [Double]?
+
+    enum CodingKeys: String, CodingKey {
+        case weatherCode = "weather_code"
+        case temperatureMax = "temperature_2m_max"
+        case temperatureMin = "temperature_2m_min"
+    }
+}
+
+final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+    static let shared = WeatherManager()
+
+    @Published private(set) var snapshot: WeatherSnapshot?
+    @Published private(set) var isFetching = false
+    @Published private(set) var errorMessage: String?
+    @Published private(set) var locationStatusText = "Current location"
+
+    private let defaults = UserDefaults.standard
+    private let locationManager = CLLocationManager()
+    private let geocoder = CLGeocoder()
+    private var refreshTimer: Timer?
+    private var lastRequestSignature = ""
+    private var lastFetchDate: Date?
+    private var pendingCurrentLocationUnit: String?
+    private var pendingCurrentLocationForce = false
+
+    private enum Key {
+        static let useCurrentLocation = "weather_use_current_location"
+        static let locationQuery = "weather_location_query"
+        static let temperatureUnit = "weather_temperature_unit"
+        static let currentLatitude = "weather_current_latitude"
+        static let currentLongitude = "weather_current_longitude"
+        static let currentLocationName = "weather_current_location_name"
+        static let currentLocationCountry = "weather_current_location_country"
+    }
+
+    private override init() {
+        super.init()
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
+            self?.fetchWeather()
+        }
+        fetchWeather()
+    }
+
+    var useCurrentLocation: Bool {
+        defaults.object(forKey: Key.useCurrentLocation) as? Bool ?? true
+    }
+
+    var configuredLocation: String {
+        let stored = defaults.string(forKey: Key.locationQuery)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return stored.isEmpty ? "New York" : stored
+    }
+
+    var configuredUnit: String {
+        let stored = defaults.string(forKey: Key.temperatureUnit) ?? "fahrenheit"
+        return stored == "celsius" ? "celsius" : "fahrenheit"
+    }
+
+    func fetchWeather(force: Bool = false) {
+        let unit = configuredUnit
+
+        if useCurrentLocation {
+            fetchCurrentLocationWeather(unit: unit, force: force)
+        } else {
+            fetchManualLocationWeather(unit: unit, force: force)
+        }
+    }
+
+    private func fetchManualLocationWeather(unit: String, force: Bool, fallbackStatus: String? = nil) {
+        let locationQuery = configuredLocation
+        let signature = "manual:\(locationQuery)|\(unit)"
+
+        if !force,
+           signature == lastRequestSignature,
+           let lastFetchDate,
+           Date().timeIntervalSince(lastFetchDate) < 900,
+           snapshot != nil {
+            return
+        }
+
+        lastRequestSignature = signature
+        DispatchQueue.main.async {
+            self.isFetching = true
+            self.errorMessage = nil
+            self.locationStatusText = fallbackStatus ?? "Using manual location"
+        }
+
+        geocode(locationQuery) { [weak self] result in
+            guard let self else { return }
+
+            switch result {
+            case .success(let location):
+                self.fetchForecast(for: location, unit: unit)
+            case .failure:
+                DispatchQueue.main.async {
+                    self.isFetching = false
+                    self.errorMessage = "Location not found"
+                }
+            }
+        }
+    }
+
+    private func fetchCurrentLocationWeather(unit: String, force: Bool) {
+        if !force, let cachedLocation = cachedCurrentLocation {
+            let signature = "current:\(coordinateSignature(cachedLocation))|\(unit)"
+            if signature == lastRequestSignature,
+               let lastFetchDate,
+               Date().timeIntervalSince(lastFetchDate) < 900,
+               snapshot != nil {
+                return
+            }
+
+            lastRequestSignature = signature
+            DispatchQueue.main.async {
+                self.isFetching = true
+                self.errorMessage = nil
+                self.locationStatusText = "Using \(cachedLocation.displayName)"
+            }
+            fetchForecast(for: cachedLocation, unit: unit)
+            return
+        }
+
+        requestCurrentLocation(unit: unit, force: force)
+    }
+
+    private func requestCurrentLocation(unit: String, force: Bool) {
+        pendingCurrentLocationUnit = unit
+        pendingCurrentLocationForce = force
+
+        DispatchQueue.main.async {
+            self.isFetching = true
+            self.errorMessage = nil
+            self.locationStatusText = "Finding current location..."
+        }
+
+        guard CLLocationManager.locationServicesEnabled() else {
+            handleCurrentLocationUnavailable("Location Services are off", unit: unit, force: force)
+            return
+        }
+
+        switch locationManager.authorizationStatus {
+        case .notDetermined:
+            locationManager.requestWhenInUseAuthorization()
+        case .authorizedAlways, .authorizedWhenInUse:
+            locationManager.requestLocation()
+        case .denied, .restricted:
+            handleCurrentLocationUnavailable("Location permission denied", unit: unit, force: force)
+        @unknown default:
+            handleCurrentLocationUnavailable("Location unavailable", unit: unit, force: force)
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard let unit = pendingCurrentLocationUnit else { return }
+
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            manager.requestLocation()
+        case .denied, .restricted:
+            handleCurrentLocationUnavailable("Location permission denied", unit: unit, force: pendingCurrentLocationForce)
+        case .notDetermined:
+            break
+        @unknown default:
+            handleCurrentLocationUnavailable("Location unavailable", unit: unit, force: pendingCurrentLocationForce)
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last,
+              let unit = pendingCurrentLocationUnit else {
+            handleCurrentLocationUnavailable("Location unavailable", unit: configuredUnit, force: true)
+            return
+        }
+
+        pendingCurrentLocationUnit = nil
+        pendingCurrentLocationForce = false
+
+        reverseGeocode(location) { [weak self] resolvedLocation in
+            guard let self else { return }
+            self.cacheCurrentLocation(resolvedLocation)
+            self.lastRequestSignature = "current:\(self.coordinateSignature(resolvedLocation))|\(unit)"
+            self.locationStatusText = "Using \(resolvedLocation.displayName)"
+            self.fetchForecast(for: resolvedLocation, unit: unit)
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        let unit = pendingCurrentLocationUnit ?? configuredUnit
+        let force = pendingCurrentLocationForce
+        pendingCurrentLocationUnit = nil
+        pendingCurrentLocationForce = false
+        handleCurrentLocationUnavailable("Current location unavailable", unit: unit, force: force)
+    }
+
+    private func handleCurrentLocationUnavailable(_ message: String, unit: String, force: Bool) {
+        pendingCurrentLocationUnit = nil
+        pendingCurrentLocationForce = false
+
+        if let cachedLocation = cachedCurrentLocation {
+            lastRequestSignature = "current:\(coordinateSignature(cachedLocation))|\(unit)"
+            DispatchQueue.main.async {
+                self.locationStatusText = "\(message). Using last location."
+            }
+            fetchForecast(for: cachedLocation, unit: unit)
+        } else {
+            fetchManualLocationWeather(unit: unit, force: true, fallbackStatus: "\(message). Using fallback city.")
+        }
+    }
+
+    private func geocode(_ query: String, completion: @escaping (Result<WeatherResolvedLocation, Error>) -> Void) {
+        var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")
+        components?.queryItems = [
+            URLQueryItem(name: "name", value: query),
+            URLQueryItem(name: "count", value: "1"),
+            URLQueryItem(name: "language", value: "en"),
+            URLQueryItem(name: "format", value: "json")
+        ]
+
+        guard let url = components?.url else {
+            completion(.failure(URLError(.badURL)))
+            return
+        }
+
+        URLSession.shared.dataTask(with: url) { data, _, error in
+            if let error {
+                completion(.failure(error))
+                return
+            }
+
+            guard let data else {
+                completion(.failure(URLError(.cannotParseResponse)))
+                return
+            }
+
+            DispatchQueue.main.async {
+                guard let response = try? JSONDecoder().decode(WeatherGeocodingResponse.self, from: data),
+                      let location = response.results?.first else {
+                    completion(.failure(URLError(.cannotParseResponse)))
+                    return
+                }
+
+                completion(.success(location.resolvedLocation))
+            }
+        }.resume()
+    }
+
+    private func reverseGeocode(_ location: CLLocation, completion: @escaping (WeatherResolvedLocation) -> Void) {
+        geocoder.reverseGeocodeLocation(location) { placemarks, _ in
+            DispatchQueue.main.async {
+                let placemark = placemarks?.first
+                let city = placemark?.locality?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let region = placemark?.administrativeArea?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let displayParts = [city, region]
+                    .compactMap { value -> String? in
+                        guard let value, !value.isEmpty else { return nil }
+                        return value
+                    }
+                    .reduce(into: [String]()) { parts, value in
+                        if !parts.contains(value) { parts.append(value) }
+                    }
+
+                let displayName = displayParts.isEmpty ? "Current Location" : displayParts.joined(separator: ", ")
+                completion(
+                    WeatherResolvedLocation(
+                        displayName: displayName,
+                        latitude: location.coordinate.latitude,
+                        longitude: location.coordinate.longitude,
+                        country: placemark?.country
+                    )
+                )
+            }
+        }
+    }
+
+    private var cachedCurrentLocation: WeatherResolvedLocation? {
+        guard defaults.object(forKey: Key.currentLatitude) != nil,
+              defaults.object(forKey: Key.currentLongitude) != nil else {
+            return nil
+        }
+
+        let displayName = defaults.string(forKey: Key.currentLocationName)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return WeatherResolvedLocation(
+            displayName: displayName?.isEmpty == false ? displayName! : "Current Location",
+            latitude: defaults.double(forKey: Key.currentLatitude),
+            longitude: defaults.double(forKey: Key.currentLongitude),
+            country: defaults.string(forKey: Key.currentLocationCountry)
+        )
+    }
+
+    private func cacheCurrentLocation(_ location: WeatherResolvedLocation) {
+        defaults.set(location.latitude, forKey: Key.currentLatitude)
+        defaults.set(location.longitude, forKey: Key.currentLongitude)
+        defaults.set(location.displayName, forKey: Key.currentLocationName)
+        defaults.set(location.country, forKey: Key.currentLocationCountry)
+    }
+
+    private func coordinateSignature(_ location: WeatherResolvedLocation) -> String {
+        "\(String(format: "%.3f", location.latitude)),\(String(format: "%.3f", location.longitude))"
+    }
+
+    private func fetchForecast(for location: WeatherResolvedLocation, unit: String) {
+        var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
+        components?.queryItems = [
+            URLQueryItem(name: "latitude", value: String(location.latitude)),
+            URLQueryItem(name: "longitude", value: String(location.longitude)),
+            URLQueryItem(name: "current", value: "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m"),
+            URLQueryItem(name: "daily", value: "weather_code,temperature_2m_max,temperature_2m_min"),
+            URLQueryItem(name: "temperature_unit", value: unit),
+            URLQueryItem(name: "wind_speed_unit", value: unit == "fahrenheit" ? "mph" : "kmh"),
+            URLQueryItem(name: "precipitation_unit", value: unit == "fahrenheit" ? "inch" : "mm"),
+            URLQueryItem(name: "forecast_days", value: "3"),
+            URLQueryItem(name: "timezone", value: "auto")
+        ]
+
+        guard let url = components?.url else {
+            DispatchQueue.main.async {
+                self.isFetching = false
+                self.errorMessage = "Weather request failed"
+            }
+            return
+        }
+
+        URLSession.shared.dataTask(with: url) { data, _, error in
+            guard let data, error == nil else {
+                DispatchQueue.main.async {
+                    self.isFetching = false
+                    self.errorMessage = "Weather unavailable"
+                }
+                return
+            }
+
+            DispatchQueue.main.async {
+                guard let response = try? JSONDecoder().decode(OpenMeteoForecastResponse.self, from: data) else {
+                    self.isFetching = false
+                    self.errorMessage = "Weather unavailable"
+                    return
+                }
+
+                let snapshot = WeatherSnapshot(
+                    locationName: location.displayName,
+                    country: location.country,
+                    temperature: response.current.temperature,
+                    apparentTemperature: response.current.apparentTemperature,
+                    humidity: response.current.humidity,
+                    windSpeed: response.current.windSpeed,
+                    precipitation: response.current.precipitation,
+                    weatherCode: response.current.weatherCode,
+                    high: response.daily?.temperatureMax?.first,
+                    low: response.daily?.temperatureMin?.first,
+                    unit: unit,
+                    fetchedAt: Date()
+                )
+
+                self.snapshot = snapshot
+                self.lastFetchDate = Date()
+                self.isFetching = false
+                self.errorMessage = nil
+            }
+        }.resume()
+    }
+}
+
+struct WeatherWidget: View {
+    @StateObject private var weather = WeatherManager.shared
+
+    var body: some View {
+        Group {
+            if let snapshot = weather.snapshot {
+                weatherContent(snapshot)
+            } else if weather.isFetching {
+                loadingState
+            } else {
+                errorState
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear {
+            weather.fetchWeather()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            weather.fetchWeather()
+        }
+    }
+
+    private func weatherContent(_ snapshot: WeatherSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(weatherColor(for: snapshot.weatherCode).opacity(0.16))
+                    Image(systemName: weatherSymbol(for: snapshot.weatherCode))
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundColor(weatherColor(for: snapshot.weatherCode))
+                }
+                .frame(width: 42, height: 42)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(snapshot.locationName)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    Text(conditionText(for: snapshot.weatherCode))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.58))
+                        .lineLimit(1)
+                    if !snapshot.highLowText.isEmpty {
+                        Text(snapshot.highLowText)
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.48))
+                            .monospacedDigit()
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                temperatureDisplay(snapshot)
+            }
+
+            HStack(spacing: 8) {
+                WeatherMetricPill(icon: "thermometer.medium", text: "Feels \(snapshot.apparentText)")
+                WeatherMetricPill(icon: "humidity.fill", text: "\(snapshot.humidity)%")
+                WeatherMetricPill(icon: "wind", text: snapshot.windText)
+            }
+
+            HStack {
+                Text("Updated \(relativeTime(snapshot.fetchedAt))")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white.opacity(0.36))
+                Spacer()
+                Text("Open-Meteo")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.36))
+            }
+        }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 8) {
+            Spacer()
+            ProgressView().controlSize(.small)
+            Text("Fetching weather...")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white.opacity(0.55))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var errorState: some View {
+        VStack(spacing: 8) {
+            Spacer()
+            Image(systemName: "cloud.sun.fill")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundColor(.orange)
+            Text(weather.errorMessage ?? "Weather unavailable")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.white)
+            Text("Check Weather settings.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.white.opacity(0.52))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func temperatureDisplay(_ snapshot: WeatherSnapshot) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text("\(snapshot.temperatureNumberText)°")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .contentTransition(.numericText())
+            Text(snapshot.unitLetter)
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+        }
+        .monospacedDigit()
+        .foregroundColor(.white)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(1)
+    }
+
+    private func relativeTime(_ date: Date) -> String {
+        let minutes = max(0, Int(Date().timeIntervalSince(date) / 60))
+        if minutes < 1 { return "now" }
+        return "\(minutes)m ago"
+    }
+
+    private func weatherSymbol(for code: Int) -> String {
+        switch code {
+        case 0: return "sun.max.fill"
+        case 1, 2: return "cloud.sun.fill"
+        case 3: return "cloud.fill"
+        case 45, 48: return "cloud.fog.fill"
+        case 51...57: return "cloud.drizzle.fill"
+        case 61...67, 80...82: return "cloud.rain.fill"
+        case 71...77, 85...86: return "snowflake"
+        case 95...99: return "cloud.bolt.rain.fill"
+        default: return "cloud.sun.fill"
+        }
+    }
+
+    private func conditionText(for code: Int) -> String {
+        switch code {
+        case 0: return "Clear"
+        case 1: return "Mostly clear"
+        case 2: return "Partly cloudy"
+        case 3: return "Cloudy"
+        case 45, 48: return "Fog"
+        case 51...57: return "Drizzle"
+        case 61...67: return "Rain"
+        case 71...77: return "Snow"
+        case 80...82: return "Showers"
+        case 85...86: return "Snow showers"
+        case 95...99: return "Thunderstorm"
+        default: return "Weather"
+        }
+    }
+
+    private func weatherColor(for code: Int) -> Color {
+        switch code {
+        case 0...2: return .yellow
+        case 45, 48: return .gray
+        case 51...67, 80...82: return .blue
+        case 71...77, 85...86: return .cyan
+        case 95...99: return .purple
+        default: return .orange
+        }
+    }
+}
+
+struct WeatherMetricPill: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .bold))
+            Text(text)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+        }
+        .foregroundColor(.white.opacity(0.68))
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(Color.white.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
