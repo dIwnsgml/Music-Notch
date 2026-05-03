@@ -1,14 +1,73 @@
 import Foundation
 
-struct LRCTrack: Codable {
+nonisolated struct LRCTrack: Codable {
+    let id: Int?
     let trackName: String?
     let artistName: String?
+    let albumName: String?
+    let duration: Double?
+    let plainLyrics: String?
     let syncedLyrics: String?
 }
 
-struct LyricLine: Equatable {
+nonisolated struct LyricLine: Codable, Equatable, Sendable {
     let time: Double
     let text: String
+}
+
+nonisolated struct CachedLyricsEntry: Codable, Equatable, Sendable {
+    var lyrics: [LyricLine]
+    var songOffset: Double
+    var noLyrics: Bool
+    var updatedAt: Date
+}
+
+nonisolated struct LyricsSearchQuery: Equatable, Sendable {
+    var title: String
+    var artist: String
+}
+
+nonisolated enum LyricsSearchSource: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case cache = "Cached"
+    case lrclib = "LRCLIB"
+    case lyricsOVH = "Lyrics.ovh"
+    case netease = "Netease"
+
+    var id: String { rawValue }
+}
+
+nonisolated struct LyricsSearchResult: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let source: LyricsSearchSource
+    let title: String
+    let artist: String
+    let album: String?
+    let lyricsText: String
+    let lines: [LyricLine]
+    let isSynced: Bool
+    let score: Double
+
+    init(
+        id: UUID = UUID(),
+        source: LyricsSearchSource,
+        title: String,
+        artist: String,
+        album: String? = nil,
+        lyricsText: String,
+        lines: [LyricLine],
+        isSynced: Bool,
+        score: Double
+    ) {
+        self.id = id
+        self.source = source
+        self.title = title
+        self.artist = artist
+        self.album = album
+        self.lyricsText = lyricsText
+        self.lines = lines
+        self.isSynced = isSynced
+        self.score = score
+    }
 }
 
 struct PlaylistTrack: Identifiable, Equatable {

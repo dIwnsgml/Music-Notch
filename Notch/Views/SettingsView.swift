@@ -62,7 +62,7 @@ struct SettingsView: View {
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
     @AppStorage("lyricDimming") var lyricDimming: Double = 0.3
     @AppStorage("lyricBlurAmount") var lyricBlurAmount: Double = 0.4
-    @AppStorage("lyricOffset") var lyricOffset: Double = 0.0
+    @AppStorage("globalLyricOffset") var globalLyricOffset: Double = 0.0
     @AppStorage("plugin_pomodoro_timer_installed") var pomodoroInstalled = false
     @AppStorage("pomodoro_show_notch_timer") var showPomodoroNotchTimer = true
     @AppStorage("pomodoro_show_time_text") var showPomodoroTimeText = true
@@ -229,10 +229,10 @@ struct SettingsView: View {
             }
 
             Section {
-                KeyboardShortcuts.Recorder("Increase Lyric Sync (+0.5s)", name: .increaseOffset)
-                KeyboardShortcuts.Recorder("Decrease Lyric Sync (-0.5s)", name: .decreaseOffset)
+                KeyboardShortcuts.Recorder("Make Current Song Lyrics Earlier (+0.5s)", name: .increaseOffset)
+                KeyboardShortcuts.Recorder("Make Current Song Lyrics Later (-0.5s)", name: .decreaseOffset)
             } header: {
-                Text("Lyric Synchronization")
+                Text("Per-Song Lyric Synchronization")
             }
 
             Section {
@@ -518,19 +518,19 @@ struct SettingsView: View {
 
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
-                        let offsetText = lyricOffset == 0.0 ? "0.0 s" : String(format: "%+.1f s", lyricOffset)
-                        Text("Sync Offset: \(offsetText)")
+                        let offsetText = globalLyricOffset == 0.0 ? "0.0 s" : String(format: "%+.1f s", globalLyricOffset)
+                        Text("Global Sync Offset: \(offsetText)")
                         HStack(spacing: 8) {
                             Text("-8.0s").font(.caption).foregroundColor(.secondary).frame(width: 36, alignment: .leading)
-                            Slider(value: $lyricOffset, in: -8.0...8.0, step: 0.5).labelsHidden()
+                            Slider(value: $globalLyricOffset, in: -8.0...8.0, step: 0.5).labelsHidden()
                             Text("+8.0s").font(.caption).foregroundColor(.secondary).frame(width: 36, alignment: .trailing)
                         }
                     }
                     .padding(.vertical, 4)
                 } header: {
-                    Text("Synchronization")
+                    Text("Global Synchronization")
                 } footer: {
-                    Text("Slide left to delay lyrics, right to make them appear earlier.")
+                    Text("Applies to every song. Per-song offsets are saved with each song and can be adjusted from the player or shortcuts.")
                 }
             }
         }

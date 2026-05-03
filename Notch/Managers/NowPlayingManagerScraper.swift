@@ -240,6 +240,8 @@ extension NowPlayingManager {
                     DispatchQueue.main.async {
                         self.lyrics = []
                         self.activeLyricIndex = 0
+                        self.currentSongLyricOffset = 0.0
+                        self.lyricsDisabledForCurrentSong = false
                         self.isSearchingLyrics = false
                     }
                 } else {

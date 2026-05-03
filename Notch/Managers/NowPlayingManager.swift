@@ -7,7 +7,8 @@ class NowPlayingManager: ObservableObject {
     
     // ⚡️ Network Safety & Caching
     var lyricSearchTask: DispatchWorkItem? = nil
-    var lyricsCache: [String: [LyricLine]] = [:]
+    var lyricsCache: [String: CachedLyricsEntry] = [:]
+    var currentLyricsCacheKey: String? = nil
     var currentLyricSearchID: UUID = UUID() // ⚡️ THE TICKET COUNTER
     
     @Published var currentSong: String = "No Music"
@@ -43,6 +44,8 @@ class NowPlayingManager: ObservableObject {
     @Published var lyrics: [LyricLine] = []
     @Published var activeLyricIndex: Int = 0
     @Published var isSearchingLyrics: Bool = false
+    @Published var currentSongLyricOffset: Double = 0.0
+    @Published var lyricsDisabledForCurrentSong: Bool = false
     @Published var playlist: [PlaylistTrack] = []
     // ⚡️ NEW: Triggers the UI when a control is used
     @Published var lastControlAction: UUID = UUID()
@@ -57,6 +60,8 @@ class NowPlayingManager: ObservableObject {
     var lastTabIndex: Int? = nil
 
     init() {
+        migrateGlobalLyricOffsetIfNeeded()
+        self.lyricsCache = Self.loadLyricsCache()
         self.lastActiveBrowser = UserDefaults.standard.string(forKey: "lastActiveBrowser")
         if UserDefaults.standard.object(forKey: "lastWindowIndex") != nil {
             self.lastWindowIndex = UserDefaults.standard.integer(forKey: "lastWindowIndex")

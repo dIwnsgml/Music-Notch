@@ -23,7 +23,6 @@ struct ContentView: View {
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
     @AppStorage("showLyrics") var showLyrics = true
-    @AppStorage("lyricOffset") var lyricOffset: Double = 0.0
     @AppStorage("showBannerLyrics") var showBannerLyrics = true
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("visibleLyricLines") var visibleLyricLines = 3
@@ -183,7 +182,7 @@ struct ContentView: View {
             globalMediaKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { event in
                 handleSystemKey(event: event)
             }
-            KeyboardShortcuts.onKeyDown(for: .toggleAppVisibility) { isAppHidden.toggle() }
+            registerKeyboardShortcuts()
             loadThemeImage()
         }
         .onDisappear {
@@ -600,6 +599,46 @@ struct ContentView: View {
             nowPlaying.skipBackward()
         }
         triggerBanner(text: forward ? "Skipped Forward" : "Skipped Back", duration: 1.5)
+    }
+
+    private func registerKeyboardShortcuts() {
+        KeyboardShortcuts.onKeyDown(for: .toggleAppVisibility) {
+            isAppHidden.toggle()
+        }
+        KeyboardShortcuts.onKeyDown(for: .toggleLiveLyrics) {
+            showLyrics.toggle()
+        }
+        KeyboardShortcuts.onKeyDown(for: .toggleBannerLyrics) {
+            showBannerLyrics.toggle()
+            updateLyricBanner()
+        }
+        KeyboardShortcuts.onKeyDown(for: .toggleBanner) {
+            showBannerOnControl.toggle()
+        }
+        KeyboardShortcuts.onKeyDown(for: .increaseOffset) {
+            nowPlaying.adjustCurrentSongLyricOffset(by: 0.5)
+            triggerBanner(text: "Lyrics Earlier \(formatSignedOffset(nowPlaying.currentSongLyricOffset))", duration: 1.2)
+        }
+        KeyboardShortcuts.onKeyDown(for: .decreaseOffset) {
+            nowPlaying.adjustCurrentSongLyricOffset(by: -0.5)
+            triggerBanner(text: "Lyrics Later \(formatSignedOffset(nowPlaying.currentSongLyricOffset))", duration: 1.2)
+        }
+        KeyboardShortcuts.onKeyDown(for: .increaseLines) {
+            visibleLyricLines = min(5, visibleLyricLines == 1 ? 3 : visibleLyricLines + 2)
+        }
+        KeyboardShortcuts.onKeyDown(for: .decreaseLines) {
+            visibleLyricLines = max(1, visibleLyricLines == 5 ? 3 : visibleLyricLines - 2)
+        }
+        KeyboardShortcuts.onKeyDown(for: .increaseDelay) {
+            hoverDelay = min(3.0, hoverDelay + 0.1)
+        }
+        KeyboardShortcuts.onKeyDown(for: .decreaseDelay) {
+            hoverDelay = max(0.0, hoverDelay - 0.1)
+        }
+    }
+
+    private func formatSignedOffset(_ value: Double) -> String {
+        value == 0.0 ? "0.0s" : String(format: "%+.1fs", value)
     }
 
     private func handleSongChange(_ newSong: String) {

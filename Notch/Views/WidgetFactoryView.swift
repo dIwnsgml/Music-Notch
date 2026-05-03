@@ -1617,8 +1617,12 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
     private var refreshTimer: Timer?
     private var lastRequestSignature = ""
     private var lastFetchDate: Date?
+    private var lastFailureDate: Date?
+    private var lastFailureSignature = ""
     private var pendingCurrentLocationUnit: String?
     private var pendingCurrentLocationForce = false
+    private let successRefreshInterval: TimeInterval = 1800
+    private let failureRetryInterval: TimeInterval = 300
 
     private enum Key {
         static let useCurrentLocation = "weather_use_current_location"
@@ -1634,7 +1638,7 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
             self?.fetchWeather()
         }
         fetchWeather()
@@ -1655,6 +1659,10 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
     }
 
     func fetchWeather(force: Bool = false) {
+        if isFetching && !force {
+            return
+        }
+
         let unit = configuredUnit
 
         if useCurrentLocation {
@@ -1671,8 +1679,12 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
         if !force,
            signature == lastRequestSignature,
            let lastFetchDate,
-           Date().timeIntervalSince(lastFetchDate) < 900,
+           Date().timeIntervalSince(lastFetchDate) < successRefreshInterval,
            snapshot != nil {
+            return
+        }
+
+        if shouldSkipFailedFetch(signature: signature, force: force) {
             return
         }
 
@@ -1697,6 +1709,7 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
             case .failure:
                 DispatchQueue.main.async {
                     self.isFetching = false
+                    self.recordWeatherFailure(signature: signature, message: "Location not found")
                     self.errorMessage = "Location not found"
                 }
             }
@@ -1708,8 +1721,12 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
             let signature = "current:\(coordinateSignature(cachedLocation))|\(unit)"
             if signature == lastRequestSignature,
                let lastFetchDate,
-               Date().timeIntervalSince(lastFetchDate) < 900,
+               Date().timeIntervalSince(lastFetchDate) < successRefreshInterval,
                snapshot != nil {
+                return
+            }
+
+            if shouldSkipFailedFetch(signature: signature, force: force) {
                 return
             }
 
@@ -1723,6 +1740,14 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
             return
         }
 
+        let lookupSignature = "current:lookup|\(unit)"
+        if shouldSkipCurrentStartupRetry(unit: unit, force: force) {
+            return
+        }
+        if shouldSkipFailedFetch(signature: lookupSignature, force: force) {
+            return
+        }
+        lastRequestSignature = lookupSignature
         requestCurrentLocation(unit: unit, force: force)
 
         if !force {
@@ -1745,6 +1770,7 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
         }
 
         guard CLLocationManager.locationServicesEnabled() else {
+            recordWeatherFailure(signature: lastRequestSignature, message: "Location Services are off")
             handleCurrentLocationUnavailable("Location Services are off", unit: unit, force: force)
             return
         }
@@ -1755,8 +1781,10 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
         case .authorizedAlways, .authorizedWhenInUse:
             locationManager.requestLocation()
         case .denied, .restricted:
+            recordWeatherFailure(signature: lastRequestSignature, message: "Location permission denied")
             handleCurrentLocationUnavailable("Location permission denied", unit: unit, force: force)
         @unknown default:
+            recordWeatherFailure(signature: lastRequestSignature, message: "Location unavailable")
             handleCurrentLocationUnavailable("Location unavailable", unit: unit, force: force)
         }
     }
@@ -1768,10 +1796,12 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
         case .authorizedAlways, .authorizedWhenInUse:
             manager.requestLocation()
         case .denied, .restricted:
+            recordWeatherFailure(signature: lastRequestSignature, message: "Location permission denied")
             handleCurrentLocationUnavailable("Location permission denied", unit: unit, force: pendingCurrentLocationForce)
         case .notDetermined:
             break
         @unknown default:
+            recordWeatherFailure(signature: lastRequestSignature, message: "Location unavailable")
             handleCurrentLocationUnavailable("Location unavailable", unit: unit, force: pendingCurrentLocationForce)
         }
     }
@@ -1800,6 +1830,7 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
         let force = pendingCurrentLocationForce
         pendingCurrentLocationUnit = nil
         pendingCurrentLocationForce = false
+        recordWeatherFailure(signature: lastRequestSignature, message: "Current location unavailable")
         handleCurrentLocationUnavailable("Current location unavailable", unit: unit, force: force)
     }
 
@@ -1909,7 +1940,35 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
         "\(String(format: "%.3f", location.latitude)),\(String(format: "%.3f", location.longitude))"
     }
 
+    private func shouldSkipFailedFetch(signature: String, force: Bool) -> Bool {
+        guard !force,
+              signature == lastFailureSignature,
+              let lastFailureDate,
+              Date().timeIntervalSince(lastFailureDate) < failureRetryInterval else {
+            return false
+        }
+        return true
+    }
+
+    private func shouldSkipCurrentStartupRetry(unit: String, force: Bool) -> Bool {
+        guard !force,
+              snapshot == nil,
+              let lastFailureDate,
+              Date().timeIntervalSince(lastFailureDate) < failureRetryInterval else {
+            return false
+        }
+
+        return lastFailureSignature == "current:lookup|\(unit)" || lastFailureSignature.hasPrefix("manual:")
+    }
+
+    private func recordWeatherFailure(signature: String, message: String) {
+        lastFailureSignature = signature
+        lastFailureDate = Date()
+        locationStatusText = message
+    }
+
     private func fetchForecast(for location: WeatherResolvedLocation, unit: String) {
+        let signature = lastRequestSignature
         var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
         components?.queryItems = [
             URLQueryItem(name: "latitude", value: String(location.latitude)),
@@ -1926,6 +1985,7 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
         guard let url = components?.url else {
             DispatchQueue.main.async {
                 self.isFetching = false
+                self.recordWeatherFailure(signature: signature, message: "Weather request failed")
                 self.errorMessage = "Weather request failed"
             }
             return
@@ -1935,6 +1995,7 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
             guard let data, error == nil else {
                 DispatchQueue.main.async {
                     self.isFetching = false
+                    self.recordWeatherFailure(signature: signature, message: "Weather unavailable")
                     self.errorMessage = "Weather unavailable"
                 }
                 return
@@ -1943,6 +2004,7 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
             DispatchQueue.main.async {
                 guard let response = try? JSONDecoder().decode(OpenMeteoForecastResponse.self, from: data) else {
                     self.isFetching = false
+                    self.recordWeatherFailure(signature: signature, message: "Weather unavailable")
                     self.errorMessage = "Weather unavailable"
                     return
                 }
@@ -1964,6 +2026,8 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
 
                 self.snapshot = snapshot
                 self.lastFetchDate = Date()
+                self.lastFailureDate = nil
+                self.lastFailureSignature = ""
                 self.isFetching = false
                 self.errorMessage = nil
             }
@@ -1988,9 +2052,6 @@ struct WeatherWidget: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            weather.fetchWeather()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
             weather.fetchWeather()
         }
     }

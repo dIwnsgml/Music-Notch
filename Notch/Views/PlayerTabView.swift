@@ -31,6 +31,8 @@ struct PlayerTabView: View {
     @State private var isDragging = false
     @State private var dragProgress: Double = 0.0
     @State private var isMouseOver = false
+    @State private var isLyricsHovering = false
+    @State private var isLyricOffsetRailHovering = false
     @State private var lastSwipeTime: Date = Date()
     @State private var localEventMonitor: Any?
     
@@ -112,7 +114,7 @@ struct PlayerTabView: View {
                                     .shadow(color: nowPlaying.artworkDominantColor.opacity(max(glowOpacity, 0.18)), radius: 12, x: 0, y: 4)
                                     .id(nowPlaying.currentSong)
                                     .transition(.dynamicPanRotate(direction: skipDirection))
-                                
+
                             } else {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -143,12 +145,7 @@ struct PlayerTabView: View {
                                     .background((hasMedia ? nowPlaying.artworkDominantColor : Color.white).opacity(0.10))
                                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 
-                                ZStack {
-                                    if nowPlaying.isSearchingLyrics && showLyrics {
-                                        ProgressView().controlSize(.mini)
-                                    }
-                                }
-                                .frame(width: 14, height: 14)
+                                lyricStatusControls(hasMedia: hasMedia)
                             }
                             
                             if hasMedia {
@@ -250,49 +247,67 @@ struct PlayerTabView: View {
                     
                     // 3. LYRICS
                     if showLyrics && hasMedia && !nowPlaying.lyrics.isEmpty {
-                        GeometryReader { geo in
-                            let itemHeight: CGFloat = 26
-                            let exactFrameHeight: CGFloat = CGFloat(visibleLyricLines) * itemHeight
-                            let activeOffset = CGFloat(nowPlaying.activeLyricIndex) * itemHeight
-                            let centerAdjustment = (exactFrameHeight - itemHeight) / 2.0
-                            
-                            VStack(spacing: 0) {
-                                ForEach(Array(nowPlaying.lyrics.enumerated()), id: \.offset) { index, lyric in
-                                    let distance = abs(index - nowPlaying.activeLyricIndex)
-                                    let lyricOpacity: Double = distance == 0 ? 1.0 : max(0.0, 1.0 - (Double(distance) * lyricDimming))
-                                    let lyricScale: CGFloat = distance == 0 ? 1.0 : 1.0 - (CGFloat(distance) * 0.05)
-                                    let lyricBlur: CGFloat = distance == 0 ? 0.0 : CGFloat(distance) * lyricBlurAmount
-                                    
-                                    Text(lyric.text)
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(.white.opacity(lyricOpacity))
-                                        .multilineTextAlignment(.center)
-                                        .frame(maxWidth: playerPanelWidth - (hPad * 2), alignment: .center)
-                                        .frame(height: itemHeight)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                        .scaleEffect(lyricScale)
-                                        .blur(radius: lyricBlur)
+                        HStack(alignment: .center, spacing: 6) {
+                            GeometryReader { geo in
+                                let itemHeight: CGFloat = 26
+                                let exactFrameHeight: CGFloat = CGFloat(visibleLyricLines) * itemHeight
+                                let activeOffset = CGFloat(nowPlaying.activeLyricIndex) * itemHeight
+                                let centerAdjustment = (exactFrameHeight - itemHeight) / 2.0
+
+                                VStack(spacing: 0) {
+                                    ForEach(Array(nowPlaying.lyrics.enumerated()), id: \.offset) { index, lyric in
+                                        let distance = abs(index - nowPlaying.activeLyricIndex)
+                                        let lyricOpacity: Double = distance == 0 ? 1.0 : max(0.0, 1.0 - (Double(distance) * lyricDimming))
+                                        let lyricScale: CGFloat = distance == 0 ? 1.0 : 1.0 - (CGFloat(distance) * 0.05)
+                                        let lyricBlur: CGFloat = distance == 0 ? 0.0 : CGFloat(distance) * lyricBlurAmount
+
+                                        Text(lyric.text)
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundColor(.white.opacity(lyricOpacity))
+                                            .multilineTextAlignment(.center)
+                                            .frame(maxWidth: geo.size.width, alignment: .center)
+                                            .frame(height: itemHeight)
+                                            .lineLimit(1)
+                                            .truncationMode(.tail)
+                                            .scaleEffect(lyricScale)
+                                            .blur(radius: lyricBlur)
+                                    }
+                                }
+                                .frame(width: geo.size.width, alignment: .center)
+                                .offset(y: -activeOffset + centerAdjustment)
+                                .animation(.spring(response: 0.6, dampingFraction: 0.8), value: nowPlaying.activeLyricIndex)
+                            }
+                            .frame(height: CGFloat(visibleLyricLines) * 26.0)
+                            .clipped()
+                            .mask(
+                                LinearGradient(
+                                    gradient: Gradient(stops: [
+                                        .init(color: visibleLyricLines == 1 ? .black : .clear, location: 0),
+                                        .init(color: .black, location: visibleLyricLines == 1 ? 0 : 0.05),
+                                        .init(color: .black, location: visibleLyricLines == 1 ? 1 : 0.95),
+                                        .init(color: visibleLyricLines == 1 ? .black : .clear, location: 1)
+                                    ]),
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .contentShape(Rectangle())
+                            .onHover { hovering in
+                                withAnimation(.easeInOut(duration: 0.16)) {
+                                    isLyricsHovering = hovering
                                 }
                             }
-                            .frame(width: geo.size.width, alignment: .center)
-                            .offset(y: -activeOffset + centerAdjustment)
-                            .animation(.spring(response: 0.6, dampingFraction: 0.8), value: nowPlaying.activeLyricIndex)
+
+                            ZStack {
+                                if shouldShowLyricControls {
+                                    lyricOffsetRail
+                                        .transition(.opacity)
+                                }
+                            }
+                            .frame(width: 32)
                         }
+                        .padding(.horizontal, hPad)
                         .frame(height: CGFloat(visibleLyricLines) * 26.0)
-                        .clipped()
-                        .mask(
-                            LinearGradient(
-                                gradient: Gradient(stops: [
-                                    .init(color: visibleLyricLines == 1 ? .black : .clear, location: 0),
-                                    .init(color: .black, location: visibleLyricLines == 1 ? 0 : 0.05),
-                                    .init(color: .black, location: visibleLyricLines == 1 ? 1 : 0.95),
-                                    .init(color: visibleLyricLines == 1 ? .black : .clear, location: 1)
-                                ]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
                         .padding(.top, 8)
                     }
                 }
@@ -365,6 +380,108 @@ struct PlayerTabView: View {
     // ---------------------------------------------------------
     // ⚡️ HELPER METHODS
     // ---------------------------------------------------------
+
+    private var shouldShowLyricControls: Bool {
+        showLyrics && (isLyricsHovering || isLyricOffsetRailHovering)
+    }
+
+    private func lyricStatusControls(hasMedia: Bool) -> some View {
+        HStack(spacing: 4) {
+            if nowPlaying.isSearchingLyrics && showLyrics {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: 14, height: 14)
+            }
+
+            if hasMedia && showLyrics && nowPlaying.lyricsDisabledForCurrentSong {
+                Button {
+                    nowPlaying.toggleNoLyricsForCurrentSong()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 8, weight: .bold))
+                        Text("No Lyrics")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundColor(.white.opacity(0.58))
+                    .padding(.horizontal, 6)
+                    .frame(height: 16)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help("Search lyrics again")
+            }
+
+            if hasMedia && showLyrics && isMouseOver {
+                lyricToolButton(systemName: "magnifyingglass", help: "Search lyrics manually") {
+                    nowPlaying.promptForLyricsSearch()
+                }
+
+                lyricToolButton(
+                    systemName: nowPlaying.lyricsDisabledForCurrentSong ? "arrow.clockwise" : "eye.slash.fill",
+                    help: nowPlaying.lyricsDisabledForCurrentSong ? "Search lyrics again" : "Do not search lyrics for this song"
+                ) {
+                    nowPlaying.toggleNoLyricsForCurrentSong()
+                }
+            }
+        }
+        .frame(height: 18)
+        .animation(.easeInOut(duration: 0.16), value: shouldShowLyricControls)
+        .animation(.easeInOut(duration: 0.16), value: nowPlaying.lyricsDisabledForCurrentSong)
+    }
+
+    private var lyricOffsetRail: some View {
+        VStack(spacing: 2) {
+            lyricToolButton(systemName: "chevron.up", help: "Lyrics earlier") {
+                nowPlaying.adjustCurrentSongLyricOffset(by: 0.5)
+            }
+
+            Text(formatCompactOffset(nowPlaying.currentSongLyricOffset))
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundColor(.white.opacity(0.80))
+                .frame(width: 30, height: 16)
+
+            lyricToolButton(systemName: "chevron.down", help: "Lyrics later") {
+                nowPlaying.adjustCurrentSongLyricOffset(by: -0.5)
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(width: 32)
+        .background(Color.black.opacity(0.30))
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+        )
+        .clipShape(Capsule())
+        .contentShape(Capsule())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.16)) {
+                isLyricOffsetRailHovering = hovering
+            }
+        }
+    }
+
+    private func lyricToolButton(systemName: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(.white.opacity(0.82))
+                .frame(width: 18, height: 18)
+                .background(Color.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func formatSignedOffset(_ value: Double) -> String {
+        value == 0.0 ? "0.0s" : String(format: "%+.1fs", value)
+    }
+
+    private func formatCompactOffset(_ value: Double) -> String {
+        value == 0.0 ? "0" : String(format: "%+.1f", value)
+    }
     
     private func ensurePermissions() -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
