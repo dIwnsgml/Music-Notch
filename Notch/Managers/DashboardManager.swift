@@ -10,6 +10,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
     case calendar
     case pomodoro
     case clipboard
+    case kaomoji
     case weather
     
     var id: String { self.rawValue }
@@ -24,6 +25,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .calendar: return "Calendar"
         case .pomodoro: return "Pomodoro Timer"
         case .clipboard: return "Clipboard History"
+        case .kaomoji: return "Kaomoji & Emoji Board"
         case .weather: return "Weather"
         }
     }
@@ -38,6 +40,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .calendar: return UserDefaults.standard.bool(forKey: "plugin_google_calendar_installed")
         case .pomodoro: return UserDefaults.standard.bool(forKey: "plugin_pomodoro_timer_installed")
         case .clipboard: return UserDefaults.standard.bool(forKey: "plugin_clipboard_history_installed")
+        case .kaomoji: return UserDefaults.standard.bool(forKey: "plugin_kaomoji_board_installed")
         case .weather: return UserDefaults.standard.bool(forKey: "plugin_weather_installed")
         }
     }
@@ -102,6 +105,7 @@ class DashboardManager: ObservableObject {
         let calendarEnabled = UserDefaults.standard.bool(forKey: "plugin_google_calendar_enabled")
         let pomodoroEnabled = UserDefaults.standard.bool(forKey: "plugin_pomodoro_timer_enabled")
         let clipboardEnabled = UserDefaults.standard.bool(forKey: "plugin_clipboard_history_enabled")
+        let kaomojiEnabled = UserDefaults.standard.bool(forKey: "plugin_kaomoji_board_enabled")
         let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
         if clipboardEnabled {
             _ = ClipboardHistoryManager.shared
@@ -160,6 +164,7 @@ class DashboardManager: ObservableObject {
             case .calendar: if calendarEnabled { widgets.append(.calendar) }
             case .pomodoro: if pomodoroEnabled { widgets.append(.pomodoro) }
             case .clipboard: if clipboardEnabled { widgets.append(.clipboard) }
+            case .kaomoji: if kaomojiEnabled { widgets.append(.kaomoji) }
             case .weather: if weatherEnabled { widgets.append(.weather) }
             }
         }

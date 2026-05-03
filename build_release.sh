@@ -20,7 +20,7 @@ echo "🚀 Starting 100% Automated WaveNotch Release Pipeline..."
 cd "$PROJECT_DIR"
 
 # 1. Auto-Detect and Ask for version number
-CURRENT_VERSION=$(agvtool what-marketing-version -terse1 | head -n 1)
+CURRENT_VERSION=$(grep -m 1 'MARKETING_VERSION' Notch.xcodeproj/project.pbxproj | cut -d'=' -f2 | tr -d ' ;"')
 SUGGESTED_VERSION=$(echo "$CURRENT_VERSION" | awk -F. '{$NF = $NF + 1;} 1' OFS=.)
 
 read -p "Enter the new visible version (Press Enter for $SUGGESTED_VERSION): " INPUT_VERSION

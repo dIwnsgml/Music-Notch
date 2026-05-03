@@ -69,6 +69,15 @@ class PluginManager: ObservableObject {
             storageKeyBase: "plugin_clipboard_history"
         ),
         WaveNotchPlugin(
+            id: "kaomoji_board",
+            name: "Kaomoji & Emoji Board",
+            description: "One-click copying for kaomoji, text faces, symbols, and frequently used emoji.",
+            iconName: "face.smiling",
+            assetImageName: nil,
+            category: .productivity,
+            storageKeyBase: "plugin_kaomoji_board"
+        ),
+        WaveNotchPlugin(
             id: "weather",
             name: "Weather",
             description: "Real-time weather conditions, temperature, and short forecasts for your chosen location.",

@@ -517,6 +517,8 @@ struct PluginDetailView: View {
                     WeatherPluginSettingsView()
                 } else if plugin.id == "clipboard_history" {
                     ClipboardPluginSettingsView()
+                } else if plugin.id == "kaomoji_board" {
+                    KaomojiPluginSettingsView()
                 } else {
                     Text("No additional settings for this plugin.")
                         .font(.system(size: 12))
@@ -583,6 +585,8 @@ struct PluginIcon: View {
             return .red
         case let id where id.contains("clipboard"):
             return .purple
+        case let id where id.contains("kaomoji"):
+            return .pink
         case let id where id.contains("weather"):
             return .orange
         default:
@@ -782,6 +786,38 @@ struct ClipboardPluginSettingsView: View {
             .controlSize(.small)
 
             Text("Tracks text, links, files, and images while the plugin is enabled.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+    }
+}
+
+struct KaomojiPluginSettingsView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PomodoroSettingStepper(
+                title: "Recent Limit",
+                key: "kaomoji_board_recent_limit",
+                range: 0...24,
+                defaultValue: 12,
+                suffix: "items"
+            )
+
+            Divider().opacity(0.15)
+
+            Button(role: .destructive) {
+                KaomojiBoardManager.shared.clearRecent()
+            } label: {
+                HStack {
+                    Image(systemName: "clock.badge.xmark")
+                    Text("Clear Recent")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Text("Recent items are saved locally and copied back as plain text.")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.secondary)
         }

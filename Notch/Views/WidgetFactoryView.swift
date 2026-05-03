@@ -38,6 +38,7 @@ struct WidgetFactoryView: View {
                     case .calendar: CalendarWidget()
                     case .pomodoro: PomodoroTimerWidget(isCompact: isCompact)
                     case .clipboard: ClipboardHistoryWidget()
+                    case .kaomoji: KaomojiBoardWidget()
                     case .weather: WeatherWidget()
                     }
                 }
@@ -948,7 +949,7 @@ struct ClipboardHistoryWidget: View {
     @StateObject private var clipboard = ClipboardHistoryManager.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Image(systemName: "doc.on.clipboard")
                     .font(.system(size: 13, weight: .semibold))
@@ -1124,6 +1125,366 @@ struct ClipboardHistoryRow: View {
         let hours = minutes / 60
         if hours < 24 { return "\(hours)h" }
         return "\(hours / 24)d"
+    }
+}
+
+enum KaomojiBoardCategory: String, CaseIterable, Identifiable {
+    case faces
+    case mood
+    case action
+    case symbols
+    case emoji
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .faces: return "Faces"
+        case .mood: return "Mood"
+        case .action: return "Action"
+        case .symbols: return "Symbols"
+        case .emoji: return "Emoji"
+        }
+    }
+}
+
+struct KaomojiBoardEntry: Identifiable, Hashable {
+    let category: KaomojiBoardCategory
+    let text: String
+    let label: String
+
+    var id: String { "\(category.rawValue)|\(text)" }
+}
+
+final class KaomojiBoardManager: ObservableObject {
+    static let shared = KaomojiBoardManager()
+
+    @Published private(set) var recentItems: [String] = []
+
+    private let defaults = UserDefaults.standard
+
+    private enum Key {
+        static let recentItems = "kaomoji_board_recent_items"
+        static let recentLimit = "kaomoji_board_recent_limit"
+    }
+
+    private init() {
+        loadRecent()
+    }
+
+    var recentLimit: Int {
+        let stored = defaults.object(forKey: Key.recentLimit) as? Int ?? 12
+        return min(max(stored, 0), 24)
+    }
+
+    var hasRecentItems: Bool {
+        !recentItems.isEmpty && recentLimit > 0
+    }
+
+    func entries(for category: KaomojiBoardCategory) -> [KaomojiBoardEntry] {
+        Self.entries.filter { $0.category == category }
+    }
+
+    func copy(_ entry: KaomojiBoardEntry) {
+        copyText(entry.text)
+    }
+
+    func copyRecent(_ text: String) {
+        copyText(text)
+    }
+
+    func clearRecent() {
+        recentItems.removeAll()
+        persistRecent()
+    }
+
+    func syncSettings() {
+        let previousItems = recentItems
+        pruneRecent()
+        if previousItems != recentItems {
+            persistRecent()
+        }
+    }
+
+    private func copyText(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        remember(text)
+    }
+
+    private func remember(_ text: String) {
+        guard recentLimit > 0 else { return }
+        recentItems.removeAll { $0 == text }
+        recentItems.insert(text, at: 0)
+        pruneRecent()
+        persistRecent()
+    }
+
+    private func pruneRecent() {
+        if recentItems.count > recentLimit {
+            recentItems = Array(recentItems.prefix(recentLimit))
+        }
+    }
+
+    private func loadRecent() {
+        let stored = defaults.stringArray(forKey: Key.recentItems) ?? []
+        recentItems = Array(stored.prefix(recentLimit))
+    }
+
+    private func persistRecent() {
+        defaults.set(recentItems, forKey: Key.recentItems)
+    }
+
+    private static let entries: [KaomojiBoardEntry] = [
+        KaomojiBoardEntry(category: .faces, text: #"(ง'̀-'́)ง"#, label: "fight"),
+        KaomojiBoardEntry(category: .faces, text: #"¯\_(ツ)_/¯"#, label: "shrug"),
+        KaomojiBoardEntry(category: .faces, text: #"ಠ_ಠ"#, label: "stare"),
+        KaomojiBoardEntry(category: .faces, text: #"( ͡° ͜ʖ ͡°)"#, label: "lenny"),
+        KaomojiBoardEntry(category: .faces, text: #"(⌐■_■)"#, label: "cool"),
+        KaomojiBoardEntry(category: .faces, text: #"(¬_¬)"#, label: "side eye"),
+        KaomojiBoardEntry(category: .faces, text: #"(•_•)"#, label: "deadpan"),
+        KaomojiBoardEntry(category: .faces, text: #"(ᵔᴥᵔ)"#, label: "soft"),
+        KaomojiBoardEntry(category: .faces, text: #"ʕ•ᴥ•ʔ"#, label: "cute"),
+        KaomojiBoardEntry(category: .faces, text: #"(｡◕‿◕｡)"#, label: "smile"),
+        KaomojiBoardEntry(category: .faces, text: #"(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧"#, label: "sparkle"),
+        KaomojiBoardEntry(category: .faces, text: #"ᕕ( ᐛ )ᕗ"#, label: "march"),
+
+        KaomojiBoardEntry(category: .mood, text: #"(｡♥‿♥｡)"#, label: "love"),
+        KaomojiBoardEntry(category: .mood, text: #"(ಥ﹏ಥ)"#, label: "cry"),
+        KaomojiBoardEntry(category: .mood, text: #"(╥_╥)"#, label: "sad"),
+        KaomojiBoardEntry(category: .mood, text: #"(ง •̀_•́)ง"#, label: "ready"),
+        KaomojiBoardEntry(category: .mood, text: #"(ﾉಥ益ಥ）ﾉ"#, label: "rage"),
+        KaomojiBoardEntry(category: .mood, text: #"(ᗒᗣᗕ)՞"#, label: "panic"),
+        KaomojiBoardEntry(category: .mood, text: #"(￣▽￣)"#, label: "relaxed"),
+        KaomojiBoardEntry(category: .mood, text: #"٩(◕‿◕｡)۶"#, label: "happy"),
+        KaomojiBoardEntry(category: .mood, text: #"(｡•́︿•̀｡)"#, label: "down"),
+        KaomojiBoardEntry(category: .mood, text: #"(≧◡≦)"#, label: "joy"),
+        KaomojiBoardEntry(category: .mood, text: #"(*≧ω≦*)"#, label: "excited"),
+        KaomojiBoardEntry(category: .mood, text: #"(；￣Д￣)"#, label: "worried"),
+
+        KaomojiBoardEntry(category: .action, text: #"(づ｡◕‿‿◕｡)づ"#, label: "hug"),
+        KaomojiBoardEntry(category: .action, text: #"(╯°□°）╯︵ ┻━┻"#, label: "flip"),
+        KaomojiBoardEntry(category: .action, text: #"┬─┬ ノ( ゜-゜ノ)"#, label: "fix"),
+        KaomojiBoardEntry(category: .action, text: #"(☞ﾟヮﾟ)☞"#, label: "point"),
+        KaomojiBoardEntry(category: .action, text: #"☜(ﾟヮﾟ☜)"#, label: "point"),
+        KaomojiBoardEntry(category: .action, text: #"ᕙ(⇀‸↼‶)ᕗ"#, label: "flex"),
+        KaomojiBoardEntry(category: .action, text: #"(ง°ل͜°)ง"#, label: "go"),
+        KaomojiBoardEntry(category: .action, text: #"\(^_^)/"#, label: "cheer"),
+        KaomojiBoardEntry(category: .action, text: #"ヽ(•‿•)ノ"#, label: "wave"),
+        KaomojiBoardEntry(category: .action, text: #"(シ_ _)シ"#, label: "bow"),
+        KaomojiBoardEntry(category: .action, text: #"(っ˘ڡ˘ς)"#, label: "eat"),
+        KaomojiBoardEntry(category: .action, text: #"ε=ε=ε=┌(;*´Д`)ﾉ"#, label: "run"),
+
+        KaomojiBoardEntry(category: .symbols, text: #"★"#, label: "star"),
+        KaomojiBoardEntry(category: .symbols, text: #"☆"#, label: "star"),
+        KaomojiBoardEntry(category: .symbols, text: #"♡"#, label: "heart"),
+        KaomojiBoardEntry(category: .symbols, text: #"♥"#, label: "heart"),
+        KaomojiBoardEntry(category: .symbols, text: #"✓"#, label: "check"),
+        KaomojiBoardEntry(category: .symbols, text: #"✕"#, label: "x"),
+        KaomojiBoardEntry(category: .symbols, text: #"→"#, label: "arrow"),
+        KaomojiBoardEntry(category: .symbols, text: #"←"#, label: "arrow"),
+        KaomojiBoardEntry(category: .symbols, text: #"↑"#, label: "arrow"),
+        KaomojiBoardEntry(category: .symbols, text: #"↓"#, label: "arrow"),
+        KaomojiBoardEntry(category: .symbols, text: #"∞"#, label: "infinity"),
+        KaomojiBoardEntry(category: .symbols, text: #"…"#, label: "ellipsis"),
+        KaomojiBoardEntry(category: .symbols, text: #"•"#, label: "bullet"),
+        KaomojiBoardEntry(category: .symbols, text: #"※"#, label: "note"),
+        KaomojiBoardEntry(category: .symbols, text: #"♪"#, label: "music"),
+        KaomojiBoardEntry(category: .symbols, text: #"♫"#, label: "music"),
+
+        KaomojiBoardEntry(category: .emoji, text: #"😀"#, label: "grin"),
+        KaomojiBoardEntry(category: .emoji, text: #"😂"#, label: "laugh"),
+        KaomojiBoardEntry(category: .emoji, text: #"😭"#, label: "cry"),
+        KaomojiBoardEntry(category: .emoji, text: #"🥲"#, label: "tear"),
+        KaomojiBoardEntry(category: .emoji, text: #"😍"#, label: "love"),
+        KaomojiBoardEntry(category: .emoji, text: #"😎"#, label: "cool"),
+        KaomojiBoardEntry(category: .emoji, text: #"🤔"#, label: "think"),
+        KaomojiBoardEntry(category: .emoji, text: #"👀"#, label: "eyes"),
+        KaomojiBoardEntry(category: .emoji, text: #"🙏"#, label: "pray"),
+        KaomojiBoardEntry(category: .emoji, text: #"💀"#, label: "dead"),
+        KaomojiBoardEntry(category: .emoji, text: #"🔥"#, label: "fire"),
+        KaomojiBoardEntry(category: .emoji, text: #"✨"#, label: "sparkles"),
+        KaomojiBoardEntry(category: .emoji, text: #"✅"#, label: "done"),
+        KaomojiBoardEntry(category: .emoji, text: #"❌"#, label: "no"),
+        KaomojiBoardEntry(category: .emoji, text: #"🎯"#, label: "target"),
+        KaomojiBoardEntry(category: .emoji, text: #"🚀"#, label: "ship")
+    ]
+}
+
+struct KaomojiBoardWidget: View {
+    @StateObject private var board = KaomojiBoardManager.shared
+    @State private var selectedCategory: KaomojiBoardCategory = .faces
+    @State private var copiedText: String?
+    @State private var copiedResetTask: Task<Void, Never>?
+
+    private let columns = [
+        GridItem(.flexible(minimum: 0), spacing: 8),
+        GridItem(.flexible(minimum: 0), spacing: 8),
+        GridItem(.flexible(minimum: 0), spacing: 8)
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "face.smiling")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.pink)
+                Text("Kaomoji")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white.opacity(0.9))
+                Spacer()
+                if copiedText != nil {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.green)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+
+            categoryStrip
+
+            if board.hasRecentItems {
+                recentStrip
+            }
+
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(board.entries(for: selectedCategory)) { entry in
+                        KaomojiTokenButton(
+                            text: entry.text,
+                            label: entry.label,
+                            isCopied: copiedText == entry.text
+                        ) {
+                            copy(entry)
+                        }
+                    }
+                }
+                .padding(.bottom, 2)
+            }
+            .clipped()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .clipped()
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            board.syncSettings()
+        }
+        .onDisappear {
+            copiedResetTask?.cancel()
+        }
+    }
+
+    private var categoryStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(KaomojiBoardCategory.allCases) { category in
+                    Button {
+                        selectedCategory = category
+                    } label: {
+                        Text(category.title)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(selectedCategory == category ? .white : .white.opacity(0.62))
+                            .lineLimit(1)
+                            .padding(.horizontal, 10)
+                            .frame(height: 28)
+                            .background(selectedCategory == category ? Color.pink.opacity(0.72) : Color.white.opacity(0.07))
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(height: 28)
+        .clipped()
+    }
+
+    private var recentStrip: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Recent")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(.white.opacity(0.45))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(board.recentItems, id: \.self) { text in
+                        Button {
+                            board.copyRecent(text)
+                            markCopied(text)
+                        } label: {
+                            Text(text)
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.55)
+                                .allowsTightening(true)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .frame(height: 28)
+                                .frame(minWidth: 42)
+                                .background(copiedText == text ? Color.green.opacity(0.28) : Color.white.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .clipped()
+                        }
+                        .buttonStyle(.plain)
+                        .help(text)
+                    }
+                }
+            }
+        }
+    }
+
+    private func copy(_ entry: KaomojiBoardEntry) {
+        board.copy(entry)
+        markCopied(entry.text)
+    }
+
+    private func markCopied(_ text: String) {
+        copiedText = text
+        copiedResetTask?.cancel()
+        copiedResetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            if copiedText == text {
+                copiedText = nil
+            }
+        }
+    }
+}
+
+struct KaomojiTokenButton: View {
+    let text: String
+    let label: String
+    let isCopied: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Text(text)
+                    .font(.system(size: text.count <= 2 ? 21 : 15, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.38)
+                    .allowsTightening(true)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .clipped()
+                Text(label)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.38))
+                    .lineLimit(1)
+                    .clipped()
+            }
+            .padding(.horizontal, 7)
+            .frame(height: 48)
+            .frame(maxWidth: .infinity)
+            .background(isCopied ? Color.green.opacity(0.26) : Color.white.opacity(0.07))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(isCopied ? Color.green.opacity(0.4) : Color.white.opacity(0.05), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipped()
+        }
+        .buttonStyle(.plain)
+        .help(text)
     }
 }
 
@@ -1327,6 +1688,11 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
 
             switch result {
             case .success(let location):
+                if fallbackStatus != nil,
+                   self.lastRequestSignature.hasPrefix("current:"),
+                   self.snapshot != nil {
+                    return
+                }
                 self.fetchForecast(for: location, unit: unit)
             case .failure:
                 DispatchQueue.main.async {
@@ -1358,6 +1724,14 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
         }
 
         requestCurrentLocation(unit: unit, force: force)
+
+        if !force {
+            fetchManualLocationWeather(
+                unit: unit,
+                force: true,
+                fallbackStatus: "Using fallback while finding current location."
+            )
+        }
     }
 
     private func requestCurrentLocation(unit: String, force: Bool) {
@@ -1787,54 +2161,148 @@ struct WeatherMetricPill: View {
     }
 }
 
+struct MediaSectionHeader: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(color)
+                .frame(width: 26, height: 26)
+                .background(color.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.42))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+struct MediaArtwork: View {
+    let urlString: String?
+    let fallbackIcon: String
+    let color: Color
+    var size: CGFloat = 38
+
+    var body: some View {
+        Group {
+            if let urlString, let url = URL(string: urlString), !urlString.isEmpty {
+                AsyncImage(url: url) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(color.opacity(0.16))
+                }
+            } else {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(color.opacity(0.14))
+                    .overlay(
+                        Image(systemName: fallbackIcon)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(color.opacity(0.9))
+                    )
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+}
+
+struct MediaConnectPrompt: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let buttonTitle: String
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: 9) {
+            Spacer()
+            Image(systemName: icon)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundColor(color)
+                .frame(width: 48, height: 48)
+                .background(color.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            Text(title)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.white)
+            Text(subtitle)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.white.opacity(0.48))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
+
+            Button(action: action) {
+                Text(buttonTitle)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .frame(height: 26)
+                    .background(color.opacity(0.88))
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
 struct SpotifyQueueWidget: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     @StateObject private var spotifyManager = SpotifyAuthManager.shared
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 10) {
             if spotifyManager.accessToken.isEmpty {
-                VStack(spacing: 8) {
-                    Spacer()
-                    let hasClientID = spotifyManager.hasValidClientID
-                    
-                    Image(systemName: hasClientID ? "music.note" : "lock.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(hasClientID ? .green.opacity(0.8) : .gray.opacity(0.5))
-                    Text(hasClientID ? "Sign in to Spotify" : "Setup Required")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(hasClientID ? .white : .gray)
-                    Text(hasClientID ? "Access your queue directly from the notch." : "Open Settings to set your Client ID.")
-                        .font(.system(size: 10))
-                        .foregroundColor(.gray)
-                        .multilineTextAlignment(.center)
-                    
-                    Button(action: {
+                let hasClientID = spotifyManager.hasValidClientID
+                MediaConnectPrompt(
+                    icon: hasClientID ? "music.note" : "lock.fill",
+                    title: hasClientID ? "Sign in to Spotify" : "Setup Required",
+                    subtitle: hasClientID ? "Access your queue directly from the notch." : "Open Settings to set your Client ID.",
+                    buttonTitle: hasClientID ? "Connect Spotify" : "Open Settings",
+                    color: hasClientID ? .green : .gray
+                ) {
                         if hasClientID {
                             spotifyManager.authenticate { _ in }
                         } else {
                             UserDefaults.standard.set("Plugins", forKey: "lastSettingsTab")
                             SettingsWindowManager.shared.showSettings()
                         }
-                    }) {
-                        Text(hasClientID ? "Connect Spotify" : "Open Settings")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.black)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
-                            .background(hasClientID ? Color.green : Color.white)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 4)
-                    Spacer()
                 }
-                .frame(maxWidth: .infinity)
             } else if spotifyManager.currentQueueItems.isEmpty {
-                emptyStateView(text: "Fetching queue...")
+                emptyStateView(text: "Fetching Spotify queue...", icon: "list.bullet.indent", color: .green)
             } else {
+                MediaSectionHeader(
+                    icon: "list.bullet.indent",
+                    title: "Spotify Queue",
+                    subtitle: "\(spotifyManager.currentQueueItems.count) upcoming",
+                    color: .green
+                )
+
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
                         ForEach(Array(spotifyManager.currentQueueItems.prefix(50).enumerated()), id: \.offset) { index, item in
                             SpotifyQueueRow(index: index + 1, track: item.track) {
                                 spotifyManager.skipToQueueItem(index: index)
@@ -1844,8 +2312,8 @@ struct SpotifyQueueWidget: View {
                 }
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             spotifyManager.fetchQueue()
@@ -1858,12 +2326,15 @@ struct SpotifyQueueWidget: View {
         }
     }
     
-    private func emptyStateView(text: String) -> some View {
+    private func emptyStateView(text: String, icon: String, color: Color) -> some View {
         VStack {
             Spacer()
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(color.opacity(0.72))
             Text(text)
-                .font(.system(size: 11))
-                .foregroundColor(.gray)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.white.opacity(0.52))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 20)
             Spacer()
@@ -1880,23 +2351,20 @@ struct SpotifyQueueRow: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Text("\(index)")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(isHovering ? .green : .gray)
-                    .frame(width: 18, alignment: .trailing)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(isHovering ? .green : .white.opacity(0.42))
+                    .frame(width: 12, alignment: .trailing)
                 
-                if let urlString = track.album?.images?.first?.url, let url = URL(string: urlString) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Rectangle().fill(Color.gray.opacity(0.2))
-                    }
-                    .frame(width: 32, height: 32)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
+                MediaArtwork(
+                    urlString: track.album?.images?.first?.url,
+                    fallbackIcon: "music.note",
+                    color: .green,
+                    size: 34
+                )
                 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     if isHovering {
                         MarqueeText(text: track.name, font: .system(size: 12, weight: .bold), alignment: .leading)
                             .foregroundColor(.green)
@@ -1913,15 +2381,21 @@ struct SpotifyQueueRow: View {
                         .foregroundColor(.gray)
                         .lineLimit(1)
                 }
-                
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
                 
                 if isHovering {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: 9, weight: .bold))
                         .foregroundColor(.green)
+                        .frame(width: 18, height: 18)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 6)
+            .background(isHovering ? Color.green.opacity(0.11) : Color.white.opacity(0.055))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1960,47 +2434,39 @@ struct YouTubeQueueWidget: View {
     @StateObject private var ytManager = YouTubeMusicManager.shared
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 10) {
             if ytManager.accessToken.isEmpty {
-                VStack(spacing: 8) {
-                    Spacer()
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.red.opacity(0.8))
-                    Text("Sign in to YouTube Music")
-                        .font(.system(size: 13, weight: .bold))
-                    Text("Access your queue directly from the notch.")
-                        .font(.system(size: 10))
-                        .foregroundColor(.gray)
-                        .multilineTextAlignment(.center)
-                    
-                    Button(action: {
-                        ytManager.authenticate { _ in }
-                    }) {
-                        Text("Connect Account")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
-                            .background(Color.red)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
+                MediaConnectPrompt(
+                    icon: "play.circle.fill",
+                    title: "Sign in to YouTube Music",
+                    subtitle: "Access your queue directly from the notch.",
+                    buttonTitle: "Connect Account",
+                    color: .red
+                ) {
+                    ytManager.authenticate { _ in }
                 }
-                .frame(maxWidth: .infinity)
             } else if ytManager.currentPlaylistTracks.isEmpty {
                 VStack {
                     Spacer()
+                    Image(systemName: "play.square.stack")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.red.opacity(0.72))
                     Text("Fetching library...")
-                        .font(.system(size: 11))
-                        .foregroundColor(.gray)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.52))
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
             } else {
+                MediaSectionHeader(
+                    icon: "play.square.stack",
+                    title: "YouTube Queue",
+                    subtitle: "\(ytManager.currentPlaylistTracks.count) tracks",
+                    color: .red
+                )
+
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
                         ForEach(Array(ytManager.currentPlaylistTracks.prefix(50).enumerated()), id: \.element.id) { index, item in
                             YTQueueRow(index: index + 1, item: item) {
                                 ytManager.play(videoId: item.videoId, playlistId: item.playlistId, index: index)
@@ -2010,8 +2476,8 @@ struct YouTubeQueueWidget: View {
                 }
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
@@ -2027,20 +2493,17 @@ struct YTQueueRow: View {
             HStack(spacing: 10) {
                 Text("\(index)")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(isHovering ? .red : .gray)
-                    .frame(width: 18, alignment: .trailing)
+                    .foregroundColor(isHovering ? .red : .white.opacity(0.42))
+                    .frame(width: 22, alignment: .center)
                 
-                if let urlString = item.imageURL, let url = URL(string: urlString) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Rectangle().fill(Color.gray.opacity(0.2))
-                    }
-                    .frame(width: 32, height: 32)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
+                MediaArtwork(
+                    urlString: item.imageURL,
+                    fallbackIcon: "play.fill",
+                    color: .red,
+                    size: 38
+                )
                 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     if isHovering {
                         MarqueeText(text: item.title, font: .system(size: 12, weight: .bold), alignment: .leading)
                             .foregroundColor(.red)
@@ -2058,8 +2521,19 @@ struct YTQueueRow: View {
                         .lineLimit(1)
                 }
                 
-                Spacer()
+                Spacer(minLength: 0)
+
+                Image(systemName: "play.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(isHovering ? .red : .white.opacity(0.30))
+                    .frame(width: 22, height: 22)
+                    .background(Color.white.opacity(isHovering ? 0.10 : 0.04))
+                    .clipShape(Circle())
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(isHovering ? Color.red.opacity(0.11) : Color.white.opacity(0.055))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2076,74 +2550,80 @@ struct YouTubePlaylistsWidget: View {
     @StateObject private var ytManager = YouTubeMusicManager.shared
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 6) {
             if ytManager.accessToken.isEmpty {
-                VStack(spacing: 8) {
-                    Spacer()
-                    Image(systemName: "play.rectangle.on.rectangle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.red.opacity(0.8))
-                    Text("YouTube Playlists")
-                        .font(.system(size: 13, weight: .bold))
-                    Text("Sign in to access your library.")
-                        .font(.system(size: 10))
-                        .foregroundColor(.gray)
-                        .multilineTextAlignment(.center)
-                    
-                    Button(action: {
-                        ytManager.authenticate { _ in }
-                    }) {
-                        Text("Connect Account")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
-                            .background(Color.red)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
+                MediaConnectPrompt(
+                    icon: "play.rectangle.on.rectangle.fill",
+                    title: "YouTube Playlists",
+                    subtitle: "Sign in to access your library.",
+                    buttonTitle: "Connect Account",
+                    color: .red
+                ) {
+                    ytManager.authenticate { _ in }
                 }
-                .frame(maxWidth: .infinity)
             } else {
+                MediaSectionHeader(
+                    icon: "play.rectangle.on.rectangle.fill",
+                    title: "YouTube Playlists",
+                    subtitle: "\(ytManager.playlists.count) playlists",
+                    color: .red
+                )
+
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
+                    HStack(spacing: 12) {
                         ForEach(ytManager.playlists) { playlist in
-                            Button(action: {
+                            YouTubePlaylistCard(playlist: playlist) {
                                 ytManager.playPlaylist(playlistId: playlist.id)
                                 ytManager.fetchPlaylistItems(playlistId: playlist.id)
-                            }) {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    if let urlString = playlist.snippet.thumbnails?.medium?.url ?? playlist.snippet.thumbnails?.default?.url, let url = URL(string: urlString) {
-                                        AsyncImage(url: url) { image in
-                                            image.resizable().aspectRatio(contentMode: .fill)
-                                        } placeholder: {
-                                            Rectangle().fill(Color.gray.opacity(0.2))
-                                        }
-                                        .frame(width: 80, height: 80)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                    } else {
-                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .fill(Color.gray.opacity(0.2))
-                                            .frame(width: 80, height: 80)
-                                            .overlay(Image(systemName: "play.rectangle.on.rectangle.fill").foregroundColor(.gray))
-                                    }
-                                    
-                                    Text(playlist.snippet.title)
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .lineLimit(1)
-                                        .frame(width: 80, alignment: .leading)
-                                }
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
+                .frame(height: 84)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .clipped()
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+struct YouTubePlaylistCard: View {
+    let playlist: YTPlaylist
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        let artworkSize: CGFloat = 56
+
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 4) {
+                MediaArtwork(
+                    urlString: playlist.snippet.thumbnails?.medium?.url ?? playlist.snippet.thumbnails?.default?.url,
+                    fallbackIcon: "play.rectangle.on.rectangle.fill",
+                    color: .red,
+                    size: artworkSize
+                )
+
+                Text(playlist.snippet.title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(isHovering ? .red : .white)
+                    .lineLimit(1)
+                    .frame(width: artworkSize, alignment: .leading)
+            }
+            .frame(width: artworkSize, alignment: .leading)
+            .padding(5)
+            .background(isHovering ? Color.red.opacity(0.10) : Color.white.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                isHovering = hovering
+            }
+        }
     }
 }

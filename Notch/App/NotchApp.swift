@@ -10,9 +10,6 @@ struct DynamicIslandApp: App {
     
     @AppStorage("enableAnalytics") var enableAnalytics = true
     
-    // ⚡️ Onboarding Tracker
-    @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
-    
     init() {
         let configuration = PostHogConfig(
             apiKey: "phc_tptR6JFYUrtWPDsY4Mo2rZNF9BHnUduUirV58uaLpAjT",
@@ -25,13 +22,6 @@ struct DynamicIslandApp: App {
         } else {
             PostHogSDK.shared.optIn()
             PostHogSDK.shared.capture("App Launched")
-        }
-        
-        // ⚡️ 4. Check if it's the user's first time opening the app
-        if !hasCompletedOnboarding {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                OnboardingWindowManager.shared.show()
-            }
         }
     }
     
@@ -140,6 +130,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // ⚡️ Initial center
         centerPanel()
+        OnboardingWindowManager.shared.showIfNeeded()
         
         // ⚡️ Listen for layout changes to re-center the window
         NotificationCenter.default.addObserver(forName: NSNotification.Name("CenterAppWindow"), object: nil, queue: .main) { _ in

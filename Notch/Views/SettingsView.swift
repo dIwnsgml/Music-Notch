@@ -679,6 +679,7 @@ struct DashboardSettingsView: View {
     @AppStorage("plugin_google_calendar_enabled") var calendarEnabled = false
     @AppStorage("plugin_pomodoro_timer_enabled") var pomodoroEnabled = false
     @AppStorage("plugin_clipboard_history_enabled") var clipboardEnabled = false
+    @AppStorage("plugin_kaomoji_board_enabled") var kaomojiEnabled = false
     @AppStorage("plugin_weather_enabled") var weatherEnabled = false
     @AppStorage("expandedPadding") var expandedPadding: Double = 16.0
 
@@ -769,6 +770,7 @@ struct DashboardSettingsView: View {
         case .calendar: return $calendarEnabled
         case .pomodoro: return $pomodoroEnabled
         case .clipboard: return $clipboardEnabled
+        case .kaomoji: return $kaomojiEnabled
         case .weather: return $weatherEnabled
         }
     }

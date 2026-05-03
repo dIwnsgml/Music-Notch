@@ -468,6 +468,7 @@ struct ContentView: View {
         case .spotifyPlaylists, .youtubePlaylists: return playlistWidgetHeight
         case .pomodoro: return pomodoroWidgetHeight
         case .clipboard: return 220
+        case .kaomoji: return 220
         case .weather: return 132
         default: return 160
         }

@@ -40,8 +40,9 @@ struct PlayerTabView: View {
         let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
         
-        let hPad: CGFloat = 6 // ⚡️ VERY LOW PADDING
+        let hPad: CGFloat = isCompact ? 10 : 14
         let playerPanelWidth: CGFloat = expandedWidth
+        let artSize: CGFloat = isCompact ? 46 : 54
         
         VStack(spacing: 0) {
             if !hasAnyAccess {
@@ -92,37 +93,55 @@ struct PlayerTabView: View {
             } else {
                 VStack(spacing: 0) {
                     // 1. TOP ROW: Artwork + Title
-                    HStack(alignment: .center) {
+                    HStack(alignment: .center, spacing: 12) {
                         ZStack {
                             if hasMedia && nowPlaying.artworkURL != nil {
                                 AsyncImage(url: nowPlaying.artworkURL) { image in
                                     image.resizable().aspectRatio(contentMode: .fill)
-                                } placeholder: { Color.gray.opacity(0.3) }
-                                    .frame(width: 40, height: 40)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                    .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 10, x: 0, y: 0)
+                                } placeholder: {
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(nowPlaying.artworkDominantColor.opacity(0.18))
+                                        .overlay(ProgressView().controlSize(.mini))
+                                }
+                                    .frame(width: artSize, height: artSize)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                                    )
+                                    .shadow(color: nowPlaying.artworkDominantColor.opacity(max(glowOpacity, 0.18)), radius: 12, x: 0, y: 4)
                                     .id(nowPlaying.currentSong)
                                     .transition(.dynamicPanRotate(direction: skipDirection))
                                 
                             } else {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(Color.white.opacity(0.1))
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(Color.white.opacity(0.08))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                        )
                                     Image(systemName: "music.note")
                                         .foregroundColor(nowPlaying.isPlaying ? .white : .gray)
-                                        .font(.system(size: 18, weight: .bold))
+                                        .font(.system(size: 20, weight: .bold))
                                 }
-                                .frame(width: 40, height: 40)
+                                .frame(width: artSize, height: artSize)
                                 .transition(.opacity)
                             }
                         }
-                        .frame(width: 40, height: 40)
+                        .frame(width: artSize, height: artSize)
                         .animation(.spring(response: 0.5, dampingFraction: 0.72), value: nowPlaying.currentSong)
                         
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 6) {
                                 Text(hasMedia ? (nowPlaying.isPlaying ? "Now Playing" : "Paused") : "Waiting...")
-                                    .font(.system(size: 11, weight: .semibold)).foregroundColor(.gray)
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(hasMedia ? nowPlaying.artworkDominantColor : .gray)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 7)
+                                    .frame(height: 18)
+                                    .background((hasMedia ? nowPlaying.artworkDominantColor : Color.white).opacity(0.10))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 
                                 ZStack {
                                     if nowPlaying.isSearchingLyrics && showLyrics {
@@ -137,25 +156,24 @@ struct PlayerTabView: View {
                                 let titleText = songParts.first ?? nowPlaying.currentSong
                                 let artistText = songParts.count > 1 ? songParts.dropFirst().joined(separator: " - ") : ""
                                 
-                                MarqueeText(text: titleText, font: .system(size: 14, weight: .bold), alignment: .leading)
-                                    .frame(height: 18)
+                                MarqueeText(text: titleText, font: .system(size: isCompact ? 15 : 17, weight: .bold), alignment: .leading)
+                                    .frame(height: isCompact ? 19 : 22)
                                     .foregroundColor(.white)
                                     .id("title_" + titleText)
                                 
                                 if !artistText.isEmpty {
-                                    MarqueeText(text: artistText, font: .system(size: 12, weight: .medium), alignment: .leading)
+                                    MarqueeText(text: artistText, font: .system(size: isCompact ? 12 : 13, weight: .semibold), alignment: .leading)
                                         .frame(height: 16)
-                                        .foregroundColor(.white.opacity(0.6))
+                                        .foregroundColor(.white.opacity(0.58))
                                         .id("artist_" + artistText)
                                 }
                             } else {
-                                MarqueeText(text: "Nothing playing", font: .system(size: 14, weight: .bold), alignment: .leading)
-                                    .frame(height: 18)
+                                MarqueeText(text: "Nothing playing", font: .system(size: isCompact ? 15 : 17, weight: .bold), alignment: .leading)
+                                    .frame(height: 22)
                                     .foregroundColor(.white)
                                     .id("nothing_playing")
                             }
                         }
-                        .padding(.leading, 6)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         
                         if hasMedia && !isCompact {
@@ -173,7 +191,7 @@ struct PlayerTabView: View {
                             Spacer()
                         }
                         .padding(.top, 12)
-                        .padding(.bottom, 2)
+                        .padding(.bottom, 4)
                     }
                     
                     // 2. THE PROGRESS BAR
@@ -187,13 +205,21 @@ struct PlayerTabView: View {
                             
                             GeometryReader { geo in
                                 ZStack(alignment: .leading) {
-                                    Capsule().fill(nowPlaying.artworkDominantColor.opacity(0.50)).frame(height: 6)
+                                    Capsule()
+                                        .fill(Color.white.opacity(0.13))
+                                        .frame(height: 7)
                                     
                                     let progressRatio = min(1.0, max(0.0, isDragging ? dragProgress : (nowPlaying.currentTime / nowPlaying.duration)))
                                     
                                     Capsule()
-                                        .fill(nowPlaying.artworkDominantColor)
-                                        .frame(width: geo.size.width * CGFloat(progressRatio), height: 6)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [nowPlaying.artworkDominantColor.opacity(0.75), nowPlaying.artworkDominantColor],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                        .frame(width: geo.size.width * CGFloat(progressRatio), height: 7)
                                         .shadow(color: nowPlaying.artworkDominantColor.opacity(0.4), radius: 4, x: 0, y: 0)
                                 }
                                 .gesture(DragGesture(minimumDistance: 0)
@@ -209,7 +235,7 @@ struct PlayerTabView: View {
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDragging = false }
                                     }
                                 )
-                            }.frame(height: 6)
+                            }.frame(height: 7)
                             
                             let remaining = max(0, nowPlaying.duration - (isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
                             Text("-" + formatTime(remaining))
@@ -353,7 +379,8 @@ struct PlayerTabView: View {
             }) {
                 ZStack { Image(systemName: "backward.fill").font(.system(size: 14)).foregroundColor(.white) }
                     .frame(width: 24, height: 24).contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
             
             Button(action: {
                 guard ensurePermissions() else { return }
@@ -361,7 +388,8 @@ struct PlayerTabView: View {
             }) {
                 ZStack { Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 16)).foregroundColor(.white) }
                     .frame(width: 24, height: 24).contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
             
             Button(action: {
                 guard ensurePermissions() else { return }
@@ -369,7 +397,8 @@ struct PlayerTabView: View {
             }) {
                 ZStack { Image(systemName: "forward.fill").font(.system(size: 14)).foregroundColor(.white) }
                     .frame(width: 24, height: 24).contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
             
             Button(action: {
                 guard ensurePermissions() else { return }
@@ -378,7 +407,8 @@ struct PlayerTabView: View {
                 ZStack { Image(systemName: nowPlaying.loopMode == 2 ? "repeat.1" : "repeat").font(.system(size: 14))
                     .foregroundColor(nowPlaying.loopMode > 0 ? .green : .white.opacity(0.6)) }
                 .frame(width: 24, height: 24).contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
         }
     }
     

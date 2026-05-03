@@ -4,6 +4,13 @@ import SwiftUI
 class OnboardingWindowManager {
     static let shared = OnboardingWindowManager()
     private var window: NSWindow?
+
+    func showIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            self.show()
+        }
+    }
     
     func show() {
         if window == nil {
@@ -21,6 +28,7 @@ class OnboardingWindowManager {
             window?.titlebarAppearsTransparent = true
             window?.standardWindowButton(.zoomButton)?.isHidden = true
             window?.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            window?.level = .floating
         }
         
         // ⚡️ CRITICAL for Menu Bar apps: Forces the window to the front

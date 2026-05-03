@@ -14,7 +14,7 @@ struct PlaylistTabView: View {
                 classicPlaylistContent
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .onAppear {
             if spotifyPlaylistsEnabled {
@@ -24,7 +24,7 @@ struct PlaylistTabView: View {
     }
     
     private var spotifyPlaylistsContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 6) {
             if spotifyManager.accessToken.isEmpty {
                 VStack(spacing: 8) {
                     Spacer()
@@ -66,25 +66,38 @@ struct PlaylistTabView: View {
             } else if spotifyManager.playlists.isEmpty {
                 VStack {
                     Spacer()
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.green.opacity(0.65))
                     Text("No playlists found.")
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.secondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
             } else {
+                MediaSectionHeader(
+                    icon: "music.note.list",
+                    title: "Spotify Playlists",
+                    subtitle: "\(spotifyManager.playlists.count) saved",
+                    color: .green
+                )
+
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
+                    HStack(spacing: 12) {
                         ForEach(spotifyManager.playlists) { playlist in
                             SpotifyPlaylistRow(playlist: playlist) {
                                 spotifyManager.playContext(uri: playlist.uri)
                             }
                         }
-                    }.padding(.vertical, 10)
+                    }
                 }
+                .frame(height: 84)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .clipped()
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     
     private var classicPlaylistContent: some View {
@@ -92,8 +105,8 @@ struct PlaylistTabView: View {
             if nowPlaying.playlist.isEmpty {
                 VStack {
                     Image(systemName: "music.note.list")
-                        .font(.system(size: 24))
-                        .foregroundColor(.gray.opacity(0.6))
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(nowPlaying.artworkDominantColor.opacity(0.7))
                         .padding(.bottom, 4)
                     Text("No upcoming tracks found")
                         .font(.system(size: 12, weight: .semibold))
@@ -101,13 +114,21 @@ struct PlaylistTabView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                MediaSectionHeader(
+                    icon: "text.line.first.and.arrowtriangle.forward",
+                    title: "Up Next",
+                    subtitle: "\(nowPlaying.playlist.count) tracks",
+                    color: nowPlaying.artworkDominantColor
+                )
+                .padding(.bottom, 8)
+
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
                         ForEach(nowPlaying.playlist) { track in
                             Button(action: {
                                 nowPlaying.playTrack(track)
                             }) {
-                                HStack(spacing: 12) {
+                                HStack(spacing: 10) {
                                     Group {
                                         if let urlString = track.imageURL, let url = URL(string: urlString), urlString != "NO_IMAGE", !urlString.isEmpty {
                                             AsyncImage(url: url) { image in
@@ -124,8 +145,8 @@ struct PlaylistTabView: View {
                                             }
                                         }
                                     }
-                                    .frame(width: 32, height: 32)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    .frame(width: 38, height: 38)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                                     
                                     VStack(alignment: .leading, spacing: 2) {
                                         let isCurrent = nowPlaying.currentSong.contains(track.title)
@@ -138,10 +159,19 @@ struct PlaylistTabView: View {
                                             .foregroundColor(isCurrent ? nowPlaying.artworkDominantColor.opacity(0.8) : .gray)
                                             .lineLimit(1)
                                     }
+
+                                    Spacer(minLength: 0)
+
+                                    Image(systemName: "play.fill")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundColor(nowPlaying.artworkDominantColor.opacity(0.82))
                                 }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 7)
+                                .background(Color.white.opacity(0.06))
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 12)
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -154,24 +184,29 @@ struct SpotifyPlaylistRow: View {
     let playlist: SpotifyPlaylist
     let action: () -> Void
     @State private var isHovering = false
-    
+
     var body: some View {
+        let artworkSize: CGFloat = 56
+
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
                 if let urlString = playlist.imageUrl, let url = URL(string: urlString) {
                     AsyncImage(url: url) { image in
                         image.resizable().aspectRatio(contentMode: .fill)
                     } placeholder: {
                         Rectangle().fill(Color.gray.opacity(0.2))
                     }
-                    .frame(width: 80, height: 80)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .shadow(color: Color.black.opacity(isHovering ? 0.3 : 0.1), radius: 5, x: 0, y: 3)
-                    .scaleEffect(isHovering ? 1.05 : 1.0)
+                    .frame(width: artworkSize, height: artworkSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(isHovering ? 0.35 : 0.12), radius: 8, x: 0, y: 4)
                 } else {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color.gray.opacity(0.2))
-                        .frame(width: 80, height: 80)
+                        .frame(width: artworkSize, height: artworkSize)
                         .overlay(Image(systemName: "music.note.list").foregroundColor(.gray))
                 }
                 
@@ -179,8 +214,12 @@ struct SpotifyPlaylistRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(isHovering ? .green : .white)
                     .lineLimit(1)
-                    .frame(width: 80, alignment: .leading)
+                    .frame(width: artworkSize, alignment: .leading)
             }
+            .frame(width: artworkSize, alignment: .leading)
+            .padding(5)
+            .background(isHovering ? Color.green.opacity(0.10) : Color.white.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
