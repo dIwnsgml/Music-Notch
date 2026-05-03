@@ -223,14 +223,19 @@ struct ContentView: View {
                 nowPlaying.updateActiveLyric()
             }
 
-            guard let screen = NSScreen.main else { return }
             let mouseLoc = NSEvent.mouseLocation
+            guard let screen = screenForHover(at: mouseLoc) else { return }
 
             let currentW = isExpanded ? expandedWidth : collapsedWidth
             let currentH = isExpanded ? expandedHeight : currentCollapsedHeight
 
             // Reconstruct the notch window frame in screen coordinates
-            let panelRect = CGRect(x: (screen.frame.width - currentW) / 2, y: screen.frame.height - currentH, width: currentW, height: currentH)
+            let panelRect = CGRect(
+                x: screen.frame.midX - currentW / 2,
+                y: screen.frame.maxY - currentH,
+                width: currentW,
+                height: currentH
+            )
 
             let isHovering = panelRect.contains(mouseLoc)
 
@@ -726,6 +731,10 @@ struct ContentView: View {
                 await MainActor.run { withAnimation { isShowingBanner = false }; updateLyricBanner() }
             }
         }
+    }
+
+    private func screenForHover(at location: NSPoint) -> NSScreen? {
+        NSScreen.screens.first(where: { $0.frame.contains(location) }) ?? NSScreen.main ?? NSScreen.screens.first
     }
 }
 

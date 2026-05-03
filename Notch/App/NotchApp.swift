@@ -130,10 +130,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // ⚡️ Initial center
         centerPanel()
+        DispatchQueue.main.async { [weak self] in
+            self?.centerPanel()
+        }
         OnboardingWindowManager.shared.showIfNeeded()
         
         // ⚡️ Listen for layout changes to re-center the window
         NotificationCenter.default.addObserver(forName: NSNotification.Name("CenterAppWindow"), object: nil, queue: .main) { _ in
+            self.centerPanel()
+        }
+        NotificationCenter.default.addObserver(forName: NSNotification.Name("UpdateNotchLayout"), object: nil, queue: .main) { _ in
+            self.centerPanel()
+        }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in
             self.centerPanel()
         }
     }
@@ -144,9 +153,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func centerPanel() {
-        guard let screen = NSScreen.main else { return }
-        let x = screen.frame.origin.x + (screen.frame.width - panel.frame.width) / 2
-        let y = screen.frame.maxY - panel.frame.height
+        guard let screen = screenForPanel() else { return }
+
+        let x = roundedToBackingPixel(screen.frame.midX - panel.frame.width / 2, on: screen)
+        let y = roundedToBackingPixel(screen.frame.maxY - panel.frame.height, on: screen)
         panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func screenForPanel() -> NSScreen? {
+        if let screen = panel.screen {
+            return screen
+        }
+
+        let panelCenter = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(panelCenter) }) {
+            return screen
+        }
+
+        return NSScreen.main ?? NSScreen.screens.first
+    }
+
+    private func roundedToBackingPixel(_ value: CGFloat, on screen: NSScreen) -> CGFloat {
+        let scale = max(screen.backingScaleFactor, 1)
+        return (value * scale).rounded() / scale
     }
 }
