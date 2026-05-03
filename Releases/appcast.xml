@@ -3,6 +3,21 @@
     <channel>
         <title>WaveNotch</title>
         <item>
+            <title>2.9</title>
+            <pubDate>Sun, 03 May 2026 18:20:20 -0400</pubDate>
+            <sparkle:version>28</sparkle:version>
+            <sparkle:shortVersionString>2.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://wavenotch.com/releases/WaveNotch_Release_2.9.dmg" length="6953701" type="application/octet-stream" sparkle:edSignature="PFmPCdYNqKaSOCk4tiIalKPxmG0DMo8gICdAGaIQpgc9C8PkOyxRSKnq/+6hHqqJ0MuWyKZDjVjm+jypSdWvDQ=="/>
+            <sparkle:deltas>
+                <enclosure url="https://wavenotch.com/WaveNotch28-26.delta" sparkle:deltaFrom="26" length="692546" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="PxG/r6V65OTZ6AXbiu0kRznpVsydLSZCfuct/3OGdP0IHZ8DUjhF6A6bWTXMTUC2qr+Qj72NKOCwn+tK8HfnAA=="/>
+                <enclosure url="https://wavenotch.com/WaveNotch28-24.delta" sparkle:deltaFrom="24" length="850846" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Kg1zSOTYO4nbe+gp972OFeU5Awp44ViqIr9+2d3yKlkm+k+IHEn1i9riO7r0LC5c73CM79VWfAxaEB5buwv3Cw=="/>
+                <enclosure url="https://wavenotch.com/WaveNotch28-23.delta" sparkle:deltaFrom="23" length="1050734" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="E6kPWF/y2J7OmeywXuxt5lR7GHcGgL+NEqKmdjFUDdbhFGUz18QNq6dUB39W+UJlpgN2q2r/aCca1KuYNTocCQ=="/>
+                <enclosure url="https://wavenotch.com/WaveNotch28-22.delta" sparkle:deltaFrom="22" length="1150018" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="MKByOakthGFfePy/pE58WQBzmedRtolnMNrKe+3mmEvK7LW9L66ls9mGBjSxYAgyq8Er3OdLHwnJ8V0zxWZ5BQ=="/>
+                <enclosure url="https://wavenotch.com/WaveNotch28-21.delta" sparkle:deltaFrom="21" length="1171890" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="kvKdZFZyglzqSHpV79trY4T1KyTiXrKeAtMZ77D5jtfvr+9vbpPoardRVZFjv3X2Tq66FT/C7LhpZjxgsbJUCA=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.8</title>
             <pubDate>Sun, 03 May 2026 00:40:12 -0400</pubDate>
             <sparkle:version>26</sparkle:version>
@@ -30,21 +45,6 @@
                 <enclosure url="https://wavenotch.com/WaveNotch24-21.delta" sparkle:deltaFrom="21" length="811338" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Rcb2n4mRmdQJrNMUQJb6buT80g6yqZIthpes9aXFRXacwjB7R4wIJUT8XFOZrVVAsELK08qtiTIW2pvRmsbVCA=="/>
                 <enclosure url="https://wavenotch.com/WaveNotch24-18.delta" sparkle:deltaFrom="18" length="826758" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="3baSEBFp3WvEecrz6Azqgnuxd7OQVV7+F6i4doue/V0zAoConzhOej3wmSTL6/2aEy0SmmA9ty6qBBd/yNtuCw=="/>
                 <enclosure url="https://wavenotch.com/WaveNotch24-16.delta" sparkle:deltaFrom="16" length="897566" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="c9oXedForvKqLmVEXYmaESdXntlVCQWCNn9/6YYkzCQDuuvooV7nVkRzuZJ7nASQx75I/JwVcadPzYmow+J0CA=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>2.6</title>
-            <pubDate>Sat, 02 May 2026 16:43:16 -0400</pubDate>
-            <sparkle:version>23</sparkle:version>
-            <sparkle:shortVersionString>2.6</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://wavenotch.com/releases/WaveNotch_Release_2.6.dmg" length="6392222" type="application/octet-stream" sparkle:edSignature="wFnbKy5N0d4ZHRAs3N1dL71Yo0YdM67d4H5EUiALC+4c4/wuFq5QfefBhKfTcltNlVXhtd/WFO/S41XQgXDeDw=="/>
-            <sparkle:deltas>
-                <enclosure url="https://wavenotch.com/WaveNotch23-22.delta" sparkle:deltaFrom="22" length="484026" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="PRQfVqBE/UYZ6xNloCa/ZW5PRqfjDEDsXMXkIpuBpHoMFGJsmQ27aH46w/yc4VlBnCCGdzib5Ifwv7zlQ/syBg=="/>
-                <enclosure url="https://wavenotch.com/WaveNotch23-21.delta" sparkle:deltaFrom="21" length="545654" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="umrM4jsNmW2TH11kqP2c2xKLT3UxSRL6hUJaxh3lUj9a9Bq0WZNNb0kkaq8FI413lZwEeo3xuuuo8+3wEYzhBg=="/>
-                <enclosure url="https://wavenotch.com/WaveNotch23-18.delta" sparkle:deltaFrom="18" length="562206" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="WlaPNiC4kCvBvnzzq6X72p9J1a17MgJfsEgGjNUpkW/iYOzaKUGywSiyy1WNX85uEsVoN5JQ26Aoto+nwlrEBA=="/>
-                <enclosure url="https://wavenotch.com/WaveNotch23-16.delta" sparkle:deltaFrom="16" length="653618" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="RRFm7UBvz9/BoqurJWmjOBFPEMkG5HFEPdwzxKwEHm6QWA426brLMeCJeIDu7WopamUFQ5Bmrr7/ELtpAm8qCw=="/>
-                <enclosure url="https://wavenotch.com/WaveNotch23-13.delta" sparkle:deltaFrom="13" length="709478" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="975840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="ibxJ9I3LJNrKA4LXSJ5vfJWaxwGv+F6/9wM1heYkMYwuZTGkLY7EBWDMWeSNEyJp/foVwgfL4OJpkaM7eP7fBQ=="/>
             </sparkle:deltas>
         </item>
         <item>
