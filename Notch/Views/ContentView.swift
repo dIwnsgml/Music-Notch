@@ -74,6 +74,8 @@ struct ContentView: View {
     @State private var isFileDropTargeted = false
     @State private var fileDropCount = 0
     @State private var fileDragDetector: FileDragDetector?
+    @State private var isPostFileDropExpansionSuppressed = false
+    @State private var isFileDropLayoutLocked = false
 
     @State private var cachedThemeImage: NSImage? = nil
 
@@ -129,8 +131,12 @@ struct ContentView: View {
         fileTrayPluginEnabled && isFileDropTargeted
     }
 
+    private var usesFileDropOnlyLayout: Bool {
+        fileTrayPluginEnabled && (isFileDropTargeted || isFileDropLayoutLocked)
+    }
+
     private var layoutWidgets: [NotchWidgetType] {
-        isFileDropMode ? [.fileTray] : dashboardManager.activeWidgets
+        usesFileDropOnlyLayout ? [.fileTray] : dashboardManager.activeWidgets
     }
 
     private var fileDropExpandedWidth: CGFloat {
@@ -288,6 +294,19 @@ struct ContentView: View {
 
             let isHovering = panelRect.contains(mouseLoc)
 
+            if isPostFileDropExpansionSuppressed {
+                hoverTask?.cancel()
+                hoverTask = nil
+                if isExpanded {
+                    isExpanded = false
+                }
+                if !isHovering {
+                    isPostFileDropExpansionSuppressed = false
+                    isFileDropLayoutLocked = false
+                }
+                return
+            }
+
             if isHovering {
                 if !isExpanded && enableHoverToExpand {
                     if hoverTask == nil {
@@ -297,6 +316,7 @@ struct ContentView: View {
                             }
                             guard !Task.isCancelled else { return }
                             await MainActor.run {
+                                guard !isPostFileDropExpansionSuppressed else { return }
                                 isExpanded = true
                                 isShowingBanner = false
                                 isShowingLyricBanner = false
@@ -332,18 +352,25 @@ struct ContentView: View {
                 isFileDropTargeted = targeted
                 fileDropCount = count
                 if targeted {
+                    isPostFileDropExpansionSuppressed = false
+                    isFileDropLayoutLocked = true
                     prepareForFileDrop()
+                } else if !isPostFileDropExpansionSuppressed {
+                    isFileDropLayoutLocked = false
                 }
             }
         }
         .onChange(of: isFileDropTargeted) { _, targeted in
             if targeted {
+                isFileDropLayoutLocked = true
                 prepareForFileDrop()
+            } else if !isPostFileDropExpansionSuppressed {
+                isFileDropLayoutLocked = false
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .fileTrayDropCompleted)) { notification in
             let count = notification.userInfo?["count"] as? Int ?? 0
-            triggerBanner(text: count == 1 ? "File added to tray" : "\(count) files added to tray", duration: 1.5)
+            finishFileDrop(count: count)
         }
         .edgesIgnoringSafeArea(.all)
     }
@@ -412,7 +439,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var settingsButtonLayer: some View {
-        if isExpanded && showSettingsButton && !isFileDropMode {
+        if isExpanded && showSettingsButton && !usesFileDropOnlyLayout {
             HStack {
                 Spacer()
                 Button(action: { SettingsWindowManager.shared.showSettings() }) {
@@ -518,7 +545,11 @@ struct ContentView: View {
         .scaleEffect(isExpanded ? 0.95 : 1.0, anchor: .top)
         .allowsHitTesting(!isExpanded)
         .onTapGesture {
+            guard !isPostFileDropExpansionSuppressed else { return }
+
             if !isExpanded {
+                isPostFileDropExpansionSuppressed = false
+                isFileDropLayoutLocked = false
                 isExpanded = true
                 isShowingBanner = false
                 isShowingLyricBanner = false
@@ -742,6 +773,8 @@ struct ContentView: View {
 
     private func prepareForFileDrop() {
         guard fileTrayPluginEnabled else { return }
+        isPostFileDropExpansionSuppressed = false
+        isFileDropLayoutLocked = true
         if !isExpanded {
             isExpanded = true
         }
@@ -750,6 +783,21 @@ struct ContentView: View {
         bannerTask?.cancel()
         hoverTask?.cancel()
         hoverTask = nil
+    }
+
+    private func finishFileDrop(count: Int) {
+        hoverTask?.cancel()
+        hoverTask = nil
+
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            isFileDropTargeted = false
+            fileDropCount = 0
+            isExpanded = false
+            isFileDropLayoutLocked = true
+            isPostFileDropExpansionSuppressed = true
+        }
+
+        triggerBanner(text: count == 1 ? "File added to tray" : "\(count) files added to tray", duration: 1.5)
     }
 
     private func fileDropRegion() -> CGRect? {
@@ -950,11 +998,13 @@ private struct FileTrayRootDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         let providers = providers(from: info)
-        isTargeted = false
-        fileDropCount = 0
-        postTargeted(false, count: 0)
+        guard !providers.isEmpty else {
+            isTargeted = false
+            fileDropCount = 0
+            postTargeted(false, count: 0)
+            return false
+        }
 
-        guard !providers.isEmpty else { return false }
         let accepted = FileTrayManager.shared.add(from: providers)
         if accepted {
             NotificationCenter.default.post(
@@ -962,6 +1012,10 @@ private struct FileTrayRootDropDelegate: DropDelegate {
                 object: nil,
                 userInfo: ["count": providers.count]
             )
+        } else {
+            isTargeted = false
+            fileDropCount = 0
+            postTargeted(false, count: 0)
         }
         return accepted
     }

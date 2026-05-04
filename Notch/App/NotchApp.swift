@@ -134,8 +134,10 @@ class IslandPanel: NSPanel {
         }
 
         let urls = fileDropURLs(from: sender.draggingPasteboard)
-        postDropTargeted(false)
-        guard !urls.isEmpty else { return false }
+        guard !urls.isEmpty else {
+            postDropTargeted(false)
+            return false
+        }
 
         FileTrayManager.shared.add(urls: urls)
         NotificationCenter.default.post(
@@ -265,8 +267,10 @@ final class DropHostingView<Content: View>: NSHostingView<Content> {
         }
 
         let urls = fileDropURLs(from: sender.draggingPasteboard)
-        postDropTargeted(false)
-        guard !urls.isEmpty else { return false }
+        guard !urls.isEmpty else {
+            postDropTargeted(false)
+            return false
+        }
 
         FileTrayManager.shared.add(urls: urls)
         NotificationCenter.default.post(

@@ -247,7 +247,7 @@ struct PlayerTabView: View {
                     
                     // 3. LYRICS
                     if showLyrics && hasMedia && !nowPlaying.lyrics.isEmpty {
-                        HStack(alignment: .center, spacing: 6) {
+                        ZStack(alignment: .trailing) {
                             GeometryReader { geo in
                                 let itemHeight: CGFloat = 26
                                 let exactFrameHeight: CGFloat = CGFloat(visibleLyricLines) * itemHeight
@@ -298,13 +298,11 @@ struct PlayerTabView: View {
                                 }
                             }
 
-                            ZStack {
-                                if shouldShowLyricControls {
-                                    lyricOffsetRail
-                                        .transition(.opacity)
-                                }
+                            if shouldShowLyricControls {
+                                lyricOffsetRail
+                                    .transition(.opacity)
+                                    .zIndex(2)
                             }
-                            .frame(width: 32)
                         }
                         .padding(.horizontal, hPad)
                         .frame(height: CGFloat(visibleLyricLines) * 26.0)

@@ -85,12 +85,14 @@ struct MarqueeText: View {
     var body: some View {
         GeometryReader { proxy in
             let containerWidth = proxy.size.width
+            let containerHeight: CGFloat? = proxy.size.height > 0 ? proxy.size.height : nil
             
             if textWidth > containerWidth && containerWidth > 0 {
                 HStack(spacing: spacing) {
                     Text(text).font(font).lineLimit(1).fixedSize()
                     Text(text).font(font).lineLimit(1).fixedSize()
                 }
+                .frame(height: containerHeight, alignment: .center)
                 .offset(x: isAnimating ? -(textWidth + spacing) : 0)
                 .animation(
                     isAnimating ? .linear(duration: Double(textWidth) / 30.0).repeatForever(autoreverses: false) : .default,
@@ -105,7 +107,7 @@ struct MarqueeText: View {
                 Text(text)
                     .font(font)
                     .lineLimit(1)
-                    .frame(width: containerWidth, alignment: alignment)
+                    .frame(width: containerWidth, height: containerHeight, alignment: alignment)
             }
         }
         .clipped()

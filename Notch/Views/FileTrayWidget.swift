@@ -364,6 +364,7 @@ struct FileTrayWidget: View {
         .overlay(
             FileTrayDropDestinationView(isTargeted: $isDropTargeted) { urls in
                 tray.add(urls: urls)
+                postDropCompleted(count: urls.count)
             }
             .allowsHitTesting(false)
         )
@@ -406,7 +407,19 @@ struct FileTrayWidget: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        tray.add(from: providers)
+        let accepted = tray.add(from: providers)
+        if accepted {
+            postDropCompleted(count: providers.count)
+        }
+        return accepted
+    }
+
+    private func postDropCompleted(count: Int) {
+        NotificationCenter.default.post(
+            name: .fileTrayDropCompleted,
+            object: nil,
+            userInfo: ["count": count]
+        )
     }
 }
 
