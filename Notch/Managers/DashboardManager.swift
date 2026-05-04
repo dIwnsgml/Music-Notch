@@ -10,6 +10,8 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
     case calendar
     case pomodoro
     case clipboard
+    case fileTray
+    case tasks
     case kaomoji
     case weather
     
@@ -25,6 +27,8 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .calendar: return "Calendar"
         case .pomodoro: return "Pomodoro Timer"
         case .clipboard: return "Clipboard History"
+        case .fileTray: return "File Tray"
+        case .tasks: return "Tasks"
         case .kaomoji: return "Kaomoji & Emoji Board"
         case .weather: return "Weather"
         }
@@ -40,6 +44,8 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .calendar: return UserDefaults.standard.bool(forKey: "plugin_google_calendar_installed")
         case .pomodoro: return UserDefaults.standard.bool(forKey: "plugin_pomodoro_timer_installed")
         case .clipboard: return UserDefaults.standard.bool(forKey: "plugin_clipboard_history_installed")
+        case .fileTray: return UserDefaults.standard.bool(forKey: "plugin_file_tray_installed")
+        case .tasks: return UserDefaults.standard.bool(forKey: "plugin_tasks_installed")
         case .kaomoji: return UserDefaults.standard.bool(forKey: "plugin_kaomoji_board_installed")
         case .weather: return UserDefaults.standard.bool(forKey: "plugin_weather_installed")
         }
@@ -105,6 +111,8 @@ class DashboardManager: ObservableObject {
         let calendarEnabled = UserDefaults.standard.bool(forKey: "plugin_google_calendar_enabled")
         let pomodoroEnabled = UserDefaults.standard.bool(forKey: "plugin_pomodoro_timer_enabled")
         let clipboardEnabled = UserDefaults.standard.bool(forKey: "plugin_clipboard_history_enabled")
+        let fileTrayEnabled = UserDefaults.standard.bool(forKey: "plugin_file_tray_enabled")
+        let tasksEnabled = UserDefaults.standard.bool(forKey: "plugin_tasks_enabled")
         let kaomojiEnabled = UserDefaults.standard.bool(forKey: "plugin_kaomoji_board_enabled")
         let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
         if clipboardEnabled {
@@ -164,6 +172,8 @@ class DashboardManager: ObservableObject {
             case .calendar: if calendarEnabled { widgets.append(.calendar) }
             case .pomodoro: if pomodoroEnabled { widgets.append(.pomodoro) }
             case .clipboard: if clipboardEnabled { widgets.append(.clipboard) }
+            case .fileTray: if fileTrayEnabled { widgets.append(.fileTray) }
+            case .tasks: if tasksEnabled { widgets.append(.tasks) }
             case .kaomoji: if kaomojiEnabled { widgets.append(.kaomoji) }
             case .weather: if weatherEnabled { widgets.append(.weather) }
             }

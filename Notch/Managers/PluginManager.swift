@@ -69,6 +69,24 @@ class PluginManager: ObservableObject {
             storageKeyBase: "plugin_clipboard_history"
         ),
         WaveNotchPlugin(
+            id: "file_tray",
+            name: "File Tray",
+            description: "Pin files and folders in the notch for quick opening, Finder reveal, and one-click copying.",
+            iconName: "tray.full.fill",
+            assetImageName: nil,
+            category: .productivity,
+            storageKeyBase: "plugin_file_tray"
+        ),
+        WaveNotchPlugin(
+            id: "tasks",
+            name: "Tasks",
+            description: "Create, complete, and clear quick tasks directly from the notch.",
+            iconName: "checkmark.circle.fill",
+            assetImageName: nil,
+            category: .productivity,
+            storageKeyBase: "plugin_tasks"
+        ),
+        WaveNotchPlugin(
             id: "kaomoji_board",
             name: "Kaomoji & Emoji Board",
             description: "One-click copying for kaomoji, text faces, symbols, and frequently used emoji.",

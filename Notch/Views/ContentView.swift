@@ -1,6 +1,19 @@
 import SwiftUI
 import Combine
 import KeyboardShortcuts
+import UniformTypeIdentifiers
+
+private enum FileDropTypeIdentifiers {
+    static let all = [
+        UTType.fileURL.identifier,
+        UTType.url.identifier,
+        UTType.item.identifier,
+        UTType.data.identifier,
+        UTType.utf8PlainText.identifier,
+        UTType.plainText.identifier,
+        NSPasteboard.PasteboardType("NSFilenamesPboardType").rawValue
+    ]
+}
 
 enum AppTab {
     case player
@@ -48,6 +61,7 @@ struct ContentView: View {
     @AppStorage("plugin_spotify_queue_enabled") var spotifyQueueEnabled = false
     @AppStorage("plugin_spotify_playlists_enabled") var spotifyPlaylistsEnabled = false
     @AppStorage("plugin_pomodoro_timer_enabled") var pomodoroPluginEnabled = false
+    @AppStorage("plugin_file_tray_enabled") var fileTrayPluginEnabled = false
     @AppStorage("pomodoro_show_notch_timer") var showPomodoroNotchTimer = true
     @AppStorage("pomodoro_show_time_text") var showPomodoroTimeText = true
     @AppStorage("pomodoro_show_timer_banner") var showPomodoroTimerBanner = false
@@ -57,6 +71,9 @@ struct ContentView: View {
     @State private var bannerTask: Task<Void, Never>? = nil
     @State private var isShowingLyricBanner = false
     @State private var currentLyricText: String = ""
+    @State private var isFileDropTargeted = false
+    @State private var fileDropCount = 0
+    @State private var fileDragDetector: FileDragDetector?
 
     @State private var cachedThemeImage: NSImage? = nil
 
@@ -71,6 +88,7 @@ struct ContentView: View {
     @State private var lastSongChangeTime: Date = Date.distantPast
     let lyricTimer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
     let hoverCheckTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    private let fileDropTypes = FileDropTypeIdentifiers.all
 
     // ---------------------------------------------------------
     // ⚡️ THE BULLETPROOF NOTCH DETECTION
@@ -96,7 +114,7 @@ struct ContentView: View {
     var collapsedWidth: CGFloat { CGFloat(storedCollapsedWidth) }
 
     var activeWidgetsCount: Int {
-        dashboardManager.activeWidgets.count
+        layoutWidgets.count
     }
 
     var expandedWidth: CGFloat {
@@ -104,7 +122,26 @@ struct ContentView: View {
     }
 
     var expandedHeight: CGFloat {
-        let widgets = dashboardManager.activeWidgets
+        expandedHeight(for: layoutWidgets)
+    }
+
+    private var isFileDropMode: Bool {
+        fileTrayPluginEnabled && isFileDropTargeted
+    }
+
+    private var layoutWidgets: [NotchWidgetType] {
+        isFileDropMode ? [.fileTray] : dashboardManager.activeWidgets
+    }
+
+    private var fileDropExpandedWidth: CGFloat {
+        340
+    }
+
+    private var fileDropExpandedHeight: CGFloat {
+        expandedHeight(for: [.fileTray])
+    }
+
+    private func expandedHeight(for widgets: [NotchWidgetType]) -> CGFloat {
         if widgets.isEmpty { return notchHeight + CGFloat(expandedPadding) * 2 }
 
         let rows = widgets.chunked(into: 2)
@@ -127,6 +164,7 @@ struct ContentView: View {
 
         return totalH
     }
+
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
 
@@ -141,7 +179,9 @@ struct ContentView: View {
                 backgroundLayer(currentWidth: currentWidth, currentHeight: currentHeight)
 
                 // 2. CONTENT LAYERS
-                collapsedLayer(hasMedia: hasMedia, currentCollapsedHeight: currentCollapsedHeight)
+                if !isFileDropMode {
+                    collapsedLayer(hasMedia: hasMedia, currentCollapsedHeight: currentCollapsedHeight)
+                }
                 expandedLayer(expandedHeight: expandedHeight)
 
                 settingsButtonLayer
@@ -172,6 +212,7 @@ struct ContentView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(fileDropCatcherLayer)
         .opacity(isAppHidden ? 0 : 1)
         .allowsHitTesting(!isAppHidden)
         .onAppear {
@@ -184,10 +225,13 @@ struct ContentView: View {
             }
             registerKeyboardShortcuts()
             loadThemeImage()
+            setupFileDragDetector()
         }
         .onDisappear {
             if let keyLocal = localMediaKeyMonitor { NSEvent.removeMonitor(keyLocal) }
             if let keyGlobal = globalMediaKeyMonitor { NSEvent.removeMonitor(keyGlobal) }
+            fileDragDetector?.stopMonitoring()
+            fileDragDetector = nil
         }
         .onChange(of: themeBackgroundImagePath) { _, _ in
             loadThemeImage()
@@ -197,6 +241,7 @@ struct ContentView: View {
                 updateLyricBanner()
                 currentTab = .player
             } else {
+                guard !isFileDropMode else { return }
                 dashboardManager.refreshWidgets()
                 // ⚡️ REFETCH GOOGLE EVENTS: Ensure schedule is fresh on expand
                 if GoogleCalendarManager.shared.isAuthenticated {
@@ -221,6 +266,10 @@ struct ContentView: View {
             if !isExpanded && nowPlaying.isPlaying {
                 nowPlaying.currentTime += 0.1
                 nowPlaying.updateActiveLyric()
+            }
+
+            if isFileDropTargeted {
+                return
             }
 
             let mouseLoc = NSEvent.mouseLocation
@@ -276,6 +325,26 @@ struct ContentView: View {
             guard Date().timeIntervalSince(lastSongChangeTime) > 0.5 else { return }
             triggerBanner(text: newState ? "Resumed" : "Paused", duration: 1.5)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .fileTrayDropTargetChanged)) { notification in
+            let targeted = notification.userInfo?["isTargeted"] as? Bool ?? false
+            let count = notification.userInfo?["count"] as? Int ?? 0
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.74)) {
+                isFileDropTargeted = targeted
+                fileDropCount = count
+                if targeted {
+                    prepareForFileDrop()
+                }
+            }
+        }
+        .onChange(of: isFileDropTargeted) { _, targeted in
+            if targeted {
+                prepareForFileDrop()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fileTrayDropCompleted)) { notification in
+            let count = notification.userInfo?["count"] as? Int ?? 0
+            triggerBanner(text: count == 1 ? "File added to tray" : "\(count) files added to tray", duration: 1.5)
+        }
         .edgesIgnoringSafeArea(.all)
     }
 
@@ -325,8 +394,25 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    private var fileDropCatcherLayer: some View {
+        if fileTrayPluginEnabled {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onDrop(
+                    of: fileDropTypes,
+                    delegate: FileTrayRootDropDelegate(
+                        isTargeted: $isFileDropTargeted,
+                        fileDropCount: $fileDropCount,
+                        prepare: prepareForFileDrop
+                    )
+                )
+        }
+    }
+
+    @ViewBuilder
     private var settingsButtonLayer: some View {
-        if isExpanded && showSettingsButton {
+        if isExpanded && showSettingsButton && !isFileDropMode {
             HStack {
                 Spacer()
                 Button(action: { SettingsWindowManager.shared.showSettings() }) {
@@ -378,10 +464,10 @@ struct ContentView: View {
                 Spacer()
 
                 if showTimerText {
-                    Text(pomodoroTimer.timeText)
+                    Text(pomodoroTimer.pendingTransition == nil ? pomodoroTimer.timeText : "Done")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundColor(pomodoroTimer.mode.color)
+                        .foregroundColor(pomodoroTimer.pendingTransition?.completedMode.color ?? pomodoroTimer.mode.color)
                         .frame(width: 56, alignment: .trailing)
                         .contentTransition(.numericText())
                         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pomodoroTimer.timeText)
@@ -402,9 +488,9 @@ struct ContentView: View {
                             .id("banner_\(bannerText)")
                     } else if showTimerBanner {
                         HStack(spacing: 6) {
-                            Image(systemName: "timer")
+                            Image(systemName: pomodoroTimer.pendingTransition == nil ? "timer" : "bell.badge.fill")
                                 .font(.system(size: 11, weight: .bold))
-                            Text("\(pomodoroTimer.mode.title) \(pomodoroTimer.timeText)")
+                            Text(pomodoroBannerText)
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .contentTransition(.numericText())
                                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pomodoroTimer.timeText)
@@ -413,7 +499,7 @@ struct ContentView: View {
                                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                                 .foregroundColor(.white.opacity(0.45))
                         }
-                        .foregroundColor(pomodoroTimer.mode.color)
+                        .foregroundColor(pomodoroTimer.pendingTransition?.completedMode.color ?? pomodoroTimer.mode.color)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     } else if isShowingLyricBanner {
                         MarqueeText(text: currentLyricText, font: .system(size: 12, weight: .bold), alignment: .center)
@@ -447,7 +533,14 @@ struct ContentView: View {
     }
 
     private var shouldShowPomodoroTimerBanner: Bool {
-        pomodoroPluginEnabled && showPomodoroTimerBanner && pomodoroTimer.isRunning && !isExpanded
+        pomodoroPluginEnabled && !isExpanded && (pomodoroTimer.pendingTransition != nil || (showPomodoroTimerBanner && pomodoroTimer.isRunning))
+    }
+
+    private var pomodoroBannerText: String {
+        if let transition = pomodoroTimer.pendingTransition {
+            return "\(transition.completedMode.title) done - resume for \(transition.nextMode.title)"
+        }
+        return "\(pomodoroTimer.mode.title) \(pomodoroTimer.timeText)"
     }
 
     private var pomodoroCollapsedProgressIcon: some View {
@@ -471,7 +564,7 @@ struct ContentView: View {
         case .spotifyQueue, .youtubeQueue: return 250
         case .spotifyPlaylists, .youtubePlaylists: return playlistWidgetHeight
         case .pomodoro: return pomodoroWidgetHeight
-        case .clipboard: return 220
+        case .clipboard, .fileTray, .tasks: return 220
         case .kaomoji: return 220
         case .weather: return 132
         default: return 160
@@ -495,7 +588,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private func expandedLayer(expandedHeight: CGFloat) -> some View {
-        let widgets = dashboardManager.activeWidgets
+        let widgets = layoutWidgets
         let pad = CGFloat(expandedPadding)
         let sideInset = notchBlendRadius + pad
         let contentWidth = expandedWidth - (sideInset * 2)
@@ -604,6 +697,89 @@ struct ContentView: View {
             nowPlaying.skipBackward()
         }
         triggerBanner(text: forward ? "Skipped Forward" : "Skipped Back", duration: 1.5)
+    }
+
+    private func setupFileDragDetector() {
+        fileDragDetector?.stopMonitoring()
+
+        let detector = FileDragDetector {
+            guard fileTrayPluginEnabled else { return nil }
+            return fileDropRegion()
+        }
+
+        detector.onDragEntersRegion = {
+            DispatchQueue.main.async {
+                postFileDropTargetChanged(true, count: max(fileDropCount, 1))
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.74)) {
+                    fileDropCount = max(fileDropCount, 1)
+                    isFileDropTargeted = true
+                    prepareForFileDrop()
+                }
+            }
+        }
+
+        detector.onDragExitsRegion = {
+            DispatchQueue.main.async {
+                postFileDropTargetChanged(false, count: 0)
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                    isFileDropTargeted = false
+                }
+            }
+        }
+
+        detector.onDragEnds = {
+            DispatchQueue.main.async {
+                postFileDropTargetChanged(false, count: 0)
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                    isFileDropTargeted = false
+                }
+            }
+        }
+
+        detector.startMonitoring()
+        fileDragDetector = detector
+    }
+
+    private func prepareForFileDrop() {
+        guard fileTrayPluginEnabled else { return }
+        if !isExpanded {
+            isExpanded = true
+        }
+        isShowingBanner = false
+        isShowingLyricBanner = false
+        bannerTask?.cancel()
+        hoverTask?.cancel()
+        hoverTask = nil
+    }
+
+    private func fileDropRegion() -> CGRect? {
+        guard fileTrayPluginEnabled else { return nil }
+        let mouseLocation = NSEvent.mouseLocation
+        guard let screen = screenForHover(at: mouseLocation) else { return nil }
+
+        let width = max(isExpanded ? expandedWidth : fileDropExpandedWidth, fileDropExpandedWidth)
+        let height = max(isExpanded ? expandedHeight : fileDropExpandedHeight, fileDropExpandedHeight)
+        return CGRect(
+            x: screen.frame.midX - width / 2,
+            y: screen.frame.maxY - height,
+            width: width,
+            height: height
+        )
+        .insetBy(dx: -32, dy: -24)
+    }
+
+    private func postFileDropTargetChanged(_ targeted: Bool, count: Int) {
+        var userInfo: [String: Any] = ["isTargeted": targeted, "count": count]
+        if targeted,
+           let screen = screenForHover(at: NSEvent.mouseLocation) {
+            userInfo["screenFrame"] = NSValue(rect: screen.frame)
+        }
+
+        NotificationCenter.default.post(
+            name: .fileTrayDropTargetChanged,
+            object: nil,
+            userInfo: userInfo
+        )
     }
 
     private func registerKeyboardShortcuts() {
@@ -735,6 +911,77 @@ struct ContentView: View {
 
     private func screenForHover(at location: NSPoint) -> NSScreen? {
         NSScreen.screens.first(where: { $0.frame.contains(location) }) ?? NSScreen.main ?? NSScreen.screens.first
+    }
+}
+
+private struct FileTrayRootDropDelegate: DropDelegate {
+    @Binding var isTargeted: Bool
+    @Binding var fileDropCount: Int
+    let prepare: () -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        !providers(from: info).isEmpty
+    }
+
+    func dropEntered(info: DropInfo) {
+        let providers = providers(from: info)
+        guard !providers.isEmpty else { return }
+
+        fileDropCount = max(providers.count, 1)
+        isTargeted = true
+        prepare()
+        postTargeted(true, count: fileDropCount)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard !providers(from: info).isEmpty else {
+            return DropProposal(operation: .cancel)
+        }
+
+        prepare()
+        return DropProposal(operation: .copy)
+    }
+
+    func dropExited(info: DropInfo) {
+        isTargeted = false
+        fileDropCount = 0
+        postTargeted(false, count: 0)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let providers = providers(from: info)
+        isTargeted = false
+        fileDropCount = 0
+        postTargeted(false, count: 0)
+
+        guard !providers.isEmpty else { return false }
+        let accepted = FileTrayManager.shared.add(from: providers)
+        if accepted {
+            NotificationCenter.default.post(
+                name: .fileTrayDropCompleted,
+                object: nil,
+                userInfo: ["count": providers.count]
+            )
+        }
+        return accepted
+    }
+
+    private func providers(from info: DropInfo) -> [NSItemProvider] {
+        info.itemProviders(for: FileDropTypeIdentifiers.all)
+    }
+
+    private func postTargeted(_ targeted: Bool, count: Int) {
+        var userInfo: [String: Any] = ["isTargeted": targeted, "count": count]
+        if targeted,
+           let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) {
+            userInfo["screenFrame"] = NSValue(rect: screen.frame)
+        }
+
+        NotificationCenter.default.post(
+            name: .fileTrayDropTargetChanged,
+            object: nil,
+            userInfo: userInfo
+        )
     }
 }
 

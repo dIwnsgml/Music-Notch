@@ -38,6 +38,8 @@ struct WidgetFactoryView: View {
                     case .calendar: CalendarWidget()
                     case .pomodoro: PomodoroTimerWidget(isCompact: isCompact)
                     case .clipboard: ClipboardHistoryWidget()
+                    case .fileTray: FileTrayWidget()
+                    case .tasks: TasksWidget()
                     case .kaomoji: KaomojiBoardWidget()
                     case .weather: WeatherWidget()
                     }
@@ -206,6 +208,20 @@ enum PomodoroMode: String {
         case .longBreak: return .blue
         }
     }
+
+    var iconName: String {
+        switch self {
+        case .focus: return "book.fill"
+        case .shortBreak: return "cup.and.saucer.fill"
+        case .longBreak: return "moon.stars.fill"
+        }
+    }
+}
+
+struct PomodoroTransition: Equatable {
+    let completedMode: PomodoroMode
+    let nextMode: PomodoroMode
+    let nextCompletedFocusSessions: Int
 }
 
 final class PomodoroTimerManager: ObservableObject {
@@ -217,6 +233,7 @@ final class PomodoroTimerManager: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var completedFocusSessions: Int
     @Published private(set) var longBreakEvery: Int
+    @Published private(set) var pendingTransition: PomodoroTransition?
 
     private var timer: Timer?
     private let defaults = UserDefaults.standard
@@ -262,10 +279,18 @@ final class PomodoroTimerManager: ObservableObject {
     }
 
     func startPause() {
-        isRunning ? pause() : start()
+        if pendingTransition != nil {
+            resumeNextSession()
+        } else {
+            isRunning ? pause() : start()
+        }
     }
 
     func start() {
+        if pendingTransition != nil {
+            resumeNextSession()
+            return
+        }
         syncSettings()
         if remainingSeconds <= 0 {
             reset()
@@ -283,13 +308,36 @@ final class PomodoroTimerManager: ObservableObject {
 
     func reset() {
         pause()
+        pendingTransition = nil
         totalSeconds = Self.duration(for: mode, defaults: defaults)
         remainingSeconds = totalSeconds
         persist()
     }
 
     func skip() {
+        if pendingTransition != nil {
+            resumeNextSession()
+            return
+        }
         advanceSession(keepRunning: isRunning)
+    }
+
+    func resumeNextSession() {
+        guard let transition = pendingTransition else {
+            start()
+            return
+        }
+
+        timer?.invalidate()
+        timer = nil
+        completedFocusSessions = transition.nextCompletedFocusSessions
+        mode = transition.nextMode
+        totalSeconds = Self.duration(for: mode, defaults: defaults)
+        remainingSeconds = totalSeconds
+        pendingTransition = nil
+        isRunning = true
+        persist()
+        scheduleTimer()
     }
 
     func syncSettings() {
@@ -303,7 +351,7 @@ final class PomodoroTimerManager: ObservableObject {
 
         if newTotal != totalSeconds {
             totalSeconds = newTotal
-            if isRunning {
+            if isRunning || pendingTransition != nil {
                 remainingSeconds = min(remainingSeconds, newTotal)
             } else {
                 remainingSeconds = newTotal
@@ -330,13 +378,43 @@ final class PomodoroTimerManager: ObservableObject {
         }
 
         if remainingSeconds <= 0 {
-            advanceSession(keepRunning: true)
+            completeSessionAndWait()
         } else {
             persist()
         }
     }
 
+    private func completeSessionAndWait() {
+        timer?.invalidate()
+        timer = nil
+        isRunning = false
+        remainingSeconds = 0
+
+        let nextCompletedFocusSessions = completedFocusSessions + (mode == .focus ? 1 : 0)
+        let nextMode: PomodoroMode
+        if mode == .focus {
+            nextMode = nextCompletedFocusSessions % longBreakEvery == 0 ? .longBreak : .shortBreak
+        } else {
+            nextMode = .focus
+        }
+
+        pendingTransition = PomodoroTransition(
+            completedMode: mode,
+            nextMode: nextMode,
+            nextCompletedFocusSessions: nextCompletedFocusSessions
+        )
+        persist()
+        playCompletionFeedback()
+
+        NotificationCenter.default.post(
+            name: .pomodoroSessionCompleted,
+            object: nil,
+            userInfo: ["completedMode": mode.rawValue, "nextMode": nextMode.rawValue]
+        )
+    }
+
     private func advanceSession(keepRunning: Bool) {
+        pendingTransition = nil
         if mode == .focus {
             completedFocusSessions += 1
             mode = completedFocusSessions % longBreakEvery == 0 ? .longBreak : .shortBreak
@@ -351,7 +429,16 @@ final class PomodoroTimerManager: ObservableObject {
 
         if keepRunning && timer == nil {
             scheduleTimer()
+        } else if !keepRunning {
+            timer?.invalidate()
+            timer = nil
         }
+    }
+
+    private func playCompletionFeedback() {
+        let sound = NSSound(named: NSSound.Name("Glass")) ?? NSSound(named: NSSound.Name("Ping"))
+        sound?.play()
+        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
     }
 
     private func persist() {
@@ -389,11 +476,41 @@ struct PomodoroTimerWidget: View {
     let isCompact: Bool
 
     var body: some View {
+        ZStack {
+            timerContent
+
+            if let transition = timer.pendingTransition {
+                PomodoroCompletionOverlay(
+                    transition: transition,
+                    isCompact: isCompact,
+                    onResume: timer.resumeNextSession,
+                    onReset: timer.reset
+                )
+                .transition(
+                    .asymmetric(
+                        insertion: .scale(scale: 0.88, anchor: .center).combined(with: .opacity),
+                        removal: .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
+                    )
+                )
+                .zIndex(5)
+            }
+        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.78), value: timer.pendingTransition)
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            timer.syncSettings()
+        }
+    }
+
+    private var activeColor: Color {
+        timer.pendingTransition?.completedMode.color ?? timer.mode.color
+    }
+
+    private var timerContent: some View {
         VStack(alignment: .leading, spacing: isCompact ? 8 : 10) {
             HStack(spacing: 8) {
                 Image(systemName: "timer")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(timer.mode.color)
+                    .foregroundColor(activeColor)
                 Text("Pomodoro")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.white.opacity(0.9))
@@ -407,16 +524,16 @@ struct PomodoroTimerWidget: View {
                 progressRing
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(timer.mode.title)
+                    Text(timer.pendingTransition == nil ? timer.mode.title : "Ready")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(timer.mode.color)
+                        .foregroundColor(activeColor)
                     Text(timer.timeText)
                         .font(.system(size: isCompact ? 26 : 30, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundColor(.white)
                         .contentTransition(.numericText())
                         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: timer.timeText)
-                    Text(timer.isRunning ? "In progress" : timer.mode.subtitle)
+                    Text(statusText)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.white.opacity(0.55))
                 }
@@ -426,8 +543,8 @@ struct PomodoroTimerWidget: View {
 
             HStack(spacing: 8) {
                 pomodoroButton(
-                    systemName: timer.isRunning ? "pause.fill" : "play.fill",
-                    label: timer.isRunning ? "Pause" : "Start",
+                    systemName: primaryButtonIcon,
+                    label: primaryButtonLabel,
                     isPrimary: true,
                     action: timer.startPause
                 )
@@ -438,9 +555,23 @@ struct PomodoroTimerWidget: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-            timer.syncSettings()
+    }
+
+    private var statusText: String {
+        if let transition = timer.pendingTransition {
+            return "Next: \(transition.nextMode.title)"
         }
+        return timer.isRunning ? "In progress" : timer.mode.subtitle
+    }
+
+    private var primaryButtonIcon: String {
+        if timer.pendingTransition != nil { return "play.circle.fill" }
+        return timer.isRunning ? "pause.fill" : "play.fill"
+    }
+
+    private var primaryButtonLabel: String {
+        if timer.pendingTransition != nil { return "Resume" }
+        return timer.isRunning ? "Pause" : "Start"
     }
 
     private var progressRing: some View {
@@ -449,7 +580,7 @@ struct PomodoroTimerWidget: View {
                 .stroke(Color.white.opacity(0.10), lineWidth: 6)
             Circle()
                 .trim(from: 0, to: max(0.001, timer.progress))
-                .stroke(timer.mode.color, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                .stroke(activeColor, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             Text("\(Int(timer.progress * 100))%")
                 .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -464,11 +595,107 @@ struct PomodoroTimerWidget: View {
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(isPrimary ? .black : .white.opacity(0.85))
                 .frame(width: 32, height: 26)
-                .background(isPrimary ? timer.mode.color : Color.white.opacity(0.10))
+                .background(isPrimary ? activeColor : Color.white.opacity(0.10))
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .help(label)
+    }
+}
+
+struct PomodoroCompletionOverlay: View {
+    let transition: PomodoroTransition
+    let isCompact: Bool
+    let onResume: () -> Void
+    let onReset: () -> Void
+
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            transition.completedMode.color.opacity(0.22),
+                            transition.nextMode.color.opacity(0.12),
+                            Color.black.opacity(0.18)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(transition.completedMode.color.opacity(0.42), lineWidth: 1)
+
+            VStack(spacing: isCompact ? 7 : 9) {
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.12), lineWidth: 6)
+                    Circle()
+                        .trim(from: 0.12, to: pulse ? 1 : 0.62)
+                        .stroke(transition.completedMode.color, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                        .rotationEffect(.degrees(pulse ? 270 : -90))
+                    Image(systemName: transition.nextMode.iconName)
+                        .font(.system(size: isCompact ? 17 : 19, weight: .bold))
+                        .foregroundColor(.white)
+                        .scaleEffect(pulse ? 1.08 : 0.96)
+                }
+                .frame(width: isCompact ? 50 : 56, height: isCompact ? 50 : 56)
+
+                VStack(spacing: 2) {
+                    Text("\(transition.completedMode.title) complete")
+                        .font(.system(size: isCompact ? 13 : 14, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    Text("Next: \(transition.nextMode.title)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.62))
+                        .lineLimit(1)
+                }
+
+                HStack(spacing: 8) {
+                    completionButton(
+                        systemName: "play.fill",
+                        title: "Resume",
+                        color: transition.nextMode.color,
+                        action: onResume
+                    )
+                    completionButton(
+                        systemName: "arrow.counterclockwise",
+                        title: "Reset",
+                        color: Color.white.opacity(0.16),
+                        action: onReset
+                    )
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.15).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
+    }
+
+    private func completionButton(systemName: String, title: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: systemName)
+                    .font(.system(size: 10, weight: .bold))
+                Text(title)
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .foregroundColor(title == "Resume" ? .black : .white.opacity(0.86))
+            .frame(height: 28)
+            .frame(maxWidth: .infinity)
+            .background(color)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -1,23 +1,96 @@
 import SwiftUI
 
+private enum PluginStoreCategoryFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case media = "Media & Music"
+    case productivity = "Productivity"
+    case system = "System Utilities"
+
+    var id: String { rawValue }
+
+    var category: PluginCategory? {
+        switch self {
+        case .all: return nil
+        case .media: return .media
+        case .productivity: return .productivity
+        case .system: return .system
+        }
+    }
+}
+
 struct PluginStoreView: View {
     @StateObject private var manager = PluginManager.shared
     @State private var selectedPlugin: WaveNotchPlugin?
+    @State private var selectedCategory: PluginStoreCategoryFilter = .all
+    @State private var searchText = ""
+
+    private var filteredPlugins: [WaveNotchPlugin] {
+        manager.plugins.filter { plugin in
+            let matchesCategory = selectedCategory.category.map { plugin.category == $0 } ?? true
+            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { return matchesCategory }
+
+            let searchableText = [
+                plugin.name,
+                plugin.description,
+                plugin.category.rawValue
+            ].joined(separator: " ").localizedCaseInsensitiveContains(query)
+
+            return matchesCategory && searchableText
+        }
+    }
     
     var body: some View {
         VStack(spacing: 0) {
+            VStack(spacing: 12) {
+                Picker("Category", selection: $selectedCategory) {
+                    ForEach(PluginStoreCategoryFilter.allCases) { category in
+                        Text(category.rawValue).tag(category)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+                    TextField("Search plugins", text: $searchText)
+                        .textFieldStyle(.plain)
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.secondary.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color(NSColor.controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .padding(.bottom, 4)
+
             ScrollView {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
-                    ForEach(manager.plugins) { plugin in
+                    ForEach(filteredPlugins) { plugin in
                         PluginCardView(plugin: plugin, onSetup: {
                             selectedPlugin = plugin
                         })
                         .onTapGesture {
                             selectedPlugin = plugin
                         }
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     }
                 }
                 .padding(24)
+                .animation(.spring(response: 0.28, dampingFraction: 0.86), value: selectedCategory)
+                .animation(.easeInOut(duration: 0.18), value: searchText)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -517,6 +590,10 @@ struct PluginDetailView: View {
                     WeatherPluginSettingsView()
                 } else if plugin.id == "clipboard_history" {
                     ClipboardPluginSettingsView()
+                } else if plugin.id == "file_tray" {
+                    FileTrayPluginSettingsView()
+                } else if plugin.id == "tasks" {
+                    TasksPluginSettingsView()
                 } else if plugin.id == "kaomoji_board" {
                     KaomojiPluginSettingsView()
                 } else {
@@ -585,6 +662,10 @@ struct PluginIcon: View {
             return .red
         case let id where id.contains("clipboard"):
             return .purple
+        case let id where id.contains("file_tray"):
+            return .cyan
+        case let id where id.contains("tasks"):
+            return .mint
         case let id where id.contains("kaomoji"):
             return .pink
         case let id where id.contains("weather"):
@@ -788,6 +869,96 @@ struct ClipboardPluginSettingsView: View {
             Text("Tracks text, links, files, and images while the plugin is enabled.")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.secondary)
+        }
+    }
+}
+
+struct FileTrayPluginSettingsView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PomodoroSettingStepper(
+                title: "Tray Limit",
+                key: "file_tray_limit",
+                range: 4...80,
+                defaultValue: 24,
+                suffix: "items"
+            )
+
+            Divider().opacity(0.15)
+
+            Button(role: .destructive) {
+                FileTrayManager.shared.clearItems()
+            } label: {
+                HStack {
+                    Image(systemName: "tray.and.arrow.down")
+                    Text("Clear File Tray")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Text("Stores file and folder references locally. Files are not duplicated.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+    }
+}
+
+struct TasksPluginSettingsView: View {
+    @AppStorage("tasks_show_completed") private var showCompleted = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PomodoroSettingStepper(
+                title: "Task Limit",
+                key: "tasks_limit",
+                range: 5...100,
+                defaultValue: 30,
+                suffix: "tasks"
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show completed tasks",
+                description: "Keep completed tasks visible until you clear them.",
+                key: "tasks_show_completed",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            Button {
+                TasksManager.shared.clearCompleted()
+            } label: {
+                HStack {
+                    Image(systemName: "checkmark.circle")
+                    Text("Clear Completed Tasks")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Button(role: .destructive) {
+                TasksManager.shared.clearAll()
+            } label: {
+                HStack {
+                    Image(systemName: "trash")
+                    Text("Clear All Tasks")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Text("Tasks are stored locally and stay in your dashboard until removed.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+        .onChange(of: showCompleted) { _, _ in
+            TasksManager.shared.syncSettings()
         }
     }
 }
