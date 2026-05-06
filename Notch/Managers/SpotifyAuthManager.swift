@@ -395,7 +395,9 @@ class SpotifyAuthManager: NSObject, ObservableObject {
                 guard let data = data else { return }
                 if let response = try? JSONDecoder().decode(SpotifyPlaylistResponse.self, from: data) {
                     DispatchQueue.main.async {
-                        self.playlists = response.items
+                        if self.playlists != response.items {
+                            self.playlists = response.items
+                        }
                     }
                 }
             }.resume()
@@ -423,15 +425,19 @@ class SpotifyAuthManager: NSObject, ObservableObject {
                 
                 if let response = try? JSONDecoder().decode(SpotifyQueue.self, from: data) {
                     DispatchQueue.main.async {
-                        self.currentlyPlaying = response.currently_playing
-                        self.currentQueue = response.queue
-                        
-                        // ⚡️ GENERATE UNIQUE ITEMS
-                        self.currentQueueItems = response.queue.enumerated().map { (index, track) in
+                        if self.currentlyPlaying != response.currently_playing {
+                            self.currentlyPlaying = response.currently_playing
+                        }
+                        if self.currentQueue != response.queue {
+                            self.currentQueue = response.queue
+                        }
+
+                        let queueItems = response.queue.enumerated().map { (index, track) in
                             SpotifyQueueItem(id: "\(index)-\(track.uri)", track: track)
                         }
-                        
-                        print("Spotify Queue Fetched: \(response.queue.count) tracks")
+                        if self.currentQueueItems != queueItems {
+                            self.currentQueueItems = queueItems
+                        }
                     }
                 } else {
                     print("Failed to decode Spotify Queue JSON")

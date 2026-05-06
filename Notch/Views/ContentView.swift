@@ -65,6 +65,7 @@ struct ContentView: View {
     @AppStorage("pomodoro_show_notch_timer") var showPomodoroNotchTimer = true
     @AppStorage("pomodoro_show_time_text") var showPomodoroTimeText = true
     @AppStorage("pomodoro_show_timer_banner") var showPomodoroTimerBanner = false
+    @AppStorage("pomodoro_show_mode_change_banner") var showPomodoroModeChangeBanner = true
 
     @State private var isShowingBanner = false
     @State private var bannerText: String = ""
@@ -76,6 +77,8 @@ struct ContentView: View {
     @State private var fileDragDetector: FileDragDetector?
     @State private var isPostFileDropExpansionSuppressed = false
     @State private var isFileDropLayoutLocked = false
+    @State private var shouldRenderExpandedLayer = false
+    @State private var expandedLayerRenderTask: Task<Void, Never>? = nil
 
     @State private var cachedThemeImage: NSImage? = nil
 
@@ -88,8 +91,8 @@ struct ContentView: View {
     @State private var glowOpacity: Double = 0.0
     @State private var skipDirection: Int = 1
     @State private var lastSongChangeTime: Date = Date.distantPast
-    let lyricTimer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
-    let hoverCheckTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    private let playbackClockInterval: TimeInterval = 0.25
+    let hoverCheckTimer = Timer.publish(every: 0.25, tolerance: 0.05, on: .main, in: .common).autoconnect()
     private let fileDropTypes = FileDropTypeIdentifiers.all
 
     // ---------------------------------------------------------
@@ -188,7 +191,15 @@ struct ContentView: View {
                 if !isFileDropMode {
                     collapsedLayer(hasMedia: hasMedia, currentCollapsedHeight: currentCollapsedHeight)
                 }
-                expandedLayer(expandedHeight: expandedHeight)
+                if shouldRenderExpandedLayer {
+                    expandedLayer(expandedHeight: expandedHeight)
+                        .transition(
+                            .asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top)),
+                                removal: .opacity
+                            )
+                        )
+                }
 
                 settingsButtonLayer
             }
@@ -209,10 +220,11 @@ struct ContentView: View {
             .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: notchBlendRadius))
             .animation(
                 isExpanded
-                ? .spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1)
-                : .spring(response: 0.30, dampingFraction: 1.0, blendDuration: 0.1),
+                ? .spring(response: 0.42, dampingFraction: 0.88, blendDuration: 0.12)
+                : .spring(response: 0.32, dampingFraction: 0.96, blendDuration: 0.1),
                 value: isExpanded
             )
+            .animation(.easeOut(duration: 0.18), value: shouldRenderExpandedLayer)
             .animation(.spring(response: 0.30, dampingFraction: 1.0, blendDuration: 0.1), value: showsCollapsedBanner)
 
             Spacer()
@@ -238,11 +250,15 @@ struct ContentView: View {
             if let keyGlobal = globalMediaKeyMonitor { NSEvent.removeMonitor(keyGlobal) }
             fileDragDetector?.stopMonitoring()
             fileDragDetector = nil
+            expandedLayerRenderTask?.cancel()
+            expandedLayerRenderTask = nil
         }
         .onChange(of: themeBackgroundImagePath) { _, _ in
             loadThemeImage()
         }
         .onChange(of: isExpanded) { _, expanded in
+            updateExpandedLayerRendering(isExpanded: expanded)
+
             if !expanded {
                 updateLyricBanner()
                 currentTab = .player
@@ -270,7 +286,7 @@ struct ContentView: View {
         }
         .onReceive(hoverCheckTimer) { _ in
             if !isExpanded && nowPlaying.isPlaying {
-                nowPlaying.currentTime += 0.1
+                nowPlaying.currentTime += playbackClockInterval
                 nowPlaying.updateActiveLyric()
             }
 
@@ -317,6 +333,7 @@ struct ContentView: View {
                             guard !Task.isCancelled else { return }
                             await MainActor.run {
                                 guard !isPostFileDropExpansionSuppressed else { return }
+                                prepareExpandedLayerForExpansion()
                                 isExpanded = true
                                 isShowingBanner = false
                                 isShowingLyricBanner = false
@@ -371,6 +388,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .fileTrayDropCompleted)) { notification in
             let count = notification.userInfo?["count"] as? Int ?? 0
             finishFileDrop(count: count)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pomodoroSessionCompleted)) { notification in
+            showPomodoroCompletionBanner(from: notification)
         }
         .edgesIgnoringSafeArea(.all)
     }
@@ -491,10 +511,10 @@ struct ContentView: View {
                 Spacer()
 
                 if showTimerText {
-                    Text(pomodoroTimer.pendingTransition == nil ? pomodoroTimer.timeText : "Done")
+                    Text(pomodoroTimer.timeText)
                         .font(.system(size: 12, weight: .bold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundColor(pomodoroTimer.pendingTransition?.completedMode.color ?? pomodoroTimer.mode.color)
+                        .foregroundColor(pomodoroTimer.mode.color)
                         .frame(width: 56, alignment: .trailing)
                         .contentTransition(.numericText())
                         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pomodoroTimer.timeText)
@@ -550,6 +570,7 @@ struct ContentView: View {
             if !isExpanded {
                 isPostFileDropExpansionSuppressed = false
                 isFileDropLayoutLocked = false
+                prepareExpandedLayerForExpansion()
                 isExpanded = true
                 isShowingBanner = false
                 isShowingLyricBanner = false
@@ -564,13 +585,10 @@ struct ContentView: View {
     }
 
     private var shouldShowPomodoroTimerBanner: Bool {
-        pomodoroPluginEnabled && !isExpanded && (pomodoroTimer.pendingTransition != nil || (showPomodoroTimerBanner && pomodoroTimer.isRunning))
+        pomodoroPluginEnabled && !isExpanded && showPomodoroTimerBanner && pomodoroTimer.isRunning
     }
 
     private var pomodoroBannerText: String {
-        if let transition = pomodoroTimer.pendingTransition {
-            return "\(transition.completedMode.title) done - resume for \(transition.nextMode.title)"
-        }
         return "\(pomodoroTimer.mode.title) \(pomodoroTimer.timeText)"
     }
 
@@ -592,6 +610,7 @@ struct ContentView: View {
     private func expandedWidgetHeight(for widget: NotchWidgetType, playerHeight: CGFloat) -> CGFloat {
         switch widget {
         case .player: return playerHeight
+        case .turntable: return 196
         case .spotifyQueue, .youtubeQueue: return 250
         case .spotifyPlaylists, .youtubePlaylists: return playlistWidgetHeight
         case .pomodoro: return pomodoroWidgetHeight
@@ -615,6 +634,33 @@ struct ContentView: View {
 
     private func rowUsesCompactPlayerLayout(_ row: [NotchWidgetType]) -> Bool {
         row.count > 1
+    }
+
+    private func updateExpandedLayerRendering(isExpanded expanded: Bool) {
+        expandedLayerRenderTask?.cancel()
+        expandedLayerRenderTask = nil
+
+        if expanded {
+            prepareExpandedLayerForExpansion()
+            return
+        }
+
+        expandedLayerRenderTask = Task {
+            try? await Task.sleep(nanoseconds: 320_000_000)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                guard !isExpanded else { return }
+                shouldRenderExpandedLayer = false
+                expandedLayerRenderTask = nil
+            }
+        }
+    }
+
+    private func prepareExpandedLayerForExpansion() {
+        expandedLayerRenderTask?.cancel()
+        expandedLayerRenderTask = nil
+        shouldRenderExpandedLayer = true
     }
 
     @ViewBuilder
@@ -658,10 +704,13 @@ struct ContentView: View {
                                 let w1 = row[0]
                                 let w2 = row[1]
 
-                                // Ratios: Spotify Queue is always 0.4 (Minor), all others split 1:1
+                                // Ratios: queue-style widgets are always 0.4 (minor), all others split 1:1.
                                 let r1: CGFloat = {
-                                    if w1 == .spotifyQueue { return 0.4 }
-                                    if w2 == .spotifyQueue { return 0.6 }
+                                    let w1UsesNarrowWidth = w1 == .spotifyQueue || w1 == .turntable
+                                    let w2UsesNarrowWidth = w2 == .spotifyQueue || w2 == .turntable
+
+                                    if w1UsesNarrowWidth && !w2UsesNarrowWidth { return 0.4 }
+                                    if w2UsesNarrowWidth && !w1UsesNarrowWidth { return 0.6 }
                                     return 0.5
                                 }()
                                 let r2 = 1.0 - r1
@@ -776,6 +825,7 @@ struct ContentView: View {
         isPostFileDropExpansionSuppressed = false
         isFileDropLayoutLocked = true
         if !isExpanded {
+            prepareExpandedLayerForExpansion()
             isExpanded = true
         }
         isShowingBanner = false
@@ -940,6 +990,17 @@ struct ContentView: View {
                 isShowingLyricBanner = true
             }
         }
+    }
+
+    private func showPomodoroCompletionBanner(from notification: Notification) {
+        guard pomodoroPluginEnabled, showPomodoroModeChangeBanner else { return }
+
+        let completedRaw = notification.userInfo?["completedMode"] as? String
+        let nextRaw = notification.userInfo?["nextMode"] as? String
+        let completedTitle = completedRaw.flatMap(PomodoroMode.init(rawValue:))?.title ?? "Pomodoro"
+        let nextTitle = nextRaw.flatMap(PomodoroMode.init(rawValue:))?.title ?? "next session"
+
+        triggerBanner(text: "\(completedTitle) complete - \(nextTitle) ready", duration: 3.0)
     }
 
     private func triggerBanner(text: String, duration: Double) {

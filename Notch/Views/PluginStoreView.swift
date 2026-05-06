@@ -555,6 +555,20 @@ struct PluginDetailView: View {
                         defaultValue: false
                     )
                     Divider().opacity(0.15)
+                    PluginSettingToggle(
+                        title: "Sound when mode changes",
+                        description: "Play a short alert when focus, break, or long break finishes.",
+                        key: "pomodoro_sound_on_mode_change",
+                        defaultValue: true
+                    )
+                    Divider().opacity(0.15)
+                    PluginSettingToggle(
+                        title: "Show banner when mode changes",
+                        description: "Show a 3-second completion banner when Pomodoro switches modes.",
+                        key: "pomodoro_show_mode_change_banner",
+                        defaultValue: true
+                    )
+                    Divider().opacity(0.15)
                     PomodoroSettingStepper(
                         title: "Focus Session",
                         key: "pomodoro_focus_minutes",
@@ -588,6 +602,8 @@ struct PluginDetailView: View {
                     )
                 } else if plugin.id == "weather" {
                     WeatherPluginSettingsView()
+                } else if plugin.id == "turntable_player" {
+                    TurntablePluginSettingsView()
                 } else if plugin.id == "clipboard_history" {
                     ClipboardPluginSettingsView()
                 } else if plugin.id == "file_tray" {
@@ -820,6 +836,128 @@ struct WeatherPluginSettingsView: View {
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.secondary)
         }
+    }
+}
+
+struct TurntablePluginSettingsView: View {
+    @AppStorage("turntable_spin_speed") private var spinSpeed = 1.0
+    @AppStorage("turntable_plinth_style") private var plinthStyle = "graphite"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Spin speed")
+                            .font(.system(size: 13, weight: .medium))
+                        Text("Adjust how fast the record spins while music is playing.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Text(String(format: "%.1fx", clampedSpinSpeedValue))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(.secondary)
+                }
+
+                HStack(spacing: 8) {
+                    Text("0.5x")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Slider(value: clampedSpinSpeed, in: 0.5...2.0, step: 0.1)
+                        .labelsHidden()
+                    Text("2.0x")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Divider().opacity(0.15)
+
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Record backing")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Change the square surface behind the spinning record.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Picker("", selection: $plinthStyle) {
+                    Text("Graphite").tag("graphite")
+                    Text("Walnut").tag("walnut")
+                    Text("Album Color").tag("album")
+                    Text("Glass").tag("glass")
+                    Text("None").tag("none")
+                }
+                .pickerStyle(.menu)
+                .frame(width: 126)
+            }
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show control buttons",
+                description: "Display previous, play/pause, and next buttons on the turntable.",
+                key: "turntable_show_controls",
+                defaultValue: false
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Click record to play/pause",
+                description: "Toggle playback by clicking the vinyl record.",
+                key: "turntable_click_record_toggle",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show track info",
+                description: "Display the current song information inside the turntable widget.",
+                key: "turntable_show_track_info",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show song title",
+                description: "Show the current song title when track info is enabled.",
+                key: "turntable_show_track_title",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show artist / author",
+                description: "Show the artist or author line when track info is enabled.",
+                key: "turntable_show_track_artist",
+                defaultValue: true
+            )
+        }
+        .onAppear {
+            spinSpeed = clampedSpinSpeedValue
+        }
+    }
+
+    private var clampedSpinSpeed: Binding<Double> {
+        Binding(
+            get: { clampedSpinSpeedValue },
+            set: { spinSpeed = min(max($0, 0.5), 2.0) }
+        )
+    }
+
+    private var clampedSpinSpeedValue: Double {
+        min(max(spinSpeed, 0.5), 2.0)
     }
 }
 

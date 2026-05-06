@@ -33,6 +33,7 @@ struct WidgetFactoryView: View {
                     case .player: EmptyView() // Handled above
                     case .spotifyQueue: SpotifyQueueWidget(nowPlaying: nowPlaying)
                     case .spotifyPlaylists: PlaylistTabView(nowPlaying: nowPlaying)
+                    case .turntable: TurntablePlayerWidget(nowPlaying: nowPlaying)
                     case .youtubeQueue: YouTubeQueueWidget(nowPlaying: nowPlaying)
                     case .youtubePlaylists: YouTubePlaylistsWidget(nowPlaying: nowPlaying)
                     case .calendar: CalendarWidget()
@@ -67,6 +68,804 @@ struct WidgetFactoryView: View {
                         .stroke(Color.white.opacity(0.05), lineWidth: 1)
                 )
             }
+        }
+    }
+}
+
+struct TurntablePlayerWidget: View {
+    @ObservedObject var nowPlaying: NowPlayingManager
+    @AppStorage("turntable_spin_speed") private var spinSpeed = 1.0
+    @AppStorage("turntable_show_controls") private var showControls = false
+    @AppStorage("turntable_click_record_toggle") private var clickRecordToggle = true
+    @AppStorage("turntable_show_track_info") private var showTrackInfo = true
+    @AppStorage("turntable_show_track_title") private var showTrackTitle = true
+    @AppStorage("turntable_show_track_artist") private var showTrackArtist = true
+    @AppStorage("turntable_plinth_style") private var plinthStyle = "graphite"
+
+    @State private var songChangeCue = false
+    @State private var songChangeTask: Task<Void, Never>? = nil
+
+    private var hasMedia: Bool {
+        nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
+    }
+
+    private var trackTexts: (title: String, artist: String) {
+        guard hasMedia else { return ("Nothing playing", "") }
+
+        let parts = nowPlaying.currentSong.components(separatedBy: " - ")
+        let title = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? nowPlaying.currentSong
+        let artist = parts.count > 1
+            ? parts.dropFirst().joined(separator: " - ").trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
+
+        return (title.isEmpty ? nowPlaying.currentSong : title, artist)
+    }
+
+    private var trackIdentity: String {
+        "\(nowPlaying.currentSong)|\(nowPlaying.artworkURL?.absoluteString ?? "")"
+    }
+
+    private var infoVisible: Bool {
+        showTrackInfo && hasMedia && (showTrackTitle || (showTrackArtist && !trackTexts.artist.isEmpty))
+    }
+
+    private var playbackProgress: CGFloat {
+        guard hasMedia, nowPlaying.duration > 0 else { return 0 }
+        return CGFloat(min(max(nowPlaying.currentTime / max(nowPlaying.duration, 1), 0), 1))
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let height = geo.size.height
+            let compact = width < 360
+            let controlsVisible = showControls && hasMedia
+            let infoAtTop = infoVisible && compact
+            let topInfoReserve: CGFloat = infoAtTop ? 44 : 0
+            let controlsHeight: CGFloat = controlsVisible ? 42 : 0
+            let availableHeight = max(96, height - topInfoReserve - controlsHeight - 20)
+            let targetPlinthSide = compact ? width * 0.58 : width * (infoVisible ? 0.44 : 0.52)
+            let plinthSide = min(availableHeight, targetPlinthSide, 232)
+            let recordSize = plinthSide * 0.78
+            let recordRadius = recordSize / 2
+            let targetRecordX = width * (compact ? 0.50 : (infoVisible ? 0.33 : 0.40))
+            let recordCenterX = min(max(plinthSide / 2 + 14, targetRecordX), width - recordRadius - 64)
+            let activeHeight = max(plinthSide, height - topInfoReserve - controlsHeight)
+            let recordCenterY = topInfoReserve + activeHeight / 2
+            let recordCenter = CGPoint(x: recordCenterX, y: recordCenterY)
+            let controlsWidth: CGFloat = 112
+            let infoWidth = infoAtTop ? max(120, width - 36) : min(max(126, width - recordCenter.x - recordRadius - 76), 230)
+            let infoCenterX = infoAtTop ? width / 2 : width - infoWidth / 2 - 18
+            let infoCenterY = infoAtTop ? 22 : max(38, min(height - controlsHeight - 34, recordCenter.y - recordRadius * 0.52))
+            let controlsX = compact ? width / 2 : min(width - controlsWidth / 2 - 16, recordCenter.x + recordRadius + controlsWidth / 2 + 16)
+
+            ZStack {
+                if plinthStyle != "none" {
+                    TurntablePlinthView(
+                        side: plinthSide,
+                        style: plinthStyle,
+                        accentColor: nowPlaying.artworkDominantColor,
+                        isChangingSong: songChangeCue
+                    )
+                    .position(recordCenter)
+                    .shadow(color: .black.opacity(songChangeCue ? 0.44 : 0.34), radius: songChangeCue ? 18 : 12, x: 0, y: 8)
+                    .zIndex(0)
+                }
+
+                ZStack {
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    Color.black.opacity(0.96),
+                                    Color(red: 0.09, green: 0.09, blue: 0.085),
+                                    Color.black
+                                ],
+                                center: .center,
+                                startRadius: 8,
+                                endRadius: recordSize * 0.6
+                            )
+                        )
+                        .frame(width: recordSize + 18, height: recordSize + 18)
+                        .shadow(color: .black.opacity(0.62), radius: 14, x: 0, y: 9)
+
+                    TurntableRecordView(
+                        artworkURL: nowPlaying.artworkURL,
+                        artworkIdentity: trackIdentity,
+                        isPlaying: nowPlaying.isPlaying && hasMedia,
+                        hasMedia: hasMedia,
+                        size: recordSize,
+                        spinSpeed: spinSpeed
+                    )
+                }
+                .position(recordCenter)
+                .contentShape(Circle())
+                .onTapGesture {
+                    guard clickRecordToggle, hasMedia else { return }
+                    nowPlaying.togglePlayPause()
+                }
+                .help(clickRecordToggle && hasMedia ? "Play/Pause" : "")
+                .zIndex(1)
+
+                TurntableTonearmView(
+                    isPlaying: nowPlaying.isPlaying && hasMedia,
+                    hasMedia: hasMedia,
+                    playbackProgress: playbackProgress,
+                    recordCenter: recordCenter,
+                    recordRadius: recordRadius
+                )
+                .frame(width: width, height: height)
+                .zIndex(3)
+
+                if infoVisible {
+                    TurntableTrackInfoView(
+                        title: trackTexts.title,
+                        artist: trackTexts.artist,
+                        showTitle: showTrackTitle,
+                        showArtist: showTrackArtist,
+                        compact: compact
+                    )
+                    .frame(width: infoWidth, alignment: .leading)
+                    .position(x: infoCenterX, y: infoCenterY)
+                    .id(trackIdentity)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .leading)))
+                    .zIndex(5)
+                }
+
+                if controlsVisible {
+                    HStack(spacing: 8) {
+                        turntableControl(systemName: "backward.fill", label: "Previous") {
+                            nowPlaying.skipBackward()
+                        }
+
+                        turntableControl(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill", label: "Play/Pause", isPrimary: true) {
+                            nowPlaying.togglePlayPause()
+                        }
+
+                        turntableControl(systemName: "forward.fill", label: "Next") {
+                            nowPlaying.skipForward()
+                        }
+                    }
+                    .frame(width: controlsWidth)
+                    .position(x: controlsX, y: height - 25)
+                    .zIndex(5)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeOut(duration: 0.22), value: trackIdentity)
+        .animation(.easeInOut(duration: 0.28), value: songChangeCue)
+        .onChange(of: trackIdentity) { _, _ in
+            triggerSongChangeAnimation()
+        }
+        .onDisappear {
+            songChangeTask?.cancel()
+            songChangeTask = nil
+        }
+    }
+
+    private func turntableControl(systemName: String, label: String, isPrimary: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: isPrimary ? 12 : 10, weight: .bold))
+                .foregroundColor(.white.opacity(isPrimary ? 0.92 : 0.78))
+                .frame(width: isPrimary ? 32 : 28, height: 26)
+                .background(isPrimary ? Color.white.opacity(0.18) : Color.white.opacity(0.09))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(label)
+    }
+
+    private func triggerSongChangeAnimation() {
+        songChangeTask?.cancel()
+        withAnimation(.easeOut(duration: 0.18)) {
+            songChangeCue = true
+        }
+
+        songChangeTask = Task {
+            try? await Task.sleep(nanoseconds: 520_000_000)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.32)) {
+                    songChangeCue = false
+                }
+                songChangeTask = nil
+            }
+        }
+    }
+}
+
+private struct TurntablePlinthView: View {
+    let side: CGFloat
+    let style: String
+    let accentColor: Color
+    let isChangingSong: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(fillStyle)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(borderColor, lineWidth: 1)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(Color.black.opacity(0.28), lineWidth: 1)
+                    .padding(6)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.clear,
+                                Color.white.opacity(isChangingSong ? 0.20 : 0.04),
+                                Color.clear
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .blendMode(.screen)
+            )
+            .frame(width: side, height: side)
+    }
+
+    private var fillStyle: AnyShapeStyle {
+        switch style {
+        case "walnut":
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.34, green: 0.25, blue: 0.21).opacity(0.58),
+                        Color(red: 0.18, green: 0.12, blue: 0.10).opacity(0.72),
+                        Color.black.opacity(0.34)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        case "album":
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        accentColor.opacity(0.46),
+                        accentColor.opacity(0.20),
+                        Color.black.opacity(0.38)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        case "glass":
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.18),
+                        Color.white.opacity(0.055),
+                        Color.black.opacity(0.24)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        default:
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.11),
+                        Color(red: 0.08, green: 0.08, blue: 0.085).opacity(0.58),
+                        Color.black.opacity(0.34)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        }
+    }
+
+    private var borderColor: Color {
+        switch style {
+        case "album": return accentColor.opacity(isChangingSong ? 0.34 : 0.18)
+        case "glass": return Color.white.opacity(isChangingSong ? 0.22 : 0.14)
+        case "walnut": return Color.white.opacity(isChangingSong ? 0.20 : 0.11)
+        default: return Color.white.opacity(isChangingSong ? 0.20 : 0.10)
+        }
+    }
+}
+
+private struct TurntableTrackInfoView: View {
+    let title: String
+    let artist: String
+    let showTitle: Bool
+    let showArtist: Bool
+    let compact: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if showTitle {
+                MarqueeText(
+                    text: title,
+                    font: .system(size: compact ? 13 : 15, weight: .bold),
+                    alignment: .leading
+                )
+                .frame(height: compact ? 17 : 20)
+                .foregroundColor(.white)
+            }
+
+            if showArtist && !artist.isEmpty {
+                MarqueeText(
+                    text: artist,
+                    font: .system(size: compact ? 11 : 12, weight: .semibold),
+                    alignment: .leading
+                )
+                .frame(height: 15)
+                .foregroundColor(.white.opacity(0.62))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.black.opacity(0.18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+    }
+}
+
+private struct TurntableRecordView: View {
+    let artworkURL: URL?
+    let artworkIdentity: String
+    let isPlaying: Bool
+    let hasMedia: Bool
+    let size: CGFloat
+    let spinSpeed: Double
+
+    @State private var rotation: Double = 0
+    @State private var spinVelocity: Double = 0
+    @State private var lastFrameDate: Date?
+    @State private var displayedArtworkURL: URL? = nil
+    @State private var labelFlipDegrees: Double = 0
+    @State private var artworkTransitionTask: Task<Void, Never>? = nil
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isPlaying && abs(spinVelocity) < 0.05)) { timeline in
+            ZStack {
+                rotatingDisc
+                    .rotationEffect(.degrees(rotation))
+
+                stationaryReflection
+            }
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+            .onAppear {
+                lastFrameDate = timeline.date
+                spinVelocity = isPlaying ? targetSpinVelocity : 0
+                displayedArtworkURL = artworkURL
+            }
+            .onChange(of: timeline.date) { _, date in
+                advanceSpin(to: date)
+            }
+            .onChange(of: isPlaying) { _, _ in
+                lastFrameDate = timeline.date
+            }
+            .onChange(of: artworkIdentity) { _, _ in
+                rotateToArtwork(artworkURL)
+            }
+            .onDisappear {
+                artworkTransitionTask?.cancel()
+                artworkTransitionTask = nil
+            }
+        }
+    }
+
+    private var rotatingDisc: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color(red: 0.025, green: 0.025, blue: 0.025),
+                            Color.black,
+                            Color(red: 0.055, green: 0.055, blue: 0.052),
+                            Color.black
+                        ],
+                        center: .center,
+                        startRadius: 3,
+                        endRadius: size * 0.55
+                    )
+                )
+
+            Circle()
+                .stroke(Color.black.opacity(0.85), lineWidth: 10)
+                .padding(3)
+
+            Circle()
+                .stroke(Color.black.opacity(0.42), lineWidth: 4)
+                .padding(13)
+
+            Circle()
+                .stroke(Color.white.opacity(0.055), lineWidth: 1.5)
+                .padding(18)
+
+            ForEach(0..<46, id: \.self) { index in
+                let ringSize = size * (0.25 + CGFloat(index) * 0.016)
+                Circle()
+                    .stroke(
+                        Color.white.opacity(index.isMultiple(of: 6) ? 0.065 : 0.022),
+                        lineWidth: index.isMultiple(of: 6) ? 0.75 : 0.38
+                    )
+                    .frame(width: ringSize, height: ringSize)
+            }
+
+            ForEach(0..<36, id: \.self) { index in
+                Rectangle()
+                    .fill(Color.white.opacity(index.isMultiple(of: 3) ? 0.018 : 0.009))
+                    .frame(width: 1, height: size * 0.36)
+                    .offset(y: -size * 0.18)
+                    .rotationEffect(.degrees(Double(index) * 10))
+                    .blendMode(.screen)
+            }
+
+            Circle()
+                .stroke(
+                    AngularGradient(
+                        colors: [
+                            Color.clear,
+                            Color.white.opacity(0.11),
+                            Color.clear,
+                            Color.white.opacity(0.06),
+                            Color.clear
+                        ],
+                        center: .center
+                    ),
+                    lineWidth: 8
+                )
+                .padding(size * 0.09)
+
+            Circle()
+                .fill(labelBackground)
+                .frame(width: size * 0.50, height: size * 0.50)
+                .overlay(labelArtwork)
+                .rotation3DEffect(
+                    .degrees(labelFlipDegrees),
+                    axis: (x: 0, y: 1, z: 0),
+                    perspective: 0.48
+                )
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.42), radius: 4, y: 2)
+
+            Circle()
+                .fill(Color.white.opacity(0.88))
+                .frame(width: size * 0.058, height: size * 0.058)
+                .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+        }
+    }
+
+    private var stationaryReflection: some View {
+        ZStack {
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.clear, Color.white.opacity(0.16), Color.clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: size * 0.84, height: size * 0.08)
+                .blur(radius: 4)
+                .rotationEffect(.degrees(-8))
+                .blendMode(.screen)
+
+            Circle()
+                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                .padding(5)
+        }
+    }
+
+    @ViewBuilder
+    private var labelArtwork: some View {
+        if hasMedia, let displayedArtworkURL {
+            AsyncImage(url: displayedArtworkURL) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } placeholder: {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+            .clipShape(Circle())
+        } else {
+            Image(systemName: "music.note")
+                .font(.system(size: size * 0.16, weight: .bold))
+                .foregroundColor(.white.opacity(0.58))
+        }
+    }
+
+    private func rotateToArtwork(_ newArtworkURL: URL?) {
+        artworkTransitionTask?.cancel()
+
+        withAnimation(.easeIn(duration: 0.16)) {
+            labelFlipDegrees = 88
+        }
+
+        artworkTransitionTask = Task {
+            try? await Task.sleep(nanoseconds: 160_000_000)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                displayedArtworkURL = newArtworkURL
+                labelFlipDegrees = -88
+
+                withAnimation(.easeOut(duration: 0.22)) {
+                    labelFlipDegrees = 0
+                }
+
+                artworkTransitionTask = nil
+            }
+        }
+    }
+
+    private var labelBackground: some ShapeStyle {
+        RadialGradient(
+            colors: [
+                Color.white.opacity(hasMedia ? 0.32 : 0.18),
+                Color.gray.opacity(hasMedia ? 0.22 : 0.10),
+                Color.black.opacity(0.18)
+            ],
+            center: .center,
+            startRadius: 1,
+            endRadius: size * 0.25
+        )
+    }
+
+    private var targetSpinVelocity: Double {
+        122 * min(max(spinSpeed, 0.5), 2.0)
+    }
+
+    private func advanceSpin(to date: Date) {
+        guard let lastFrameDate else {
+            self.lastFrameDate = date
+            return
+        }
+
+        let delta = min(max(date.timeIntervalSince(lastFrameDate), 0), 0.06)
+        self.lastFrameDate = date
+
+        let target = isPlaying ? targetSpinVelocity : 0
+        let response = isPlaying ? 4.8 : 2.4
+        let blend = min(1, delta * response)
+        spinVelocity += (target - spinVelocity) * blend
+
+        if !isPlaying && abs(spinVelocity) < 0.05 {
+            spinVelocity = 0
+        }
+
+        rotation = (rotation + spinVelocity * delta).truncatingRemainder(dividingBy: 360)
+    }
+}
+
+private struct TurntableTonearmView: View {
+    let isPlaying: Bool
+    let hasMedia: Bool
+    let playbackProgress: CGFloat
+    let recordCenter: CGPoint
+    let recordRadius: CGFloat
+
+    @State private var displayedGrooveProgress: CGFloat = 0
+    @State private var liftAmount: CGFloat = 1
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let postX = min(width - 28, recordCenter.x + recordRadius * 1.08)
+            let pivot = CGPoint(x: postX, y: recordCenter.y - recordRadius * 0.48)
+            let postTop = CGPoint(x: postX, y: pivot.y - recordRadius * 0.32)
+            let postBottom = CGPoint(x: postX, y: recordCenter.y + recordRadius * 0.46)
+            let armBend = CGPoint(x: postX, y: recordCenter.y + recordRadius * 0.56)
+            let stylus = stylusPoint(grooveProgress: displayedGrooveProgress, liftAmount: liftAmount)
+            let headBackAnchor = CGPoint(x: stylus.x + recordRadius * 0.28, y: stylus.y + recordRadius * 0.03)
+            let tangent = normalizedVector(from: headBackAnchor, to: stylus)
+            let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
+            let cartridgeBack = CGPoint(x: stylus.x - tangent.dx * 24, y: stylus.y - tangent.dy * 24)
+            let cartridgeFront = CGPoint(x: stylus.x - tangent.dx * 7, y: stylus.y - tangent.dy * 7)
+            let stylusTip = CGPoint(x: stylus.x + tangent.dx * 4, y: stylus.y + tangent.dy * 4)
+
+            ZStack {
+                TurntableArmBaseView(
+                    postTop: postTop,
+                    postBottom: postBottom,
+                    pivot: pivot,
+                    isEngaged: hasMedia && isPlaying
+                )
+
+                Path { path in
+                    path.move(to: pivot)
+                    path.addLine(to: armBend)
+                    path.addCurve(
+                        to: cartridgeBack,
+                        control1: CGPoint(x: armBend.x, y: armBend.y + recordRadius * 0.16),
+                        control2: CGPoint(x: cartridgeBack.x + recordRadius * 0.34, y: cartridgeBack.y + recordRadius * 0.08)
+                    )
+                }
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.68),
+                            Color.white.opacity(0.34),
+                            Color.black.opacity(0.42)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    style: StrokeStyle(lineWidth: 4.2, lineCap: .round, lineJoin: .round)
+                )
+                .shadow(color: .black.opacity(0.42), radius: 4, x: 1, y: 3)
+
+                TurntableCartridgeView(
+                    back: cartridgeBack,
+                    front: cartridgeFront,
+                    stylusTip: stylusTip,
+                    normal: normal
+                )
+
+                Circle()
+                    .fill(Color.black.opacity(0.72))
+                    .frame(width: 4, height: 4)
+                    .position(stylusTip)
+            }
+            .onAppear {
+                displayedGrooveProgress = targetGrooveProgress
+                liftAmount = targetLiftAmount
+            }
+            .onChange(of: targetGrooveProgress) { _, newProgress in
+                withAnimation(.easeInOut(duration: isPlaying ? 0.9 : 0.42)) {
+                    displayedGrooveProgress = newProgress
+                }
+            }
+            .onChange(of: targetLiftAmount) { _, newLiftAmount in
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+                    liftAmount = newLiftAmount
+                }
+            }
+        }
+    }
+
+    private var targetGrooveProgress: CGFloat {
+        guard hasMedia else { return 0 }
+        return min(max(playbackProgress, 0), 1)
+    }
+
+    private var targetLiftAmount: CGFloat {
+        guard hasMedia else { return 1 }
+        return isPlaying ? 0 : 0.34
+    }
+
+    private func stylusPoint(grooveProgress: CGFloat, liftAmount: CGFloat) -> CGPoint {
+        let outerGroove = CGPoint(x: recordCenter.x + recordRadius * 0.83, y: recordCenter.y + recordRadius * 0.50)
+        let innerGroove = CGPoint(x: recordCenter.x + recordRadius * 0.48, y: recordCenter.y + recordRadius * 0.34)
+        let parked = CGPoint(x: recordCenter.x + recordRadius * 1.05, y: recordCenter.y + recordRadius * 0.68)
+        let groovePoint = interpolate(from: outerGroove, to: innerGroove, progress: min(max(grooveProgress, 0), 1))
+        let target = hasMedia ? groovePoint : parked
+
+        return interpolate(from: target, to: parked, progress: min(max(liftAmount, 0), 1))
+    }
+
+    private func interpolate(from start: CGPoint, to end: CGPoint, progress: CGFloat) -> CGPoint {
+        CGPoint(
+            x: start.x + (end.x - start.x) * progress,
+            y: start.y + (end.y - start.y) * progress
+        )
+    }
+
+    private func normalizedVector(from start: CGPoint, to end: CGPoint) -> CGVector {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let length = max(0.001, sqrt(dx * dx + dy * dy))
+        return CGVector(dx: dx / length, dy: dy / length)
+    }
+}
+
+private struct TurntableArmBaseView: View {
+    let postTop: CGPoint
+    let postBottom: CGPoint
+    let pivot: CGPoint
+    let isEngaged: Bool
+
+    var body: some View {
+        ZStack {
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.38), Color.black.opacity(0.62)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: 15, height: 9)
+                .position(postTop)
+
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.30), Color.black.opacity(0.60)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: 5.5, height: max(18, postBottom.y - postTop.y))
+                .position(x: postTop.x, y: (postTop.y + postBottom.y) / 2)
+
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [Color.white.opacity(0.40), Color.black.opacity(0.70)],
+                        center: .topLeading,
+                        startRadius: 2,
+                        endRadius: 16
+                    )
+                )
+                .frame(width: 24, height: 24)
+                .position(pivot)
+                .overlay(
+                    Circle()
+                        .stroke(Color.black.opacity(0.42), lineWidth: 2)
+                        .frame(width: 24, height: 24)
+                        .position(pivot)
+                )
+
+            Circle()
+                .fill(Color.black.opacity(0.64))
+                .frame(width: 11, height: 11)
+                .position(pivot)
+
+            Circle()
+                .fill(Color.white.opacity(isEngaged ? 0.52 : 0.34))
+                .frame(width: 7, height: 7)
+                .position(pivot)
+        }
+    }
+}
+
+private struct TurntableCartridgeView: View {
+    let back: CGPoint
+    let front: CGPoint
+    let stylusTip: CGPoint
+    let normal: CGVector
+
+    var body: some View {
+        ZStack {
+            Path { path in
+                let backHalf: CGFloat = 5.2
+                let frontHalf: CGFloat = 3.2
+                path.move(to: CGPoint(x: back.x + normal.dx * backHalf, y: back.y + normal.dy * backHalf))
+                path.addLine(to: CGPoint(x: front.x + normal.dx * frontHalf, y: front.y + normal.dy * frontHalf))
+                path.addLine(to: CGPoint(x: front.x - normal.dx * frontHalf, y: front.y - normal.dy * frontHalf))
+                path.addLine(to: CGPoint(x: back.x - normal.dx * backHalf, y: back.y - normal.dy * backHalf))
+                path.closeSubpath()
+            }
+            .fill(
+                LinearGradient(
+                    colors: [Color.white.opacity(0.78), Color.white.opacity(0.48), Color.black.opacity(0.36)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .shadow(color: .black.opacity(0.38), radius: 3, x: 1, y: 2)
+
+            Path { path in
+                path.move(to: front)
+                path.addLine(to: stylusTip)
+            }
+            .stroke(Color.black.opacity(0.70), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
         }
     }
 }
@@ -246,6 +1045,7 @@ final class PomodoroTimerManager: ObservableObject {
         static let shortBreakMinutes = "pomodoro_short_break_minutes"
         static let longBreakMinutes = "pomodoro_long_break_minutes"
         static let longBreakEvery = "pomodoro_long_break_every"
+        static let soundOnModeChange = "pomodoro_sound_on_mode_change"
     }
 
     private init() {
@@ -366,6 +1166,7 @@ final class PomodoroTimerManager: ObservableObject {
         let newTimer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             self?.tick()
         }
+        newTimer.tolerance = 0.1
         timer = newTimer
         RunLoop.main.add(newTimer, forMode: .common)
     }
@@ -436,8 +1237,11 @@ final class PomodoroTimerManager: ObservableObject {
     }
 
     private func playCompletionFeedback() {
-        let sound = NSSound(named: NSSound.Name("Glass")) ?? NSSound(named: NSSound.Name("Ping"))
-        sound?.play()
+        let soundEnabled = defaults.object(forKey: Key.soundOnModeChange) as? Bool ?? true
+        if soundEnabled {
+            let sound = NSSound(named: NSSound.Name("Glass")) ?? NSSound(named: NSSound.Name("Ping"))
+            sound?.play()
+        }
         NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
     }
 
@@ -473,29 +1277,43 @@ final class PomodoroTimerManager: ObservableObject {
 
 struct PomodoroTimerWidget: View {
     @StateObject private var timer = PomodoroTimerManager.shared
+    @AppStorage("pomodoro_show_mode_change_banner") private var showModeChangeBanner = true
+    @State private var visibleCompletion: PomodoroTransition?
+    @State private var completionBannerTask: Task<Void, Never>? = nil
     let isCompact: Bool
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             timerContent
 
-            if let transition = timer.pendingTransition {
-                PomodoroCompletionOverlay(
+            if let transition = visibleCompletion {
+                PomodoroCompletionBanner(
                     transition: transition,
-                    isCompact: isCompact,
-                    onResume: timer.resumeNextSession,
-                    onReset: timer.reset
+                    isCompact: isCompact
                 )
                 .transition(
                     .asymmetric(
-                        insertion: .scale(scale: 0.88, anchor: .center).combined(with: .opacity),
-                        removal: .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
+                        insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: .top)),
+                        removal: .opacity.combined(with: .move(edge: .top))
                     )
                 )
                 .zIndex(5)
             }
         }
-        .animation(.spring(response: 0.34, dampingFraction: 0.78), value: timer.pendingTransition)
+        .animation(.spring(response: 0.34, dampingFraction: 0.82), value: visibleCompletion)
+        .onAppear {
+            updateCompletionBanner(for: timer.pendingTransition)
+        }
+        .onDisappear {
+            completionBannerTask?.cancel()
+            completionBannerTask = nil
+        }
+        .onChange(of: timer.pendingTransition) { _, transition in
+            updateCompletionBanner(for: transition)
+        }
+        .onChange(of: showModeChangeBanner) { _, _ in
+            updateCompletionBanner(for: timer.pendingTransition)
+        }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
             timer.syncSettings()
         }
@@ -601,101 +1419,110 @@ struct PomodoroTimerWidget: View {
         .buttonStyle(.plain)
         .help(label)
     }
+
+    private func updateCompletionBanner(for transition: PomodoroTransition?) {
+        completionBannerTask?.cancel()
+        completionBannerTask = nil
+
+        guard showModeChangeBanner, let transition else {
+            withAnimation(.easeOut(duration: 0.18)) {
+                visibleCompletion = nil
+            }
+            return
+        }
+
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+            visibleCompletion = transition
+        }
+
+        completionBannerTask = Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                guard visibleCompletion == transition else { return }
+                withAnimation(.easeOut(duration: 0.2)) {
+                    visibleCompletion = nil
+                }
+                completionBannerTask = nil
+            }
+        }
+    }
 }
 
-struct PomodoroCompletionOverlay: View {
+struct PomodoroCompletionBanner: View {
     let transition: PomodoroTransition
     let isCompact: Bool
-    let onResume: () -> Void
-    let onReset: () -> Void
 
     @State private var pulse = false
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+        HStack(spacing: isCompact ? 8 : 10) {
+            ZStack {
+                Circle()
+                    .stroke(Color.white.opacity(0.16), lineWidth: 4)
+                Circle()
+                    .trim(from: 0.08, to: pulse ? 1 : 0.58)
+                    .stroke(transition.completedMode.color, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .rotationEffect(.degrees(pulse ? 270 : -90))
+                Image(systemName: completionIconName)
+                    .font(.system(size: isCompact ? 13 : 15, weight: .bold))
+                    .foregroundColor(.white)
+                    .scaleEffect(pulse ? 1.08 : 0.94)
+            }
+            .frame(width: isCompact ? 34 : 40, height: isCompact ? 34 : 40)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(completionTitle)
+                    .font(.system(size: isCompact ? 12 : 13, weight: .bold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                Text("Next: \(transition.nextMode.title)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.64))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, isCompact ? 10 : 12)
+        .padding(.vertical, isCompact ? 8 : 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.ultraThinMaterial)
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(
+                .overlay(
                     LinearGradient(
                         colors: [
-                            transition.completedMode.color.opacity(0.22),
+                            transition.completedMode.color.opacity(pulse ? 0.28 : 0.18),
                             transition.nextMode.color.opacity(0.12),
-                            Color.black.opacity(0.18)
+                            Color.black.opacity(0.16)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(transition.completedMode.color.opacity(0.42), lineWidth: 1)
-
-            VStack(spacing: isCompact ? 7 : 9) {
-                ZStack {
-                    Circle()
-                        .stroke(Color.white.opacity(0.12), lineWidth: 6)
-                    Circle()
-                        .trim(from: 0.12, to: pulse ? 1 : 0.62)
-                        .stroke(transition.completedMode.color, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                        .rotationEffect(.degrees(pulse ? 270 : -90))
-                    Image(systemName: transition.nextMode.iconName)
-                        .font(.system(size: isCompact ? 17 : 19, weight: .bold))
-                        .foregroundColor(.white)
-                        .scaleEffect(pulse ? 1.08 : 0.96)
-                }
-                .frame(width: isCompact ? 50 : 56, height: isCompact ? 50 : 56)
-
-                VStack(spacing: 2) {
-                    Text("\(transition.completedMode.title) complete")
-                        .font(.system(size: isCompact ? 13 : 14, weight: .bold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                    Text("Next: \(transition.nextMode.title)")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.62))
-                        .lineLimit(1)
-                }
-
-                HStack(spacing: 8) {
-                    completionButton(
-                        systemName: "play.fill",
-                        title: "Resume",
-                        color: transition.nextMode.color,
-                        action: onResume
-                    )
-                    completionButton(
-                        systemName: "arrow.counterclockwise",
-                        title: "Reset",
-                        color: Color.white.opacity(0.16),
-                        action: onReset
-                    )
-                }
-            }
-            .padding(.horizontal, 12)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(transition.completedMode.color.opacity(pulse ? 0.55 : 0.32), lineWidth: 1)
+        )
+        .shadow(color: transition.completedMode.color.opacity(0.24), radius: pulse ? 18 : 8, y: 8)
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
         .onAppear {
-            withAnimation(.easeInOut(duration: 1.15).repeatForever(autoreverses: true)) {
+            withAnimation(.easeInOut(duration: 0.78).repeatForever(autoreverses: true)) {
                 pulse = true
             }
         }
     }
 
-    private func completionButton(systemName: String, title: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: systemName)
-                    .font(.system(size: 10, weight: .bold))
-                Text(title)
-                    .font(.system(size: 10, weight: .bold))
-            }
-            .foregroundColor(title == "Resume" ? .black : .white.opacity(0.86))
-            .frame(height: 28)
-            .frame(maxWidth: .infinity)
-            .background(color)
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        }
-        .buttonStyle(.plain)
+    private var completionIconName: String {
+        transition.completedMode == .longBreak ? "sparkles" : transition.nextMode.iconName
+    }
+
+    private var completionTitle: String {
+        transition.completedMode == .longBreak ? "Long break complete" : "\(transition.completedMode.title) complete"
     }
 }
 
@@ -949,9 +1776,10 @@ final class ClipboardHistoryManager: ObservableObject {
 
     private func schedulePolling() {
         timer?.invalidate()
-        let newTimer = Timer(timeInterval: 0.8, repeats: true) { [weak self] _ in
+        let newTimer = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
             self?.pollPasteboard()
         }
+        newTimer.tolerance = 0.5
         timer = newTimer
         RunLoop.main.add(newTimer, forMode: .common)
     }
@@ -1868,6 +2696,7 @@ final class WeatherManager: NSObject, ObservableObject, CLLocationManagerDelegat
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
             self?.fetchWeather()
         }
+        refreshTimer?.tolerance = 300
         fetchWeather()
     }
 
@@ -2606,7 +3435,7 @@ struct SpotifyQueueWidget: View {
         .onAppear {
             spotifyManager.fetchQueue()
         }
-        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+        .onReceive(Timer.publish(every: 15, tolerance: 2, on: .main, in: .common).autoconnect()) { _ in
             spotifyManager.fetchQueue()
         }
         .onChange(of: nowPlaying.currentSong) { _, _ in

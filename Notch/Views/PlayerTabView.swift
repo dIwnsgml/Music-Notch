@@ -36,7 +36,8 @@ struct PlayerTabView: View {
     @State private var lastSwipeTime: Date = Date()
     @State private var localEventMonitor: Any?
     
-    let localTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    private let playbackClockInterval: TimeInterval = 0.25
+    let localTimer = Timer.publish(every: 0.25, tolerance: 0.05, on: .main, in: .common).autoconnect()
     
     var body: some View {
         let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
@@ -369,7 +370,7 @@ struct PlayerTabView: View {
         )
         .onReceive(localTimer) { _ in
             if nowPlaying.isPlaying && !isDragging {
-                nowPlaying.currentTime += 0.1
+                nowPlaying.currentTime += playbackClockInterval
                 nowPlaying.updateActiveLyric()
             }
         }

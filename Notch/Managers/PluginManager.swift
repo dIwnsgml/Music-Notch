@@ -24,6 +24,15 @@ class PluginManager: ObservableObject {
             storageKeyBase: "plugin_spotify_playlists"
         ),
         WaveNotchPlugin(
+            id: "turntable_player",
+            name: "Turntable Player",
+            description: "Show the current song as a realistic spinning vinyl turntable with album-art label and animated tonearm.",
+            iconName: "record.circle",
+            assetImageName: nil,
+            category: .media,
+            storageKeyBase: "plugin_turntable_player"
+        ),
+        WaveNotchPlugin(
             id: "youtube_queue",
             name: "YouTube Music Queue",
             description: "View and manage your current YouTube Music play queue directly in the notch.",

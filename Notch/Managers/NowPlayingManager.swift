@@ -70,8 +70,10 @@ class NowPlayingManager: ObservableObject {
             self.lastTabIndex = UserDefaults.standard.integer(forKey: "lastTabIndex")
         }
 
-        timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in            self?.fetchTitle()
+        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.fetchTitle()
         }
+        timer?.tolerance = 0.5
     }
     
     // ---------------------------------------------------------

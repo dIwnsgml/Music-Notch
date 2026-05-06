@@ -5,6 +5,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
     case player
     case spotifyQueue
     case spotifyPlaylists
+    case turntable
     case youtubeQueue
     case youtubePlaylists
     case calendar
@@ -22,6 +23,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .player: return "Music Player"
         case .spotifyQueue: return "Spotify Queue"
         case .spotifyPlaylists: return "Spotify Playlists"
+        case .turntable: return "Turntable Player"
         case .youtubeQueue: return "YouTube Music Queue"
         case .youtubePlaylists: return "YouTube Music Playlists"
         case .calendar: return "Calendar"
@@ -39,6 +41,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .player: return true // Built-in
         case .spotifyQueue: return UserDefaults.standard.bool(forKey: "plugin_spotify_queue_installed")
         case .spotifyPlaylists: return UserDefaults.standard.bool(forKey: "plugin_spotify_playlists_installed")
+        case .turntable: return UserDefaults.standard.bool(forKey: "plugin_turntable_player_installed")
         case .youtubeQueue: return UserDefaults.standard.bool(forKey: "plugin_youtube_queue_installed")
         case .youtubePlaylists: return UserDefaults.standard.bool(forKey: "plugin_youtube_playlists_installed")
         case .calendar: return UserDefaults.standard.bool(forKey: "plugin_google_calendar_installed")
@@ -106,6 +109,7 @@ class DashboardManager: ObservableObject {
         let playerEnabled = UserDefaults.standard.object(forKey: "plugin_player_enabled") as? Bool ?? true
         let queueEnabled = UserDefaults.standard.bool(forKey: "plugin_spotify_queue_enabled")
         let playlistsEnabled = UserDefaults.standard.bool(forKey: "plugin_spotify_playlists_enabled")
+        let turntableEnabled = UserDefaults.standard.bool(forKey: "plugin_turntable_player_enabled")
         let ytQueueEnabled = UserDefaults.standard.bool(forKey: "plugin_youtube_queue_enabled")
         let ytPlaylistsEnabled = UserDefaults.standard.bool(forKey: "plugin_youtube_playlists_enabled")
         let calendarEnabled = UserDefaults.standard.bool(forKey: "plugin_google_calendar_enabled")
@@ -153,6 +157,7 @@ class DashboardManager: ObservableObject {
                         widgets.append(.spotifyPlaylists)
                     }
                 }
+            case .turntable: if turntableEnabled { widgets.append(.turntable) }
             case .youtubeQueue:
                 if ytQueueEnabled {
                     if ytQueueAutoHide && !isYTActive {

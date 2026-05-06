@@ -52,7 +52,9 @@ extension NowPlayingManager {
                     self.parseAndApplyResult(result: res + "|||Queue unavailable for Apple Music", browser: "AppleMusicNative")
                     return
                 } else if self.lastActiveBrowser == "AppleMusicNative" {
-                    DispatchQueue.main.async { self.isPlaying = false }
+                    DispatchQueue.main.async {
+                        if self.isPlaying { self.isPlaying = false }
+                    }
                 }
             }
             
@@ -91,11 +93,19 @@ extension NowPlayingManager {
                     self.parseAndApplyResult(result: res + "|||Queue unavailable for Spotify Native", browser: "SpotifyNative")
                     return
                 } else if self.lastActiveBrowser == "SpotifyNative" {
-                    DispatchQueue.main.async { self.isPlaying = false }
+                    DispatchQueue.main.async {
+                        if self.isPlaying { self.isPlaying = false }
+                    }
                 }
             }
             
-            if activeBrowsers.isEmpty { DispatchQueue.main.async { self.isPlaying = false; self.isFetching = false }; return }
+            if activeBrowsers.isEmpty {
+                DispatchQueue.main.async {
+                    if self.isPlaying { self.isPlaying = false }
+                    self.isFetching = false
+                }
+                return
+            }
             if let last = self.lastActiveBrowser {
                 let cleanLast = last.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
                 if activeBrowsers.contains(cleanLast) {
@@ -119,7 +129,9 @@ extension NowPlayingManager {
                         } else {
                             // Tab is NOT playing. Immediately update UI to feel responsive,
                             // but STILL fall through to full loop in case another tab started playing.
-                            DispatchQueue.main.async { self.isPlaying = false }
+                            DispatchQueue.main.async {
+                                if self.isPlaying { self.isPlaying = false }
+                            }
                         }
                     }
                 }
@@ -130,7 +142,10 @@ extension NowPlayingManager {
                 if let res = result {
                     self.parseAndApplyResult(result: res, browser: res.components(separatedBy: "|||").last ?? "Unknown")
                 } else {
-                    DispatchQueue.main.async { self.isPlaying = false; self.isFetching = false }
+                    DispatchQueue.main.async {
+                        if self.isPlaying { self.isPlaying = false }
+                        self.isFetching = false
+                    }
                 }
             }
         }
@@ -158,7 +173,7 @@ extension NowPlayingManager {
             let components = result.components(separatedBy: "|||")
             guard components.count >= 6 else { self.isFetching = false; return }
             
-            self.isPlaying = true
+            if !self.isPlaying { self.isPlaying = true }
             let rawTitle = components[0].replacingOccurrences(of: " - YouTube Music", with: "").replacingOccurrences(of: " - YouTube", with: "").replacingOccurrences(of: " | Spotify", with: "")
             let rawArtist = components[1] == "EMPTY_ARTIST" ? "" : components[1]
             let imgString = components[2]
@@ -173,35 +188,48 @@ extension NowPlayingManager {
             var playlistString = ""
             if components.count >= 7 { playlistString = components[6] }
             
+            var nextActiveBrowser = self.lastActiveBrowser
+            var nextWindowIndex = self.lastWindowIndex
+            var nextTabIndex = self.lastTabIndex
+
             if browser == "SpotifyNative" || browser == "AppleMusicNative" {
-                self.lastActiveBrowser = browser
-                self.lastWindowIndex = nil
-                self.lastTabIndex = nil
+                nextActiveBrowser = browser
+                nextWindowIndex = nil
+                nextTabIndex = nil
             } else if components.count >= 9 {
                 if hostFlag == "YOUTUBE_STANDARD" {
-                    self.lastActiveBrowser = browser + "_YT"
+                    nextActiveBrowser = browser + "_YT"
                 } else if hostFlag == "YOUTUBE_MUSIC" {
-                    self.lastActiveBrowser = browser + "_YouTube Music"
+                    nextActiveBrowser = browser + "_YouTube Music"
                 } else if hostFlag == "SPOTIFY_WEB" {
-                    self.lastActiveBrowser = browser + "_Spotify Web"
+                    nextActiveBrowser = browser + "_Spotify Web"
                 } else {
-                    self.lastActiveBrowser = browser
+                    nextActiveBrowser = browser
                 }
-                self.lastWindowIndex = Int(components[7])
-                self.lastTabIndex = Int(components[8])
+                nextWindowIndex = Int(components[7])
+                nextTabIndex = Int(components[8])
             }
             
             // ⚡️ PERSIST STATE FOR WAKE/RESTART
-            UserDefaults.standard.set(self.lastActiveBrowser, forKey: "lastActiveBrowser")
-            if let w = self.lastWindowIndex { 
-                UserDefaults.standard.set(w, forKey: "lastWindowIndex") 
-            } else {
-                UserDefaults.standard.removeObject(forKey: "lastWindowIndex")
+            if self.lastActiveBrowser != nextActiveBrowser {
+                self.lastActiveBrowser = nextActiveBrowser
+                UserDefaults.standard.set(nextActiveBrowser, forKey: "lastActiveBrowser")
             }
-            if let t = self.lastTabIndex { 
-                UserDefaults.standard.set(t, forKey: "lastTabIndex") 
-            } else {
-                UserDefaults.standard.removeObject(forKey: "lastTabIndex")
+            if self.lastWindowIndex != nextWindowIndex {
+                self.lastWindowIndex = nextWindowIndex
+                if let w = nextWindowIndex {
+                    UserDefaults.standard.set(w, forKey: "lastWindowIndex")
+                } else {
+                    UserDefaults.standard.removeObject(forKey: "lastWindowIndex")
+                }
+            }
+            if self.lastTabIndex != nextTabIndex {
+                self.lastTabIndex = nextTabIndex
+                if let t = nextTabIndex {
+                    UserDefaults.standard.set(t, forKey: "lastTabIndex")
+                } else {
+                    UserDefaults.standard.removeObject(forKey: "lastTabIndex")
+                }
             }
             
             let trackStrings = playlistString.components(separatedBy: "&&&")
@@ -228,9 +256,10 @@ extension NowPlayingManager {
                     uniqueTracks.append(PlaylistTrack(title: t, artist: a, imageURL: img))
                 }
             }
-            self.playlist = uniqueTracks
+            if self.playlist != uniqueTracks { self.playlist = uniqueTracks }
             
-            self.duration = Double(durString) ?? 1.0
+            let newDuration = Double(durString) ?? 1.0
+            if abs(self.duration - newDuration) > 0.25 { self.duration = newDuration }
             
             let identifier = rawTitle + rawArtist
             if self.internalSongIdentifier != identifier {
@@ -248,7 +277,7 @@ extension NowPlayingManager {
                     self.fetchLyricsEngine(title: rawTitle, artist: rawArtist)
                 }
                 
-                self.currentTime = 0.0
+                if self.currentTime != 0.0 { self.currentTime = 0.0 }
                 
                 if browser == "AppleMusicNative" {
                     self.fetchAppleMusicArtwork(title: rawTitle, artist: rawArtist)
@@ -262,8 +291,10 @@ extension NowPlayingManager {
                 if imgString != "NO_IMAGE", let url = URL(string: imgString) {
                     if self.artworkURL != url { self.artworkURL = url; self.fetchDominantColor(from: url) }
                 } else {
-                    self.artworkURL = nil
-                    self.artworkDominantColor = .white
+                    if self.artworkURL != nil {
+                        self.artworkURL = nil
+                        self.artworkDominantColor = .white
+                    }
                 }
             }
             
@@ -271,7 +302,8 @@ extension NowPlayingManager {
             if abs(self.currentTime - newTime) > 1.5 { self.currentTime = newTime }
             
             if Date().timeIntervalSince(self.lastLoopToggleTime) > 2.0 {
-                if loopString == "ALL" { self.loopMode = 1 } else if loopString == "ONE" { self.loopMode = 2 } else { self.loopMode = 0 }
+                let nextLoopMode = loopString == "ALL" ? 1 : (loopString == "ONE" ? 2 : 0)
+                if self.loopMode != nextLoopMode { self.loopMode = nextLoopMode }
             }
             self.isFetching = false
         }
