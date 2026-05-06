@@ -908,9 +908,9 @@ private struct CassetteTapeDeckView: View {
             .fill(
                 LinearGradient(
                     colors: [
-                        Color(red: 0.96, green: 0.89, blue: 0.76).opacity(0.68),
-                        Color(red: 0.50, green: 0.38, blue: 0.30).opacity(0.32),
-                        Color.black.opacity(0.18)
+                        Color(red: 0.11, green: 0.11, blue: 0.10),
+                        Color(red: 0.035, green: 0.035, blue: 0.032),
+                        Color.black
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -918,154 +918,196 @@ private struct CassetteTapeDeckView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.white.opacity(0.24), lineWidth: 1.1)
+                    .stroke(Color.white.opacity(0.16), lineWidth: 1.1)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.black.opacity(0.20), lineWidth: 1)
-                    .padding(6)
+                    .stroke(Color.black.opacity(0.80), lineWidth: 3)
+                    .padding(7)
             )
-            .overlay(shellTexture.opacity(0.28))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.white.opacity(0.055), lineWidth: 1)
+                    .padding(10)
+            )
+            .overlay(shellTexture)
     }
 
     private var shellTexture: some View {
         ZStack {
-            ForEach(0..<18, id: \.self) { index in
-                Rectangle()
-                    .fill(Color.white.opacity(index.isMultiple(of: 2) ? 0.12 : 0.05))
-                    .frame(width: 1, height: height * 0.90)
-                    .position(x: width * 0.07 + CGFloat(index) * width * 0.050, y: height * 0.50)
+            ForEach(0..<38, id: \.self) { index in
+                Capsule()
+                    .fill(Color.white.opacity(index.isMultiple(of: 3) ? 0.030 : 0.014))
+                    .frame(width: width * 0.76, height: 0.8)
+                    .rotationEffect(.degrees(-8))
+                    .position(x: width * 0.50, y: height * (0.07 + CGFloat(index) * 0.023))
             }
 
-            ForEach(0..<9, id: \.self) { index in
+            ForEach(0..<22, id: \.self) { index in
                 Rectangle()
-                    .fill(Color.black.opacity(0.08))
-                    .frame(width: width * 0.84, height: 1)
-                    .position(x: width * 0.50, y: height * (0.09 + CGFloat(index) * 0.095))
+                    .fill(Color.black.opacity(index.isMultiple(of: 2) ? 0.42 : 0.24))
+                    .frame(width: 1, height: height * 0.74)
+                    .position(x: width * (0.08 + CGFloat(index) * 0.040), y: height * 0.50)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var cassetteLabel: some View {
-        let labelHeight = height * 0.38
-        let labelWidth = width * 0.78
-        let labelY = height * 0.30
-        let coverSize = min(height * 0.23, 42)
-        let labelLeft = width * 0.11
-        let titleAreaStart = width * (showAlbumCover ? 0.27 : 0.16)
-        let titleAreaWidth = labelWidth - (titleAreaStart - labelLeft) - 14
+        let labelWidth = width * 0.82
+        let labelX = width / 2
+        let topPanelHeight = height * 0.25
+        let topPanelY = height * 0.27
+        let orangeHeight = height * 0.34
+        let orangeY = height * 0.52
+        let coverSize = min(height * 0.17, 34)
+        let titleLeft = showAlbumCover ? width * 0.24 : width * 0.14
+        let titleWidth = width * 0.50
 
         return ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Color(red: 0.93, green: 0.90, blue: 0.80).opacity(0.94))
+                .fill(Color(red: 0.05, green: 0.05, blue: 0.045).opacity(0.96))
                 .overlay(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(Color.black.opacity(0.10), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
                 )
-                .frame(width: labelWidth, height: labelHeight)
-                .position(x: width / 2, y: labelY)
+                .frame(width: labelWidth, height: height * 0.50)
+                .position(x: labelX, y: height * 0.42)
 
             Rectangle()
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.orange.opacity(0.94),
-                            accentColor.opacity(hasMedia ? 0.66 : 0.36),
-                            Color.orange.opacity(0.86)
+                            Color(red: 1.0, green: 0.58, blue: 0.05),
+                            Color(red: 1.0, green: 0.47, blue: 0.02),
+                            Color(red: 1.0, green: 0.66, blue: 0.09)
                         ],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
                 )
-                .frame(width: labelWidth, height: height * 0.14)
-                .position(x: width / 2, y: labelY + labelHeight * 0.22)
+                .frame(width: labelWidth, height: orangeHeight)
+                .position(x: labelX, y: orangeY)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("INDEX")
-                    .font(.system(size: 8, weight: .medium, design: .monospaced))
-                    .tracking(1.4)
-                    .foregroundColor(.black.opacity(0.48))
+            Rectangle()
+                .fill(Color.black.opacity(0.90))
+                .frame(width: labelWidth, height: topPanelHeight)
+                .position(x: labelX, y: topPanelY)
 
-                Spacer(minLength: 0)
+            Text(showTrackInfo && showTrackArtist && !artist.isEmpty ? artist.lowercased() : "wave notch")
+                .font(.system(size: max(13, height * 0.155), weight: .heavy, design: .rounded))
+                .foregroundColor(Color(red: 1.0, green: 0.58, blue: 0.05))
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
+                .frame(width: width * 0.42, alignment: .leading)
+                .position(x: width * 0.30, y: height * 0.30)
 
-                if showTrackInfo {
-                    if showTrackTitle {
-                        MarqueeText(
-                            text: title,
-                            font: .system(size: 13, weight: .bold),
-                            alignment: .leading
-                        )
-                        .frame(height: 18)
-                        .foregroundColor(.black.opacity(hasMedia ? 0.78 : 0.46))
-                    }
-
-                    if showTrackArtist && !artist.isEmpty {
-                        MarqueeText(
-                            text: artist,
-                            font: .system(size: 10, weight: .semibold),
-                            alignment: .leading
-                        )
-                        .frame(height: 14)
-                        .foregroundColor(.black.opacity(0.50))
-                    }
-                }
+            VStack(alignment: .trailing, spacing: -4) {
+                Text("90")
+                    .font(.system(size: max(34, height * 0.35), weight: .black, design: .rounded))
+                    .foregroundColor(Color(red: 1.0, green: 0.58, blue: 0.05))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.64)
+                Text("2 x 45 min.")
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(Color(red: 1.0, green: 0.58, blue: 0.05).opacity(0.85))
             }
-            .frame(width: titleAreaWidth, height: labelHeight - 14, alignment: .leading)
-            .position(x: titleAreaStart + titleAreaWidth / 2, y: labelY)
+            .frame(width: width * 0.19, alignment: .trailing)
+            .position(x: width * 0.76, y: height * 0.27)
 
             if showAlbumCover {
                 CassetteArtworkView(artworkURL: artworkURL, hasMedia: hasMedia)
                     .frame(width: coverSize, height: coverSize)
                     .scaleEffect(artworkPulse ? 1.06 : 1)
-                    .position(x: width * 0.17, y: labelY + labelHeight * 0.05)
+                    .rotationEffect(.degrees(-3))
+                    .position(x: width * 0.17, y: height * 0.68)
                     .animation(.spring(response: 0.34, dampingFraction: 0.72), value: artworkPulse)
+            } else {
+                Text("1")
+                    .font(.system(size: 18, weight: .black, design: .rounded))
+                    .foregroundColor(.black.opacity(0.80))
+                    .position(x: width * 0.16, y: height * 0.70)
             }
 
-            Text("A")
-                .font(.system(size: 22, weight: .black, design: .rounded))
-                .foregroundColor(.black.opacity(0.74))
-                .position(x: width * 0.15, y: labelY + labelHeight * 0.32)
+            if showTrackInfo {
+                VStack(alignment: .leading, spacing: 0) {
+                    if showTrackTitle {
+                        MarqueeText(
+                            text: title.uppercased(),
+                            font: .system(size: max(14, height * 0.15), weight: .heavy, design: .rounded),
+                            alignment: .leading
+                        )
+                        .frame(height: height * 0.17)
+                        .foregroundColor(Color(red: 0.68, green: 0.10, blue: 0.15))
+                    }
+                }
+                .frame(width: titleWidth, alignment: .leading)
+                .position(x: titleLeft + titleWidth / 2, y: height * 0.70)
+            }
 
-            Text("WN90")
-                .font(.system(size: 20, weight: .heavy, design: .rounded))
-                .foregroundColor(.black.opacity(0.74))
-                .position(x: width * 0.79, y: labelY + labelHeight * 0.35)
+            Text("Compact\nCassette")
+                .font(.system(size: 7, weight: .bold, design: .rounded))
+                .italic()
+                .foregroundColor(.black.opacity(0.72))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .stroke(Color.black.opacity(0.70), lineWidth: 1)
+                )
+                .rotationEffect(.degrees(-5))
+                .position(x: width * 0.80, y: height * 0.61)
+
+            Rectangle()
+                .fill(Color.black.opacity(0.70))
+                .frame(width: labelWidth * 0.80, height: 1.2)
+                .position(x: width * 0.48, y: height * 0.80)
         }
     }
 
     private var tapeWindow: some View {
-        let windowWidth = width * 0.62
-        let windowHeight = height * 0.25
-        let windowY = height * 0.55
+        let windowWidth = width * 0.58
+        let windowHeight = height * 0.21
+        let windowY = height * 0.50
         let leftCenter = CGPoint(x: width * 0.35, y: windowY)
         let rightCenter = CGPoint(x: width * 0.65, y: windowY)
-        let reelSize = height * 0.31
+        let reelSize = height * 0.29
         let clampedProgress = min(max(playbackProgress, 0), 1)
-        let leftSpool = 0.72 - clampedProgress * 0.30
-        let rightSpool = 0.42 + clampedProgress * 0.30
+        let leftSpool = 0.76 - clampedProgress * 0.34
+        let rightSpool = 0.38 + clampedProgress * 0.34
 
         return ZStack {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.black.opacity(0.86))
+                .fill(Color.black.opacity(0.94))
                 .frame(width: windowWidth, height: windowHeight)
                 .position(x: width / 2, y: windowY)
                 .overlay(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        .stroke(Color.white.opacity(0.16), lineWidth: 1)
                         .frame(width: windowWidth, height: windowHeight)
                         .position(x: width / 2, y: windowY)
                 )
+                .shadow(color: .black.opacity(0.52), radius: 4, x: 0, y: 2)
 
             CassetteTapeStripView(phase: tapePhase, isPlaying: isPlaying)
-                .frame(width: width * 0.23, height: windowHeight * 0.46)
+                .frame(width: width * 0.22, height: windowHeight * 0.52)
                 .position(x: width / 2, y: windowY)
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
 
             Capsule()
-                .fill(Color.white.opacity(0.18))
-                .frame(width: width * 0.24, height: 1)
+                .fill(Color.white.opacity(0.22))
+                .frame(width: width * 0.24, height: 1.2)
                 .position(x: width / 2, y: windowY)
+
+            HStack(spacing: width * 0.035) {
+                ForEach(["100", "50", "0"], id: \.self) { marker in
+                    Text(marker)
+                        .font(.system(size: 7, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.28))
+                }
+            }
+            .position(x: width / 2, y: windowY + windowHeight * 0.34)
 
             CassetteReelView(rotation: reelRotation, spoolFraction: leftSpool, isPlaying: isPlaying)
                 .frame(width: reelSize, height: reelSize)
@@ -1080,30 +1122,42 @@ private struct CassetteTapeDeckView: View {
     private var cassetteBottom: some View {
         ZStack {
             Path { path in
-                path.move(to: CGPoint(x: width * 0.21, y: height * 0.75))
-                path.addLine(to: CGPoint(x: width * 0.79, y: height * 0.75))
-                path.addLine(to: CGPoint(x: width * 0.86, y: height * 0.90))
-                path.addLine(to: CGPoint(x: width * 0.14, y: height * 0.90))
+                path.move(to: CGPoint(x: width * 0.18, y: height * 0.74))
+                path.addLine(to: CGPoint(x: width * 0.82, y: height * 0.74))
+                path.addLine(to: CGPoint(x: width * 0.88, y: height * 0.92))
+                path.addLine(to: CGPoint(x: width * 0.12, y: height * 0.92))
                 path.closeSubpath()
             }
-            .fill(Color.black.opacity(0.22))
+            .fill(Color.black.opacity(0.64))
             .overlay(
                 Path { path in
-                    path.move(to: CGPoint(x: width * 0.21, y: height * 0.75))
-                    path.addLine(to: CGPoint(x: width * 0.79, y: height * 0.75))
-                    path.addLine(to: CGPoint(x: width * 0.86, y: height * 0.90))
-                    path.addLine(to: CGPoint(x: width * 0.14, y: height * 0.90))
+                    path.move(to: CGPoint(x: width * 0.18, y: height * 0.74))
+                    path.addLine(to: CGPoint(x: width * 0.82, y: height * 0.74))
+                    path.addLine(to: CGPoint(x: width * 0.88, y: height * 0.92))
+                    path.addLine(to: CGPoint(x: width * 0.12, y: height * 0.92))
                     path.closeSubpath()
                 }
-                .stroke(Color.white.opacity(0.13), lineWidth: 1)
+                .stroke(Color.white.opacity(0.09), lineWidth: 1)
             )
+
+            ForEach(0..<3, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Color.black.opacity(0.50))
+                    .frame(width: width * 0.12, height: height * 0.20)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                    )
+                    .position(x: width * (0.25 + CGFloat(index) * 0.25), y: height * 0.84)
+            }
 
             ForEach(0..<4, id: \.self) { index in
                 Circle()
-                    .fill(Color.white.opacity(0.40))
-                    .frame(width: height * 0.12, height: height * 0.12)
-                    .overlay(Circle().stroke(Color.black.opacity(0.24), lineWidth: 1))
-                    .position(x: width * (0.32 + CGFloat(index) * 0.12), y: height * 0.88)
+                    .fill(Color.white.opacity(0.42))
+                    .frame(width: height * 0.105, height: height * 0.105)
+                    .overlay(Circle().stroke(Color.black.opacity(0.42), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.32), radius: 2, y: 1)
+                    .position(x: width * (0.32 + CGFloat(index) * 0.12), y: height * 0.86)
             }
         }
     }
@@ -1122,9 +1176,8 @@ private struct CassetteTapeDeckView: View {
         [
             CGPoint(x: 0.06, y: 0.10),
             CGPoint(x: 0.94, y: 0.10),
-            CGPoint(x: 0.06, y: 0.88),
-            CGPoint(x: 0.94, y: 0.88),
-            CGPoint(x: 0.50, y: 0.78)
+            CGPoint(x: 0.06, y: 0.91),
+            CGPoint(x: 0.94, y: 0.91)
         ]
     }
 
@@ -1171,8 +1224,8 @@ private struct CassetteArtworkView: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.black.opacity(0.14))
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.black.opacity(0.28))
 
             if hasMedia, let artworkURL {
                 AsyncImage(url: artworkURL) { image in
@@ -1189,11 +1242,12 @@ private struct CassetteArtworkView: View {
                     .foregroundColor(.black.opacity(0.34))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(Color.black.opacity(0.16), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .stroke(Color.black.opacity(0.55), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(0.24), radius: 2, y: 1)
     }
 }
 
@@ -1212,7 +1266,8 @@ private struct CassetteReelView: View {
                     .fill(
                         RadialGradient(
                             colors: [
-                                Color(red: 0.12, green: 0.09, blue: 0.06),
+                                Color.black.opacity(0.95),
+                                Color(red: 0.19, green: 0.16, blue: 0.12),
                                 Color.black.opacity(0.88)
                             ],
                             center: .center,
@@ -1221,13 +1276,19 @@ private struct CassetteReelView: View {
                         )
                     )
                     .frame(width: size * 0.92, height: size * 0.92)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.18), lineWidth: 1.2)
+                            .frame(width: size * 0.92, height: size * 0.92)
+                    )
 
                 Circle()
                     .fill(
                         RadialGradient(
                             colors: [
-                                Color(red: 0.28, green: 0.20, blue: 0.12),
-                                Color(red: 0.10, green: 0.07, blue: 0.045)
+                                Color(red: 0.24, green: 0.15, blue: 0.08),
+                                Color(red: 0.10, green: 0.06, blue: 0.035),
+                                Color.black
                             ],
                             center: .center,
                             startRadius: 1,
@@ -1238,19 +1299,30 @@ private struct CassetteReelView: View {
 
                 ZStack {
                     ForEach(0..<6, id: \.self) { index in
-                        Capsule()
-                            .fill(Color.white.opacity(0.70))
-                            .frame(width: size * 0.13, height: size * 0.30)
+                        RoundedRectangle(cornerRadius: size * 0.035, style: .continuous)
+                            .fill(Color.white.opacity(0.76))
+                            .frame(width: size * 0.12, height: size * 0.28)
                             .offset(y: -size * 0.18)
                             .rotationEffect(.degrees(Double(index) * 60))
                     }
 
                     Circle()
-                        .fill(Color.white.opacity(0.88))
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    Color.white.opacity(0.95),
+                                    Color(red: 0.62, green: 0.62, blue: 0.58),
+                                    Color.white.opacity(0.62)
+                                ],
+                                center: .topLeading,
+                                startRadius: 1,
+                                endRadius: size * 0.22
+                            )
+                        )
                         .frame(width: size * 0.36, height: size * 0.36)
 
                     Circle()
-                        .fill(Color.black.opacity(0.14))
+                        .fill(Color.black.opacity(0.26))
                         .frame(width: size * 0.14, height: size * 0.14)
                 }
                 .rotationEffect(.degrees(rotation))
@@ -1302,8 +1374,9 @@ private struct CassetteScrewView: View {
                 .fill(
                     RadialGradient(
                         colors: [
-                            Color.white.opacity(0.36),
-                            Color.black.opacity(0.70)
+                            Color.white.opacity(0.78),
+                            Color(red: 0.42, green: 0.42, blue: 0.40),
+                            Color.black.opacity(0.82)
                         ],
                         center: .topLeading,
                         startRadius: 1,
@@ -1313,8 +1386,8 @@ private struct CassetteScrewView: View {
 
             Rectangle()
                 .fill(Color.black.opacity(0.70))
-                .frame(height: 2)
-                .padding(.horizontal, 3)
+                .frame(height: 1.7)
+                .padding(.horizontal, 3.5)
                 .rotationEffect(.degrees(-18))
         }
     }
