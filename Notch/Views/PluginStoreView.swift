@@ -967,6 +967,8 @@ struct TurntablePluginSettingsView: View {
 
 struct CassetteTapePluginSettingsView: View {
     @AppStorage("cassette_reel_speed") private var reelSpeed = 1.0
+    @AppStorage("cassette_label_color") private var labelColor = "orange"
+    @AppStorage("cassette_body_color") private var bodyColor = "black"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -998,6 +1000,53 @@ struct CassetteTapePluginSettingsView: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
                 }
+            }
+
+            Divider().opacity(0.15)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cassette Body Color")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Choose the color theme for the cassette's outer shell.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                
+                Picker("", selection: $bodyColor) {
+                    Text("Opaque Black").tag("black")
+                    Text("Classic White").tag("white")
+                    Text("Transparent").tag("transparent")
+                    Text("Dynamic (Album Art)").tag("dynamic")
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(maxWidth: 240)
+            }
+
+            Divider().opacity(0.15)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cassette Label Color")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Choose the color theme for the cassette label, or let it match the album art.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                
+                Picker("", selection: $labelColor) {
+                    Text("Classic Orange").tag("orange")
+                    Text("Vintage Red").tag("red")
+                    Text("Cobalt Blue").tag("blue")
+                    Text("Neon Green").tag("green")
+                    Text("Deep Purple").tag("purple")
+                    Text("Monochrome").tag("gray")
+                    Text("Dynamic (Album Art)").tag("dynamic")
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(maxWidth: 240)
             }
 
             Divider().opacity(0.15)

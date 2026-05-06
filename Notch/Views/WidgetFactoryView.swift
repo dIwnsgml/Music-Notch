@@ -791,6 +791,8 @@ struct CassetteTapeWidget: View {
     @AppStorage("cassette_show_track_title") private var showTrackTitle = true
     @AppStorage("cassette_show_track_artist") private var showTrackArtist = true
     @AppStorage("cassette_show_album_cover") private var showAlbumCover = true
+    @AppStorage("cassette_label_color") private var labelColor = "orange"
+    @AppStorage("cassette_body_color") private var bodyColor = "black"
 
     private var hasMedia: Bool {
         nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
@@ -839,7 +841,9 @@ struct CassetteTapeWidget: View {
                 showTrackTitle: showTrackTitle,
                 showTrackArtist: showTrackArtist,
                 showAlbumCover: showAlbumCover,
-                accentColor: nowPlaying.artworkDominantColor
+                accentColor: nowPlaying.artworkDominantColor,
+                labelColor: labelColor,
+                bodyColor: bodyColor
             )
             .position(x: width / 2, y: height / 2)
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -869,6 +873,8 @@ private struct CassetteTapeDeckView: View {
     let showTrackArtist: Bool
     let showAlbumCover: Bool
     let accentColor: Color
+    let labelColor: String
+    let bodyColor: String
 
     @State private var reelRotation: Double = 0
     @State private var reelVelocity: Double = 0
@@ -903,26 +909,39 @@ private struct CassetteTapeDeckView: View {
         }
     }
 
+    private var baseBodyColor: Color {
+        switch bodyColor {
+        case "white": return Color(white: 0.85)
+        case "transparent": return Color.black.opacity(0.3)
+        case "dynamic": return accentColor
+        case "black": fallthrough
+        default: return Color(red: 0.11, green: 0.11, blue: 0.10)
+        }
+    }
+
     private var cassetteShell: some View {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
+        let currentBodyColor = baseBodyColor
+
+        return RoundedRectangle(cornerRadius: 18, style: .continuous)
             .fill(
                 LinearGradient(
                     colors: [
-                        Color(red: 0.11, green: 0.11, blue: 0.10),
-                        Color(red: 0.035, green: 0.035, blue: 0.032),
-                        Color.black
+                        currentBodyColor,
+                        currentBodyColor.opacity(0.85),
+                        currentBodyColor.opacity(0.7)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
+            .animation(.easeInOut(duration: 0.5), value: currentBodyColor)
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(Color.white.opacity(0.16), lineWidth: 1.1)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.black.opacity(0.80), lineWidth: 3)
+                    .stroke(Color.black.opacity(0.60), lineWidth: 3)
                     .padding(7)
             )
             .overlay(
@@ -953,6 +972,19 @@ private struct CassetteTapeDeckView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
+    private var baseLabelColor: Color {
+        switch labelColor {
+        case "red": return Color(red: 0.85, green: 0.25, blue: 0.25)
+        case "blue": return Color(red: 0.25, green: 0.45, blue: 0.85)
+        case "green": return Color(red: 0.25, green: 0.75, blue: 0.35)
+        case "purple": return Color(red: 0.55, green: 0.25, blue: 0.75)
+        case "gray": return Color(white: 0.65)
+        case "dynamic": return accentColor
+        case "orange": fallthrough
+        default: return Color(red: 1.0, green: 0.58, blue: 0.05)
+        }
+    }
+
     private var cassetteLabel: some View {
         let labelWidth = width * 0.82
         let labelX = width / 2
@@ -962,7 +994,9 @@ private struct CassetteTapeDeckView: View {
         let orangeY = height * 0.52
         let coverSize = min(height * 0.17, 34)
         let titleLeft = showAlbumCover ? width * 0.24 : width * 0.14
-        let titleWidth = width * 0.50
+        let titleWidth = width * 0.56 // Increased to prevent horizontal truncation
+
+        let currentLabelColor = baseLabelColor
 
         return ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -978,14 +1012,15 @@ private struct CassetteTapeDeckView: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color(red: 1.0, green: 0.58, blue: 0.05),
-                            Color(red: 1.0, green: 0.47, blue: 0.02),
-                            Color(red: 1.0, green: 0.66, blue: 0.09)
+                            currentLabelColor.opacity(0.85),
+                            currentLabelColor,
+                            currentLabelColor.opacity(0.9)
                         ],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
                 )
+                .animation(.easeInOut(duration: 0.5), value: currentLabelColor)
                 .frame(width: labelWidth, height: orangeHeight)
                 .position(x: labelX, y: orangeY)
 
@@ -996,7 +1031,8 @@ private struct CassetteTapeDeckView: View {
 
             Text(showTrackInfo && showTrackArtist && !artist.isEmpty ? artist.lowercased() : "wave notch")
                 .font(.system(size: max(13, height * 0.155), weight: .heavy, design: .rounded))
-                .foregroundColor(Color(red: 1.0, green: 0.58, blue: 0.05))
+                .foregroundColor(currentLabelColor)
+                .animation(.easeInOut(duration: 0.5), value: currentLabelColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.62)
                 .frame(width: width * 0.42, alignment: .leading)
@@ -1005,12 +1041,14 @@ private struct CassetteTapeDeckView: View {
             VStack(alignment: .trailing, spacing: -4) {
                 Text("90")
                     .font(.system(size: max(34, height * 0.35), weight: .black, design: .rounded))
-                    .foregroundColor(Color(red: 1.0, green: 0.58, blue: 0.05))
+                    .foregroundColor(currentLabelColor)
+                    .animation(.easeInOut(duration: 0.5), value: currentLabelColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.64)
                 Text("2 x 45 min.")
                     .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .foregroundColor(Color(red: 1.0, green: 0.58, blue: 0.05).opacity(0.85))
+                    .foregroundColor(currentLabelColor.opacity(0.85))
+                    .animation(.easeInOut(duration: 0.5), value: currentLabelColor)
             }
             .frame(width: width * 0.19, alignment: .trailing)
             .position(x: width * 0.76, y: height * 0.27)
@@ -1038,9 +1076,13 @@ private struct CassetteTapeDeckView: View {
                             alignment: .leading
                         )
                         .frame(height: height * 0.17)
-                        .foregroundColor(Color(red: 0.68, green: 0.10, blue: 0.15))
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.8), radius: 1, x: 0, y: 1)
+                        .id("cassette_title_\(title)")
                     }
                 }
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.5), value: title)
                 .frame(width: titleWidth, alignment: .leading)
                 .position(x: titleLeft + titleWidth / 2, y: height * 0.70)
             }
