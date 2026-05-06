@@ -34,6 +34,7 @@ struct WidgetFactoryView: View {
                     case .spotifyQueue: SpotifyQueueWidget(nowPlaying: nowPlaying)
                     case .spotifyPlaylists: PlaylistTabView(nowPlaying: nowPlaying)
                     case .turntable: TurntablePlayerWidget(nowPlaying: nowPlaying)
+                    case .cassette: CassetteTapeWidget(nowPlaying: nowPlaying)
                     case .youtubeQueue: YouTubeQueueWidget(nowPlaying: nowPlaying)
                     case .youtubePlaylists: YouTubePlaylistsWidget(nowPlaying: nowPlaying)
                     case .calendar: CalendarWidget()
@@ -777,6 +778,544 @@ private struct TurntableCartridgeView: View {
                 .fill(Color.gray)
                 .frame(width: 2, height: 4)
                 .offset(y: 24)
+        }
+    }
+}
+
+struct CassetteTapeWidget: View {
+    @ObservedObject var nowPlaying: NowPlayingManager
+
+    @AppStorage("cassette_reel_speed") private var reelSpeed = 1.0
+    @AppStorage("cassette_click_to_toggle") private var clickToToggle = true
+    @AppStorage("cassette_show_track_info") private var showTrackInfo = true
+    @AppStorage("cassette_show_track_title") private var showTrackTitle = true
+    @AppStorage("cassette_show_track_artist") private var showTrackArtist = true
+    @AppStorage("cassette_show_album_cover") private var showAlbumCover = true
+
+    private var hasMedia: Bool {
+        nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
+    }
+
+    private var trackTexts: (title: String, artist: String) {
+        guard hasMedia else { return ("No tape loaded", "") }
+
+        let parts = nowPlaying.currentSong.components(separatedBy: " - ")
+        let title = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? nowPlaying.currentSong
+        let artist = parts.count > 1
+            ? parts.dropFirst().joined(separator: " - ").trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
+
+        return (title.isEmpty ? nowPlaying.currentSong : title, artist)
+    }
+
+    private var trackIdentity: String {
+        "\(nowPlaying.currentSong)|\(nowPlaying.artworkURL?.absoluteString ?? "")"
+    }
+
+    private var playbackProgress: CGFloat {
+        guard hasMedia, nowPlaying.duration > 0 else { return 0 }
+        return CGFloat(min(max(nowPlaying.currentTime / max(nowPlaying.duration, 1), 0), 1))
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let height = geo.size.height
+            let cassetteHeight = min(max(118, height - 20), max(118, (width - 24) / 1.62), 188)
+            let cassetteWidth = min(width - 20, cassetteHeight * 1.62)
+
+            CassetteTapeDeckView(
+                artworkURL: nowPlaying.artworkURL,
+                artworkIdentity: trackIdentity,
+                title: trackTexts.title,
+                artist: trackTexts.artist,
+                isPlaying: nowPlaying.isPlaying && hasMedia,
+                hasMedia: hasMedia,
+                playbackProgress: playbackProgress,
+                width: cassetteWidth,
+                height: cassetteHeight,
+                reelSpeed: reelSpeed,
+                showTrackInfo: showTrackInfo,
+                showTrackTitle: showTrackTitle,
+                showTrackArtist: showTrackArtist,
+                showAlbumCover: showAlbumCover,
+                accentColor: nowPlaying.artworkDominantColor
+            )
+            .position(x: width / 2, y: height / 2)
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .onTapGesture {
+                guard clickToToggle, hasMedia else { return }
+                nowPlaying.togglePlayPause()
+            }
+            .help(clickToToggle && hasMedia ? "Play/Pause" : "")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct CassetteTapeDeckView: View {
+    let artworkURL: URL?
+    let artworkIdentity: String
+    let title: String
+    let artist: String
+    let isPlaying: Bool
+    let hasMedia: Bool
+    let playbackProgress: CGFloat
+    let width: CGFloat
+    let height: CGFloat
+    let reelSpeed: Double
+    let showTrackInfo: Bool
+    let showTrackTitle: Bool
+    let showTrackArtist: Bool
+    let showAlbumCover: Bool
+    let accentColor: Color
+
+    @State private var reelRotation: Double = 0
+    @State private var reelVelocity: Double = 0
+    @State private var tapePhase: Double = 0
+    @State private var lastFrameDate: Date?
+    @State private var artworkPulse = false
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isPlaying && abs(reelVelocity) < 0.05)) { timeline in
+            ZStack {
+                cassetteShell
+                cassetteLabel
+                tapeWindow
+                cassetteBottom
+                screws
+            }
+            .frame(width: width, height: height)
+            .shadow(color: .black.opacity(0.34), radius: 13, x: 0, y: 8)
+            .onAppear {
+                lastFrameDate = timeline.date
+                reelVelocity = isPlaying ? targetReelVelocity : 0
+            }
+            .onChange(of: timeline.date) { _, date in
+                advanceMotion(to: date)
+            }
+            .onChange(of: isPlaying) { _, _ in
+                lastFrameDate = timeline.date
+            }
+            .onChange(of: artworkIdentity) { _, _ in
+                triggerArtworkPulse()
+            }
+        }
+    }
+
+    private var cassetteShell: some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.96, green: 0.89, blue: 0.76).opacity(0.68),
+                        Color(red: 0.50, green: 0.38, blue: 0.30).opacity(0.32),
+                        Color.black.opacity(0.18)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white.opacity(0.24), lineWidth: 1.1)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.black.opacity(0.20), lineWidth: 1)
+                    .padding(6)
+            )
+            .overlay(shellTexture.opacity(0.28))
+    }
+
+    private var shellTexture: some View {
+        ZStack {
+            ForEach(0..<18, id: \.self) { index in
+                Rectangle()
+                    .fill(Color.white.opacity(index.isMultiple(of: 2) ? 0.12 : 0.05))
+                    .frame(width: 1, height: height * 0.90)
+                    .position(x: width * 0.07 + CGFloat(index) * width * 0.050, y: height * 0.50)
+            }
+
+            ForEach(0..<9, id: \.self) { index in
+                Rectangle()
+                    .fill(Color.black.opacity(0.08))
+                    .frame(width: width * 0.84, height: 1)
+                    .position(x: width * 0.50, y: height * (0.09 + CGFloat(index) * 0.095))
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var cassetteLabel: some View {
+        let labelHeight = height * 0.38
+        let labelWidth = width * 0.78
+        let labelY = height * 0.30
+        let coverSize = min(height * 0.23, 42)
+        let labelLeft = width * 0.11
+        let titleAreaStart = width * (showAlbumCover ? 0.27 : 0.16)
+        let titleAreaWidth = labelWidth - (titleAreaStart - labelLeft) - 14
+
+        return ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color(red: 0.93, green: 0.90, blue: 0.80).opacity(0.94))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(Color.black.opacity(0.10), lineWidth: 1)
+                )
+                .frame(width: labelWidth, height: labelHeight)
+                .position(x: width / 2, y: labelY)
+
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.orange.opacity(0.94),
+                            accentColor.opacity(hasMedia ? 0.66 : 0.36),
+                            Color.orange.opacity(0.86)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: labelWidth, height: height * 0.14)
+                .position(x: width / 2, y: labelY + labelHeight * 0.22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("INDEX")
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .tracking(1.4)
+                    .foregroundColor(.black.opacity(0.48))
+
+                Spacer(minLength: 0)
+
+                if showTrackInfo {
+                    if showTrackTitle {
+                        MarqueeText(
+                            text: title,
+                            font: .system(size: 13, weight: .bold),
+                            alignment: .leading
+                        )
+                        .frame(height: 18)
+                        .foregroundColor(.black.opacity(hasMedia ? 0.78 : 0.46))
+                    }
+
+                    if showTrackArtist && !artist.isEmpty {
+                        MarqueeText(
+                            text: artist,
+                            font: .system(size: 10, weight: .semibold),
+                            alignment: .leading
+                        )
+                        .frame(height: 14)
+                        .foregroundColor(.black.opacity(0.50))
+                    }
+                }
+            }
+            .frame(width: titleAreaWidth, height: labelHeight - 14, alignment: .leading)
+            .position(x: titleAreaStart + titleAreaWidth / 2, y: labelY)
+
+            if showAlbumCover {
+                CassetteArtworkView(artworkURL: artworkURL, hasMedia: hasMedia)
+                    .frame(width: coverSize, height: coverSize)
+                    .scaleEffect(artworkPulse ? 1.06 : 1)
+                    .position(x: width * 0.17, y: labelY + labelHeight * 0.05)
+                    .animation(.spring(response: 0.34, dampingFraction: 0.72), value: artworkPulse)
+            }
+
+            Text("A")
+                .font(.system(size: 22, weight: .black, design: .rounded))
+                .foregroundColor(.black.opacity(0.74))
+                .position(x: width * 0.15, y: labelY + labelHeight * 0.32)
+
+            Text("WN90")
+                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                .foregroundColor(.black.opacity(0.74))
+                .position(x: width * 0.79, y: labelY + labelHeight * 0.35)
+        }
+    }
+
+    private var tapeWindow: some View {
+        let windowWidth = width * 0.62
+        let windowHeight = height * 0.25
+        let windowY = height * 0.55
+        let leftCenter = CGPoint(x: width * 0.35, y: windowY)
+        let rightCenter = CGPoint(x: width * 0.65, y: windowY)
+        let reelSize = height * 0.31
+        let clampedProgress = min(max(playbackProgress, 0), 1)
+        let leftSpool = 0.72 - clampedProgress * 0.30
+        let rightSpool = 0.42 + clampedProgress * 0.30
+
+        return ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.black.opacity(0.86))
+                .frame(width: windowWidth, height: windowHeight)
+                .position(x: width / 2, y: windowY)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        .frame(width: windowWidth, height: windowHeight)
+                        .position(x: width / 2, y: windowY)
+                )
+
+            CassetteTapeStripView(phase: tapePhase, isPlaying: isPlaying)
+                .frame(width: width * 0.23, height: windowHeight * 0.46)
+                .position(x: width / 2, y: windowY)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+
+            Capsule()
+                .fill(Color.white.opacity(0.18))
+                .frame(width: width * 0.24, height: 1)
+                .position(x: width / 2, y: windowY)
+
+            CassetteReelView(rotation: reelRotation, spoolFraction: leftSpool, isPlaying: isPlaying)
+                .frame(width: reelSize, height: reelSize)
+                .position(leftCenter)
+
+            CassetteReelView(rotation: -reelRotation * 1.08, spoolFraction: rightSpool, isPlaying: isPlaying)
+                .frame(width: reelSize, height: reelSize)
+                .position(rightCenter)
+        }
+    }
+
+    private var cassetteBottom: some View {
+        ZStack {
+            Path { path in
+                path.move(to: CGPoint(x: width * 0.21, y: height * 0.75))
+                path.addLine(to: CGPoint(x: width * 0.79, y: height * 0.75))
+                path.addLine(to: CGPoint(x: width * 0.86, y: height * 0.90))
+                path.addLine(to: CGPoint(x: width * 0.14, y: height * 0.90))
+                path.closeSubpath()
+            }
+            .fill(Color.black.opacity(0.22))
+            .overlay(
+                Path { path in
+                    path.move(to: CGPoint(x: width * 0.21, y: height * 0.75))
+                    path.addLine(to: CGPoint(x: width * 0.79, y: height * 0.75))
+                    path.addLine(to: CGPoint(x: width * 0.86, y: height * 0.90))
+                    path.addLine(to: CGPoint(x: width * 0.14, y: height * 0.90))
+                    path.closeSubpath()
+                }
+                .stroke(Color.white.opacity(0.13), lineWidth: 1)
+            )
+
+            ForEach(0..<4, id: \.self) { index in
+                Circle()
+                    .fill(Color.white.opacity(0.40))
+                    .frame(width: height * 0.12, height: height * 0.12)
+                    .overlay(Circle().stroke(Color.black.opacity(0.24), lineWidth: 1))
+                    .position(x: width * (0.32 + CGFloat(index) * 0.12), y: height * 0.88)
+            }
+        }
+    }
+
+    private var screws: some View {
+        ZStack {
+            ForEach(Array(screwPoints.enumerated()), id: \.offset) { _, point in
+                CassetteScrewView()
+                    .frame(width: height * 0.12, height: height * 0.12)
+                    .position(x: point.x * width, y: point.y * height)
+            }
+        }
+    }
+
+    private var screwPoints: [CGPoint] {
+        [
+            CGPoint(x: 0.06, y: 0.10),
+            CGPoint(x: 0.94, y: 0.10),
+            CGPoint(x: 0.06, y: 0.88),
+            CGPoint(x: 0.94, y: 0.88),
+            CGPoint(x: 0.50, y: 0.78)
+        ]
+    }
+
+    private var targetReelVelocity: Double {
+        235 * min(max(reelSpeed, 0.5), 2.0)
+    }
+
+    private func advanceMotion(to date: Date) {
+        guard let lastFrameDate else {
+            self.lastFrameDate = date
+            return
+        }
+
+        let delta = min(max(date.timeIntervalSince(lastFrameDate), 0), 0.06)
+        self.lastFrameDate = date
+
+        let target = isPlaying ? targetReelVelocity : 0
+        let response = isPlaying ? 5.2 : 2.6
+        let blend = min(1, delta * response)
+        reelVelocity += (target - reelVelocity) * blend
+
+        if !isPlaying && abs(reelVelocity) < 0.05 {
+            reelVelocity = 0
+        }
+
+        reelRotation = (reelRotation + reelVelocity * delta).truncatingRemainder(dividingBy: 360)
+        tapePhase = (tapePhase + reelVelocity * delta * 0.045).truncatingRemainder(dividingBy: 16)
+    }
+
+    private func triggerArtworkPulse() {
+        artworkPulse = true
+        Task {
+            try? await Task.sleep(nanoseconds: 260_000_000)
+            await MainActor.run {
+                artworkPulse = false
+            }
+        }
+    }
+}
+
+private struct CassetteArtworkView: View {
+    let artworkURL: URL?
+    let hasMedia: Bool
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.black.opacity(0.14))
+
+            if hasMedia, let artworkURL {
+                AsyncImage(url: artworkURL) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+            } else {
+                Image(systemName: "music.note")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.black.opacity(0.34))
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(Color.black.opacity(0.16), lineWidth: 1)
+        )
+    }
+}
+
+private struct CassetteReelView: View {
+    let rotation: Double
+    let spoolFraction: CGFloat
+    let isPlaying: Bool
+
+    var body: some View {
+        GeometryReader { geo in
+            let size = min(geo.size.width, geo.size.height)
+            let spoolSize = size * min(max(spoolFraction, 0.36), 0.78)
+
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color(red: 0.12, green: 0.09, blue: 0.06),
+                                Color.black.opacity(0.88)
+                            ],
+                            center: .center,
+                            startRadius: 2,
+                            endRadius: size * 0.45
+                        )
+                    )
+                    .frame(width: size * 0.92, height: size * 0.92)
+
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color(red: 0.28, green: 0.20, blue: 0.12),
+                                Color(red: 0.10, green: 0.07, blue: 0.045)
+                            ],
+                            center: .center,
+                            startRadius: 1,
+                            endRadius: spoolSize * 0.52
+                        )
+                    )
+                    .frame(width: spoolSize, height: spoolSize)
+
+                ZStack {
+                    ForEach(0..<6, id: \.self) { index in
+                        Capsule()
+                            .fill(Color.white.opacity(0.70))
+                            .frame(width: size * 0.13, height: size * 0.30)
+                            .offset(y: -size * 0.18)
+                            .rotationEffect(.degrees(Double(index) * 60))
+                    }
+
+                    Circle()
+                        .fill(Color.white.opacity(0.88))
+                        .frame(width: size * 0.36, height: size * 0.36)
+
+                    Circle()
+                        .fill(Color.black.opacity(0.14))
+                        .frame(width: size * 0.14, height: size * 0.14)
+                }
+                .rotationEffect(.degrees(rotation))
+                .shadow(color: .white.opacity(isPlaying ? 0.16 : 0.06), radius: isPlaying ? 5 : 2)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+    }
+}
+
+private struct CassetteTapeStripView: View {
+    let phase: Double
+    let isPlaying: Bool
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.08, green: 0.045, blue: 0.025),
+                                Color(red: 0.26, green: 0.18, blue: 0.11),
+                                Color(red: 0.08, green: 0.045, blue: 0.025)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+
+                ForEach(0..<18, id: \.self) { index in
+                    Rectangle()
+                        .fill(Color.white.opacity(isPlaying ? 0.16 : 0.08))
+                        .frame(width: 1, height: geo.size.height * 0.62)
+                        .position(
+                            x: CGFloat(index) * 9 - CGFloat(phase),
+                            y: geo.size.height / 2
+                        )
+                }
+            }
+        }
+    }
+}
+
+private struct CassetteScrewView: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color.white.opacity(0.36),
+                            Color.black.opacity(0.70)
+                        ],
+                        center: .topLeading,
+                        startRadius: 1,
+                        endRadius: 9
+                    )
+                )
+
+            Rectangle()
+                .fill(Color.black.opacity(0.70))
+                .frame(height: 2)
+                .padding(.horizontal, 3)
+                .rotationEffect(.degrees(-18))
         }
     }
 }

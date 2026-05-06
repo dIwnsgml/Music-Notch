@@ -610,7 +610,7 @@ struct ContentView: View {
     private func expandedWidgetHeight(for widget: NotchWidgetType, playerHeight: CGFloat) -> CGFloat {
         switch widget {
         case .player: return playerHeight
-        case .turntable: return 196
+        case .turntable, .cassette: return 196
         case .spotifyQueue, .youtubeQueue: return 250
         case .spotifyPlaylists, .youtubePlaylists: return playlistWidgetHeight
         case .pomodoro: return pomodoroWidgetHeight

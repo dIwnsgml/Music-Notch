@@ -33,6 +33,15 @@ class PluginManager: ObservableObject {
             storageKeyBase: "plugin_turntable_player"
         ),
         WaveNotchPlugin(
+            id: "cassette_tape",
+            name: "Cassette Tape",
+            description: "Show the current song as an animated cassette tape with spinning reels, moving tape, album art, and track info.",
+            iconName: "recordingtape",
+            assetImageName: nil,
+            category: .media,
+            storageKeyBase: "plugin_cassette_tape"
+        ),
+        WaveNotchPlugin(
             id: "youtube_queue",
             name: "YouTube Music Queue",
             description: "View and manage your current YouTube Music play queue directly in the notch.",

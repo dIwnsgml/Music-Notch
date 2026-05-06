@@ -604,6 +604,8 @@ struct PluginDetailView: View {
                     WeatherPluginSettingsView()
                 } else if plugin.id == "turntable_player" {
                     TurntablePluginSettingsView()
+                } else if plugin.id == "cassette_tape" {
+                    CassetteTapePluginSettingsView()
                 } else if plugin.id == "clipboard_history" {
                     ClipboardPluginSettingsView()
                 } else if plugin.id == "file_tray" {
@@ -676,6 +678,8 @@ struct PluginIcon: View {
             return .blue
         case let id where id.contains("pomodoro"):
             return .red
+        case let id where id.contains("cassette"):
+            return .orange
         case let id where id.contains("clipboard"):
             return .purple
         case let id where id.contains("file_tray"):
@@ -958,6 +962,103 @@ struct TurntablePluginSettingsView: View {
 
     private var clampedSpinSpeedValue: Double {
         min(max(spinSpeed, 0.5), 2.0)
+    }
+}
+
+struct CassetteTapePluginSettingsView: View {
+    @AppStorage("cassette_reel_speed") private var reelSpeed = 1.0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Reel speed")
+                            .font(.system(size: 13, weight: .medium))
+                        Text("Adjust how fast the cassette reels spin while music is playing.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Text(String(format: "%.1fx", clampedReelSpeedValue))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(.secondary)
+                }
+
+                HStack(spacing: 8) {
+                    Text("0.5x")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Slider(value: clampedReelSpeed, in: 0.5...2.0, step: 0.1)
+                        .labelsHidden()
+                    Text("2.0x")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Click cassette to play/pause",
+                description: "Toggle playback by clicking the cassette widget.",
+                key: "cassette_click_to_toggle",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show album cover",
+                description: "Display album art on the cassette label.",
+                key: "cassette_show_album_cover",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show track info",
+                description: "Display the current song information on the cassette label.",
+                key: "cassette_show_track_info",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show song title",
+                description: "Show the current song title when track info is enabled.",
+                key: "cassette_show_track_title",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show artist / author",
+                description: "Show the artist or author line when track info is enabled.",
+                key: "cassette_show_track_artist",
+                defaultValue: true
+            )
+        }
+        .onAppear {
+            reelSpeed = clampedReelSpeedValue
+        }
+    }
+
+    private var clampedReelSpeed: Binding<Double> {
+        Binding(
+            get: { clampedReelSpeedValue },
+            set: { reelSpeed = min(max($0, 0.5), 2.0) }
+        )
+    }
+
+    private var clampedReelSpeedValue: Double {
+        min(max(reelSpeed, 0.5), 2.0)
     }
 }
 
