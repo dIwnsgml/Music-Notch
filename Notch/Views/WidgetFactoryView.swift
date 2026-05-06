@@ -123,13 +123,13 @@ struct TurntablePlayerWidget: View {
             let infoAtTop = infoVisible && compact
             let topInfoReserve: CGFloat = infoAtTop ? 44 : 0
             let controlsHeight: CGFloat = controlsVisible ? 42 : 0
-            let availableHeight = max(96, height - topInfoReserve - controlsHeight - 20)
-            let targetPlinthSide = compact ? width * 0.58 : width * (infoVisible ? 0.44 : 0.52)
-            let plinthSide = min(availableHeight, targetPlinthSide, 232)
-            let recordSize = plinthSide * 0.78
+            let availableHeight = max(96, height - topInfoReserve - controlsHeight - 4)
+            let targetPlinthSide = compact ? width * 0.76 : width * (infoVisible ? 0.64 : 0.76)
+            let plinthSide = min(availableHeight, targetPlinthSide, 320)
+            let recordSize = plinthSide * 0.86
             let recordRadius = recordSize / 2
-            let targetRecordX = width * (compact ? 0.50 : (infoVisible ? 0.33 : 0.40))
-            let recordCenterX = min(max(plinthSide / 2 + 14, targetRecordX), width - recordRadius - 64)
+            let targetRecordX = width * (compact ? 0.50 : (infoVisible ? 0.28 : 0.36))
+            let recordCenterX = min(max(plinthSide / 2 + 6, targetRecordX), width - recordRadius - 40)
             let activeHeight = max(plinthSide, height - topInfoReserve - controlsHeight)
             let recordCenterY = topInfoReserve + activeHeight / 2
             let recordCenter = CGPoint(x: recordCenterX, y: recordCenterY)
@@ -667,85 +667,70 @@ private struct TurntableTonearmView: View {
         GeometryReader { geo in
             let width = geo.size.width
             let postX = min(width - 24, recordCenter.x + recordRadius * 1.10)
-            let pivot = CGPoint(x: postX, y: recordCenter.y - recordRadius * 0.12)
-            let postTop = CGPoint(x: postX, y: recordCenter.y - recordRadius * 0.72)
-            let postBottom = CGPoint(x: postX, y: recordCenter.y + recordRadius * 0.74)
-            let stylus = stylusPoint(grooveProgress: displayedGrooveProgress, engagementProgress: engagementProgress)
-            let control1 = CGPoint(x: pivot.x, y: pivot.y + recordRadius * 0.40)
-            let control2 = CGPoint(
-                x: stylus.x + recordRadius * (0.56 - engagementProgress * 0.12),
-                y: stylus.y + recordRadius * (0.02 + (1 - engagementProgress) * 0.12)
-            )
-            let tangent = normalizedVector(from: control2, to: stylus)
-            let normal = CGVector(dx: -tangent.dy, dy: tangent.dx)
-            let cartridgeBack = CGPoint(x: stylus.x - tangent.dx * 24, y: stylus.y - tangent.dy * 24)
-            let cartridgeFront = CGPoint(x: stylus.x - tangent.dx * 7, y: stylus.y - tangent.dy * 7)
-            let stylusTip = CGPoint(x: stylus.x + tangent.dx * 4, y: stylus.y + tangent.dy * 4)
+            let pivot = CGPoint(x: postX, y: recordCenter.y - recordRadius * 0.35)
+            
+            let armLength = recordRadius * 1.25
+            
+            // Angles (in degrees) relative to pointing straight down
+            let parkedAngle: Double = -12.0
+            let outerGrooveAngle: Double = 18.0
+            let innerGrooveAngle: Double = 38.0
+            
+            let currentAngle = (1 - engagementProgress) * parkedAngle + engagementProgress * (outerGrooveAngle + (innerGrooveAngle - outerGrooveAngle) * displayedGrooveProgress)
 
             ZStack {
+                // The Base
                 TurntableArmBaseView(
-                    postTop: postTop,
-                    postBottom: postBottom,
                     pivot: pivot,
                     isEngaged: hasMedia && isPlaying
                 )
 
-                Path { path in
-                    path.move(to: pivot)
-                    path.addCurve(
-                        to: cartridgeBack,
-                        control1: control1,
-                        control2: control2
-                    )
+                // The Rotating Arm Assembly
+                ZStack(alignment: .center) {
+                    // Arm counterweight
+                    Capsule()
+                        .fill(Color(white: 0.6))
+                        .frame(width: 8, height: 16)
+                        .offset(y: -12)
+                        
+                    // Arm pole
+                    Capsule()
+                        .fill(Color(white: 0.8))
+                        .frame(width: 4, height: armLength)
+                        .shadow(color: .black.opacity(0.3), radius: 2, x: 1, y: 1)
+                        .offset(y: armLength / 2)
+                    
+                    // Cartridge
+                    TurntableCartridgeView()
+                        .rotationEffect(.degrees(22), anchor: .top) // Rotate AT the attachment point
+                        .offset(y: armLength) // Then move it down to the end of the pole
                 }
-                .stroke(Color.black.opacity(0.42), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                .offset(x: 1.6, y: 2.4)
-
-                Path { path in
-                    path.move(to: pivot)
-                    path.addCurve(
-                        to: cartridgeBack,
-                        control1: control1,
-                        control2: control2
-                    )
-                }
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.68),
-                            Color.white.opacity(0.34),
-                            Color.black.opacity(0.42)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    style: StrokeStyle(lineWidth: 4.6, lineCap: .round, lineJoin: .round)
-                )
-                .shadow(color: .black.opacity(0.42), radius: 4, x: 1, y: 3)
-
-                TurntableCartridgeView(
-                    back: cartridgeBack,
-                    front: cartridgeFront,
-                    stylusTip: stylusTip,
-                    normal: normal
-                )
-
+                .frame(width: 0, height: 0)
+                .rotationEffect(.degrees(currentAngle), anchor: .center)
+                .position(pivot)
+                
+                // Pivot cap on top
                 Circle()
-                    .fill(Color.black.opacity(0.72))
+                    .fill(Color.black.opacity(0.8))
+                    .frame(width: 12, height: 12)
+                    .position(pivot)
+                
+                Circle()
+                    .fill(Color.gray)
                     .frame(width: 4, height: 4)
-                    .position(stylusTip)
+                    .position(pivot)
             }
             .onAppear {
                 displayedGrooveProgress = targetGrooveProgress
                 engagementProgress = targetEngagementProgress
             }
             .onChange(of: targetGrooveProgress) { _, newProgress in
-                withAnimation(.easeInOut(duration: 0.9)) {
+                withAnimation(.linear(duration: 0.9)) {
                     displayedGrooveProgress = newProgress
                 }
             }
             .onChange(of: targetEngagementProgress) { _, newProgress in
-                withAnimation(.spring(response: 0.44, dampingFraction: 0.82)) {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
                     engagementProgress = newProgress
                 }
             }
@@ -760,139 +745,38 @@ private struct TurntableTonearmView: View {
     private var targetEngagementProgress: CGFloat {
         hasMedia && isPlaying ? 1 : 0
     }
-
-    private func stylusPoint(grooveProgress: CGFloat, engagementProgress: CGFloat) -> CGPoint {
-        let outerGroove = CGPoint(x: recordCenter.x + recordRadius * 0.84, y: recordCenter.y + recordRadius * 0.62)
-        let innerGroove = CGPoint(x: recordCenter.x + recordRadius * 0.48, y: recordCenter.y + recordRadius * 0.42)
-        let parked = CGPoint(x: recordCenter.x + recordRadius * 1.06, y: recordCenter.y + recordRadius * 0.78)
-        let groovePoint = interpolate(from: outerGroove, to: innerGroove, progress: min(max(grooveProgress, 0), 1))
-
-        return interpolate(from: parked, to: groovePoint, progress: min(max(engagementProgress, 0), 1))
-    }
-
-    private func interpolate(from start: CGPoint, to end: CGPoint, progress: CGFloat) -> CGPoint {
-        CGPoint(
-            x: start.x + (end.x - start.x) * progress,
-            y: start.y + (end.y - start.y) * progress
-        )
-    }
-
-    private func normalizedVector(from start: CGPoint, to end: CGPoint) -> CGVector {
-        let dx = end.x - start.x
-        let dy = end.y - start.y
-        let length = max(0.001, sqrt(dx * dx + dy * dy))
-        return CGVector(dx: dx / length, dy: dy / length)
-    }
 }
 
 private struct TurntableArmBaseView: View {
-    let postTop: CGPoint
-    let postBottom: CGPoint
     let pivot: CGPoint
     let isEngaged: Bool
 
     var body: some View {
         ZStack {
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.38), Color.black.opacity(0.62)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: 15, height: 9)
-                .position(postTop)
-
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.30), Color.black.opacity(0.60)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: 5.5, height: max(18, postBottom.y - postTop.y))
-                .position(x: postTop.x, y: (postTop.y + postBottom.y) / 2)
-
+            // Main pivot circle
             Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color.white.opacity(0.40), Color.black.opacity(0.70)],
-                        center: .topLeading,
-                        startRadius: 2,
-                        endRadius: 16
-                    )
-                )
+                .fill(Color(white: 0.2))
                 .frame(width: 24, height: 24)
                 .position(pivot)
-                .overlay(
-                    Circle()
-                        .stroke(Color.black.opacity(0.42), lineWidth: 2)
-                        .frame(width: 24, height: 24)
-                        .position(pivot)
-                )
-
-            Circle()
-                .fill(Color.black.opacity(0.64))
-                .frame(width: 11, height: 11)
-                .position(pivot)
-
-            Circle()
-                .fill(Color.white.opacity(isEngaged ? 0.52 : 0.34))
-                .frame(width: 7, height: 7)
-                .position(pivot)
+                .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
         }
     }
 }
 
 private struct TurntableCartridgeView: View {
-    let back: CGPoint
-    let front: CGPoint
-    let stylusTip: CGPoint
-    let normal: CGVector
-
     var body: some View {
-        ZStack {
-            Path { path in
-                let backHalf: CGFloat = 5.2
-                let frontHalf: CGFloat = 3.2
-                path.move(to: CGPoint(x: back.x + normal.dx * backHalf, y: back.y + normal.dy * backHalf))
-                path.addLine(to: CGPoint(x: front.x + normal.dx * frontHalf, y: front.y + normal.dy * frontHalf))
-                path.addLine(to: CGPoint(x: front.x - normal.dx * frontHalf, y: front.y - normal.dy * frontHalf))
-                path.addLine(to: CGPoint(x: back.x - normal.dx * backHalf, y: back.y - normal.dy * backHalf))
-                path.closeSubpath()
-            }
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.36),
-                        Color(red: 0.13, green: 0.13, blue: 0.13),
-                        Color.black.opacity(0.88)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay(
-                Path { path in
-                    let backHalf: CGFloat = 5.2
-                    let frontHalf: CGFloat = 3.2
-                    path.move(to: CGPoint(x: back.x + normal.dx * backHalf, y: back.y + normal.dy * backHalf))
-                    path.addLine(to: CGPoint(x: front.x + normal.dx * frontHalf, y: front.y + normal.dy * frontHalf))
-                    path.addLine(to: CGPoint(x: front.x - normal.dx * frontHalf, y: front.y - normal.dy * frontHalf))
-                    path.addLine(to: CGPoint(x: back.x - normal.dx * backHalf, y: back.y - normal.dy * backHalf))
-                    path.closeSubpath()
-                }
-                .stroke(Color.white.opacity(0.16), lineWidth: 0.8)
-            )
-            .shadow(color: .black.opacity(0.38), radius: 3, x: 1, y: 2)
-
-            Path { path in
-                path.move(to: front)
-                path.addLine(to: stylusTip)
-            }
-            .stroke(Color.white.opacity(0.72), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+        ZStack(alignment: .top) {
+            // Head shell
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color(white: 0.15))
+                .frame(width: 12, height: 24)
+                .shadow(color: .black.opacity(0.4), radius: 2, x: 1, y: 1)
+            
+            // Stylus line
+            Rectangle()
+                .fill(Color.gray)
+                .frame(width: 2, height: 4)
+                .offset(y: 24)
         }
     }
 }
