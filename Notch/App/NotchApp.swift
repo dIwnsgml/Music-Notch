@@ -228,7 +228,9 @@ class IslandPanel: NSPanel {
 }
 
 final class DropHostingView<Content: View>: NSHostingView<Content> {
-    private let fileNamesPasteboardType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+    private var fileNamesPasteboardType: NSPasteboard.PasteboardType {
+        NSPasteboard.PasteboardType("NSFilenamesPboardType")
+    }
 
     required init(rootView: Content) {
         super.init(rootView: rootView)
@@ -238,6 +240,10 @@ final class DropHostingView<Content: View>: NSHostingView<Content> {
     @MainActor required dynamic init?(coder: NSCoder) {
         super.init(coder: coder)
         registerForDraggedTypes([.fileURL, .URL, .string, fileNamesPasteboardType])
+    }
+    
+    deinit {
+        // Explicit deinit to bypass Swift compiler crash during EarlyPerfInliner pass
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {

@@ -41,10 +41,17 @@ if [ ! -f "$EXPORT_PLIST" ]; then
 fi
 
 # 2. Increment Build and Update Version
+# 2. Increment Build and Update Version
 cd "$PROJECT_DIR"
 echo "📈 Updating Xcode version to $VERSION_NUM and incrementing build number..."
+
+# Force update the modern Xcode project file
+sed -i '' "s/MARKETING_VERSION = .*;/MARKETING_VERSION = $VERSION_NUM;/g" Notch.xcodeproj/project.pbxproj
+
+# Update the legacy Info.plist and increment build number
 agvtool new-marketing-version "$VERSION_NUM"
 agvtool next-version -all
+
 
 # 3. Create Release Folder
 mkdir -p "$RELEASE_FOLDER_PATH"

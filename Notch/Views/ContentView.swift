@@ -943,20 +943,22 @@ struct ContentView: View {
 
         let path = themeBackgroundImagePath
         DispatchQueue.global(qos: .userInitiated).async {
-            guard let image = NSImage(contentsOfFile: path) else { return }
+            let url = URL(fileURLWithPath: path)
+            guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else { return }
 
             // ⚡️ DOWN-SAMPLE MASSIVE IMAGES
             // Large 4K images cause massive rendering lag during fast layout updates in the Notch.
-            let maxWidth: CGFloat = 1200
-            if image.size.width > maxWidth {
-                let scale = maxWidth / image.size.width
-                let newSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
-                let newImage = NSImage(size: newSize)
-                newImage.lockFocus()
-                image.draw(in: NSRect(origin: .zero, size: newSize), from: .zero, operation: .copy, fraction: 1.0)
-                newImage.unlockFocus()
+            // Using CGImageSource is thread-safe and highly optimized, avoiding priority inversions.
+            let options: [CFString: Any] = [
+                kCGImageSourceThumbnailMaxPixelSize: 1200,
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true
+            ]
+
+            if let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) {
+                let newImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
                 DispatchQueue.main.async { self.cachedThemeImage = newImage }
-            } else {
+            } else if let image = NSImage(contentsOfFile: path) {
                 DispatchQueue.main.async { self.cachedThemeImage = image }
             }
         }
