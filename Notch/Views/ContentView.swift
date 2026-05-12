@@ -92,7 +92,6 @@ struct ContentView: View {
     @State private var skipDirection: Int = 1
     @State private var lastSongChangeTime: Date = Date.distantPast
     private let playbackClockInterval: TimeInterval = 0.25
-    let hoverCheckTimer = Timer.publish(every: 0.25, tolerance: 0.05, on: .main, in: .common).autoconnect()
     private let fileDropTypes = FileDropTypeIdentifiers.all
 
     // ---------------------------------------------------------
@@ -284,71 +283,76 @@ struct ContentView: View {
         .onChange(of: nowPlaying.currentSong) { _, newSong in
             handleSongChange(newSong)
         }
-        .onReceive(hoverCheckTimer) { _ in
-            if !isExpanded && nowPlaying.isPlaying {
-                nowPlaying.currentTime += playbackClockInterval
-                nowPlaying.updateActiveLyric()
-            }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                await MainActor.run {
+                    if !isExpanded && nowPlaying.isPlaying {
+                        nowPlaying.currentTime += playbackClockInterval
+                        nowPlaying.updateActiveLyric()
+                    }
 
-            if isFileDropTargeted {
-                return
-            }
+                    if isFileDropTargeted {
+                        return
+                    }
 
-            let mouseLoc = NSEvent.mouseLocation
-            guard let screen = screenForHover(at: mouseLoc) else { return }
+                    let mouseLoc = NSEvent.mouseLocation
+                    guard let screen = screenForHover(at: mouseLoc) else { return }
 
-            let currentW = isExpanded ? expandedWidth : collapsedWidth
-            let currentH = isExpanded ? expandedHeight : currentCollapsedHeight
+                    let currentW = isExpanded ? expandedWidth : collapsedWidth
+                    let currentH = isExpanded ? expandedHeight : currentCollapsedHeight
 
-            // Reconstruct the notch window frame in screen coordinates
-            let panelRect = CGRect(
-                x: screen.frame.midX - currentW / 2,
-                y: screen.frame.maxY - currentH,
-                width: currentW,
-                height: currentH
-            )
+                    // Reconstruct the notch window frame in screen coordinates
+                    let panelRect = CGRect(
+                        x: screen.frame.midX - currentW / 2,
+                        y: screen.frame.maxY - currentH,
+                        width: currentW,
+                        height: currentH
+                    )
 
-            let isHovering = panelRect.contains(mouseLoc)
+                    let isHovering = panelRect.contains(mouseLoc)
 
-            if isPostFileDropExpansionSuppressed {
-                hoverTask?.cancel()
-                hoverTask = nil
-                if isExpanded {
-                    isExpanded = false
-                }
-                if !isHovering {
-                    isPostFileDropExpansionSuppressed = false
-                    isFileDropLayoutLocked = false
-                }
-                return
-            }
+                    if isPostFileDropExpansionSuppressed {
+                        hoverTask?.cancel()
+                        hoverTask = nil
+                        if isExpanded {
+                            isExpanded = false
+                        }
+                        if !isHovering {
+                            isPostFileDropExpansionSuppressed = false
+                            isFileDropLayoutLocked = false
+                        }
+                        return
+                    }
 
-            if isHovering {
-                if !isExpanded && enableHoverToExpand {
-                    if hoverTask == nil {
-                        hoverTask = Task {
-                            if hoverDelay > 0 {
-                                try? await Task.sleep(nanoseconds: UInt64(hoverDelay * 1_000_000_000))
-                            }
-                            guard !Task.isCancelled else { return }
-                            await MainActor.run {
-                                guard !isPostFileDropExpansionSuppressed else { return }
-                                prepareExpandedLayerForExpansion()
-                                isExpanded = true
-                                isShowingBanner = false
-                                isShowingLyricBanner = false
-                                bannerTask?.cancel()
+                    if isHovering {
+                        if !isExpanded && enableHoverToExpand {
+                            if hoverTask == nil {
+                                hoverTask = Task {
+                                    if hoverDelay > 0 {
+                                        try? await Task.sleep(nanoseconds: UInt64(hoverDelay * 1_000_000_000))
+                                    }
+                                    guard !Task.isCancelled else { return }
+                                    await MainActor.run {
+                                        guard !isPostFileDropExpansionSuppressed else { return }
+                                        prepareExpandedLayerForExpansion()
+                                        isExpanded = true
+                                        isShowingBanner = false
+                                        isShowingLyricBanner = false
+                                        bannerTask?.cancel()
+                                    }
+                                }
                             }
                         }
+                    } else {
+                        if hoverTask != nil {
+                            hoverTask?.cancel()
+                            hoverTask = nil
+                        }
+                        if isExpanded {
+                            isExpanded = false
+                        }
                     }
-                }
-            } else {
-                if hoverTask != nil {
-                    hoverTask?.cancel()
-                    hoverTask = nil
-                }
-                if isExpanded {
-                    isExpanded = false
                 }
             }
         }
@@ -624,12 +628,12 @@ struct ContentView: View {
     private func playerWidgetHeight(isCompact: Bool) -> CGFloat {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
         let topRowHeight: CGFloat = 40
-        let compactControlsHeight: CGFloat = isCompact && hasMedia ? 38 : 0
+        let controlsHeight: CGFloat = hasMedia ? 38 : 0
         let progressHeight: CGFloat = hasMedia ? 20 : 0
         let lyricsHeight: CGFloat = (hasMedia && !nowPlaying.lyrics.isEmpty && showLyrics) ? (8 + CGFloat(visibleLyricLines) * 26.0) : 0
         let verticalPadding: CGFloat = 24
 
-        return topRowHeight + compactControlsHeight + progressHeight + lyricsHeight + verticalPadding + playerWidgetHeightBuffer
+        return topRowHeight + controlsHeight + progressHeight + lyricsHeight + verticalPadding + playerWidgetHeightBuffer
     }
 
     private func rowUsesCompactPlayerLayout(_ row: [NotchWidgetType]) -> Bool {

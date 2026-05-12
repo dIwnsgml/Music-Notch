@@ -427,27 +427,111 @@ private struct TurntableRecordView: View {
     let size: CGFloat
     let spinSpeed: Double
 
-    @State private var rotation: Double = 0
-    @State private var spinVelocity: Double = 0
-    @State private var lastFrameDate: Date?
     @State private var displayedArtworkURL: URL? = nil
     @State private var labelFlipDegrees: Double = 0
     @State private var artworkTransitionTask: Task<Void, Never>? = nil
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isPlaying && abs(spinVelocity) < 0.05)) { timeline in
-            ZStack {
-                rotatingDisc
-                    .rotationEffect(.degrees(rotation))
+        ZStack {
+            AnimatedTurntableDisc(
+                size: size,
+                isPlaying: isPlaying,
+                spinSpeed: spinSpeed,
+                hasMedia: hasMedia,
+                displayedArtworkURL: displayedArtworkURL,
+                labelFlipDegrees: labelFlipDegrees
+            )
 
-                stationaryReflection
+            TurntableReflection(size: size)
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .onAppear {
+            displayedArtworkURL = artworkURL
+        }
+        .onChange(of: artworkIdentity) { _, _ in
+            rotateToArtwork(artworkURL)
+        }
+        .onDisappear {
+            artworkTransitionTask?.cancel()
+            artworkTransitionTask = nil
+        }
+    }
+
+    private func rotateToArtwork(_ newArtworkURL: URL?) {
+        artworkTransitionTask?.cancel()
+
+        withAnimation(.easeIn(duration: 0.16)) {
+            labelFlipDegrees = 88
+        }
+
+        artworkTransitionTask = Task {
+            try? await Task.sleep(nanoseconds: 160_000_000)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                displayedArtworkURL = newArtworkURL
+                labelFlipDegrees = -88
+
+                withAnimation(.easeOut(duration: 0.22)) {
+                    labelFlipDegrees = 0
+                }
+
+                artworkTransitionTask = nil
             }
-            .frame(width: size, height: size)
-            .clipShape(Circle())
+        }
+    }
+}
+
+private struct TurntableReflection: View {
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.clear, Color.white.opacity(0.16), Color.clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: size * 0.84, height: size * 0.08)
+                .blur(radius: 4)
+                .rotationEffect(.degrees(-8))
+                .blendMode(.screen)
+
+            Circle()
+                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                .padding(5)
+        }
+    }
+}
+
+private struct AnimatedTurntableDisc: View {
+    let size: CGFloat
+    let isPlaying: Bool
+    let spinSpeed: Double
+    let hasMedia: Bool
+    let displayedArtworkURL: URL?
+    let labelFlipDegrees: Double
+
+    @State private var rotation: Double = 0
+    @State private var spinVelocity: Double = 0
+    @State private var lastFrameDate: Date?
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isPlaying && abs(spinVelocity) < 0.05)) { timeline in
+            StaticTurntableDisc(
+                size: size,
+                hasMedia: hasMedia,
+                displayedArtworkURL: displayedArtworkURL,
+                labelFlipDegrees: labelFlipDegrees
+            )
+            .rotationEffect(.degrees(rotation))
             .onAppear {
                 lastFrameDate = timeline.date
                 spinVelocity = isPlaying ? targetSpinVelocity : 0
-                displayedArtworkURL = artworkURL
             }
             .onChange(of: timeline.date) { _, date in
                 advanceSpin(to: date)
@@ -455,17 +539,42 @@ private struct TurntableRecordView: View {
             .onChange(of: isPlaying) { _, _ in
                 lastFrameDate = timeline.date
             }
-            .onChange(of: artworkIdentity) { _, _ in
-                rotateToArtwork(artworkURL)
-            }
-            .onDisappear {
-                artworkTransitionTask?.cancel()
-                artworkTransitionTask = nil
-            }
         }
     }
 
-    private var rotatingDisc: some View {
+    private var targetSpinVelocity: Double {
+        122 * min(max(spinSpeed, 0.5), 2.0)
+    }
+
+    private func advanceSpin(to date: Date) {
+        guard let lastFrameDate else {
+            self.lastFrameDate = date
+            return
+        }
+
+        let delta = min(max(date.timeIntervalSince(lastFrameDate), 0), 0.06)
+        self.lastFrameDate = date
+
+        let target = isPlaying ? targetSpinVelocity : 0
+        let response = isPlaying ? 4.8 : 2.4
+        let blend = min(1, delta * response)
+        spinVelocity += (target - spinVelocity) * blend
+
+        if !isPlaying && abs(spinVelocity) < 0.05 {
+            spinVelocity = 0
+        }
+
+        rotation = (rotation + spinVelocity * delta).truncatingRemainder(dividingBy: 360)
+    }
+}
+
+private struct StaticTurntableDisc: View {
+    let size: CGFloat
+    let hasMedia: Bool
+    let displayedArtworkURL: URL?
+    let labelFlipDegrees: Double
+
+    var body: some View {
         ZStack {
             Circle()
                 .fill(
@@ -551,25 +660,17 @@ private struct TurntableRecordView: View {
         }
     }
 
-    private var stationaryReflection: some View {
-        ZStack {
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [Color.clear, Color.white.opacity(0.16), Color.clear],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: size * 0.84, height: size * 0.08)
-                .blur(radius: 4)
-                .rotationEffect(.degrees(-8))
-                .blendMode(.screen)
-
-            Circle()
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
-                .padding(5)
-        }
+    private var labelBackground: some ShapeStyle {
+        RadialGradient(
+            colors: [
+                Color.white.opacity(hasMedia ? 0.32 : 0.18),
+                Color.gray.opacity(hasMedia ? 0.22 : 0.10),
+                Color.black.opacity(0.18)
+            ],
+            center: .center,
+            startRadius: 1,
+            endRadius: size * 0.25
+        )
     }
 
     @ViewBuilder
@@ -590,70 +691,7 @@ private struct TurntableRecordView: View {
                 .foregroundColor(.white.opacity(0.58))
         }
     }
-
-    private func rotateToArtwork(_ newArtworkURL: URL?) {
-        artworkTransitionTask?.cancel()
-
-        withAnimation(.easeIn(duration: 0.16)) {
-            labelFlipDegrees = 88
-        }
-
-        artworkTransitionTask = Task {
-            try? await Task.sleep(nanoseconds: 160_000_000)
-            guard !Task.isCancelled else { return }
-
-            await MainActor.run {
-                displayedArtworkURL = newArtworkURL
-                labelFlipDegrees = -88
-
-                withAnimation(.easeOut(duration: 0.22)) {
-                    labelFlipDegrees = 0
-                }
-
-                artworkTransitionTask = nil
-            }
-        }
-    }
-
-    private var labelBackground: some ShapeStyle {
-        RadialGradient(
-            colors: [
-                Color.white.opacity(hasMedia ? 0.32 : 0.18),
-                Color.gray.opacity(hasMedia ? 0.22 : 0.10),
-                Color.black.opacity(0.18)
-            ],
-            center: .center,
-            startRadius: 1,
-            endRadius: size * 0.25
-        )
-    }
-
-    private var targetSpinVelocity: Double {
-        122 * min(max(spinSpeed, 0.5), 2.0)
-    }
-
-    private func advanceSpin(to date: Date) {
-        guard let lastFrameDate else {
-            self.lastFrameDate = date
-            return
-        }
-
-        let delta = min(max(date.timeIntervalSince(lastFrameDate), 0), 0.06)
-        self.lastFrameDate = date
-
-        let target = isPlaying ? targetSpinVelocity : 0
-        let response = isPlaying ? 4.8 : 2.4
-        let blend = min(1, delta * response)
-        spinVelocity += (target - spinVelocity) * blend
-
-        if !isPlaying && abs(spinVelocity) < 0.05 {
-            spinVelocity = 0
-        }
-
-        rotation = (rotation + spinVelocity * delta).truncatingRemainder(dividingBy: 360)
-    }
 }
-
 private struct TurntableTonearmView: View {
     let isPlaying: Bool
     let hasMedia: Bool
@@ -876,36 +914,27 @@ private struct CassetteTapeDeckView: View {
     let labelColor: String
     let bodyColor: String
 
-    @State private var reelRotation: Double = 0
-    @State private var reelVelocity: Double = 0
-    @State private var tapePhase: Double = 0
-    @State private var lastFrameDate: Date?
     @State private var artworkPulse = false
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isPlaying && abs(reelVelocity) < 0.05)) { timeline in
-            ZStack {
-                cassetteShell
-                cassetteLabel
-                tapeWindow
-                cassetteBottom
-                screws
-            }
-            .frame(width: width, height: height)
-            .shadow(color: .black.opacity(0.34), radius: 13, x: 0, y: 8)
-            .onAppear {
-                lastFrameDate = timeline.date
-                reelVelocity = isPlaying ? targetReelVelocity : 0
-            }
-            .onChange(of: timeline.date) { _, date in
-                advanceMotion(to: date)
-            }
-            .onChange(of: isPlaying) { _, _ in
-                lastFrameDate = timeline.date
-            }
-            .onChange(of: artworkIdentity) { _, _ in
-                triggerArtworkPulse()
-            }
+        ZStack {
+            cassetteShell
+            cassetteLabel
+            staticTapeWindowBackground
+            AnimatedCassetteReels(
+                width: width,
+                height: height,
+                playbackProgress: playbackProgress,
+                isPlaying: isPlaying,
+                reelSpeed: reelSpeed
+            )
+            cassetteBottom
+            screws
+        }
+        .frame(width: width, height: height)
+        .shadow(color: .black.opacity(0.34), radius: 13, x: 0, y: 8)
+        .onChange(of: artworkIdentity) { _, _ in
+            triggerArtworkPulse()
         }
     }
 
@@ -1108,16 +1137,10 @@ private struct CassetteTapeDeckView: View {
         }
     }
 
-    private var tapeWindow: some View {
+    private var staticTapeWindowBackground: some View {
         let windowWidth = width * 0.58
         let windowHeight = height * 0.21
         let windowY = height * 0.50
-        let leftCenter = CGPoint(x: width * 0.35, y: windowY)
-        let rightCenter = CGPoint(x: width * 0.65, y: windowY)
-        let reelSize = height * 0.29
-        let clampedProgress = min(max(playbackProgress, 0), 1)
-        let leftSpool = 0.76 - clampedProgress * 0.34
-        let rightSpool = 0.38 + clampedProgress * 0.34
 
         return ZStack {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -1132,11 +1155,6 @@ private struct CassetteTapeDeckView: View {
                 )
                 .shadow(color: .black.opacity(0.52), radius: 4, x: 0, y: 2)
 
-            CassetteTapeStripView(phase: tapePhase, isPlaying: isPlaying)
-                .frame(width: width * 0.22, height: windowHeight * 0.52)
-                .position(x: width / 2, y: windowY)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-
             Capsule()
                 .fill(Color.white.opacity(0.22))
                 .frame(width: width * 0.24, height: 1.2)
@@ -1150,14 +1168,6 @@ private struct CassetteTapeDeckView: View {
                 }
             }
             .position(x: width / 2, y: windowY + windowHeight * 0.34)
-
-            CassetteReelView(rotation: reelRotation, spoolFraction: leftSpool, isPlaying: isPlaying)
-                .frame(width: reelSize, height: reelSize)
-                .position(leftCenter)
-
-            CassetteReelView(rotation: -reelRotation * 1.08, spoolFraction: rightSpool, isPlaying: isPlaying)
-                .frame(width: reelSize, height: reelSize)
-                .position(rightCenter)
         }
     }
 
@@ -1223,6 +1233,67 @@ private struct CassetteTapeDeckView: View {
         ]
     }
 
+    private func triggerArtworkPulse() {
+        artworkPulse = true
+        Task {
+            try? await Task.sleep(nanoseconds: 260_000_000)
+            await MainActor.run {
+                artworkPulse = false
+            }
+        }
+    }
+}
+
+private struct AnimatedCassetteReels: View {
+    let width: CGFloat
+    let height: CGFloat
+    let playbackProgress: CGFloat
+    let isPlaying: Bool
+    let reelSpeed: Double
+
+    @State private var reelRotation: Double = 0
+    @State private var reelVelocity: Double = 0
+    @State private var tapePhase: Double = 0
+    @State private var lastFrameDate: Date?
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isPlaying && abs(reelVelocity) < 0.05)) { timeline in
+            let windowHeight = height * 0.21
+            let windowY = height * 0.50
+            let leftCenter = CGPoint(x: width * 0.35, y: windowY)
+            let rightCenter = CGPoint(x: width * 0.65, y: windowY)
+            let reelSize = height * 0.29
+            let clampedProgress = min(max(playbackProgress, 0), 1)
+            let leftSpool = 0.76 - clampedProgress * 0.34
+            let rightSpool = 0.38 + clampedProgress * 0.34
+
+            ZStack {
+                CassetteTapeStripView(phase: tapePhase, isPlaying: isPlaying)
+                    .frame(width: width * 0.22, height: windowHeight * 0.52)
+                    .position(x: width / 2, y: windowY)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+
+                CassetteReelView(rotation: reelRotation, spoolFraction: leftSpool, isPlaying: isPlaying)
+                    .frame(width: reelSize, height: reelSize)
+                    .position(leftCenter)
+
+                CassetteReelView(rotation: -reelRotation * 1.08, spoolFraction: rightSpool, isPlaying: isPlaying)
+                    .frame(width: reelSize, height: reelSize)
+                    .position(rightCenter)
+            }
+            .onAppear {
+                lastFrameDate = timeline.date
+                reelVelocity = isPlaying ? targetReelVelocity : 0
+            }
+            .onChange(of: timeline.date) { _, date in
+                advanceMotion(to: date)
+            }
+            .onChange(of: isPlaying) { _, _ in
+                lastFrameDate = timeline.date
+            }
+        }
+    }
+
     private var targetReelVelocity: Double {
         235 * min(max(reelSpeed, 0.5), 2.0)
     }
@@ -1248,18 +1319,7 @@ private struct CassetteTapeDeckView: View {
         reelRotation = (reelRotation + reelVelocity * delta).truncatingRemainder(dividingBy: 360)
         tapePhase = (tapePhase + reelVelocity * delta * 0.045).truncatingRemainder(dividingBy: 16)
     }
-
-    private func triggerArtworkPulse() {
-        artworkPulse = true
-        Task {
-            try? await Task.sleep(nanoseconds: 260_000_000)
-            await MainActor.run {
-                artworkPulse = false
-            }
-        }
-    }
 }
-
 private struct CassetteArtworkView: View {
     let artworkURL: URL?
     let hasMedia: Bool
@@ -3997,11 +4057,14 @@ struct SpotifyQueueWidget: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear {
+        .task {
             spotifyManager.fetchQueue()
-        }
-        .onReceive(Timer.publish(every: 15, tolerance: 2, on: .main, in: .common).autoconnect()) { _ in
-            spotifyManager.fetchQueue()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                await MainActor.run {
+                    spotifyManager.fetchQueue()
+                }
+            }
         }
         .onChange(of: nowPlaying.currentSong) { _, _ in
             spotifyManager.fetchQueue()

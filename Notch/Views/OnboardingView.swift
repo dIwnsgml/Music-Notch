@@ -8,8 +8,7 @@ struct OnboardingView: View {
     @AppStorage("enableAnalytics") var enableAnalytics = true
     
     @State private var hasAccessibilityAccess = AXIsProcessTrusted()
-    let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-    
+
     // ⚡️ NEW: App Storage for Integrations
     @AppStorage("enableAppleMusic") var enableAppleMusic = false
     @AppStorage("enableSpotify") var enableSpotify = false
@@ -75,20 +74,6 @@ struct OnboardingView: View {
             .background(Color(NSColor.windowBackgroundColor))
         }
         .frame(width: 500, height: 420)
-        .onReceive(timer) { _ in
-            if currentPage == 1 {
-                let isTrusted = AXIsProcessTrusted()
-                
-                if !hasAccessibilityAccess && isTrusted {
-                    withAnimation { hasAccessibilityAccess = true }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                        withAnimation(.easeInOut(duration: 0.3)) { currentPage = 2 }
-                    }
-                } else if !isTrusted {
-                    hasAccessibilityAccess = false
-                }
-            }
-        }
     }
     
     // ---------------------------------------------------------

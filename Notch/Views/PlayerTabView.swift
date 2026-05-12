@@ -35,12 +35,10 @@ struct PlayerTabView: View {
     @State private var isLyricOffsetRailHovering = false
     @State private var lastSwipeTime: Date = Date()
     @State private var localEventMonitor: Any?
-    
+
     private let playbackClockInterval: TimeInterval = 0.25
-    let localTimer = Timer.publish(every: 0.25, tolerance: 0.05, on: .main, in: .common).autoconnect()
-    
-    var body: some View {
-        let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
+
+    var body: some View {        let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
         
         let hPad: CGFloat = isCompact ? 10 : 14
@@ -173,16 +171,11 @@ struct PlayerTabView: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        if hasMedia && !isCompact {
-                            Spacer()
-                            mediaControls
-                        }
                     }
                     .padding(.horizontal, hPad)
                     
-                    // Stacking controls under title if space is constrained
-                    if hasMedia && isCompact {
+                    // Keep playback controls below metadata so the title and artist keep full width.
+                    if hasMedia {
                         HStack {
                             Spacer()
                             mediaControls
@@ -258,9 +251,12 @@ struct PlayerTabView: View {
                                 VStack(spacing: 0) {
                                     ForEach(Array(nowPlaying.lyrics.enumerated()), id: \.offset) { index, lyric in
                                         let distance = abs(index - nowPlaying.activeLyricIndex)
-                                        let lyricOpacity: Double = distance == 0 ? 1.0 : max(0.0, 1.0 - (Double(distance) * lyricDimming))
-                                        let lyricScale: CGFloat = distance == 0 ? 1.0 : 1.0 - (CGFloat(distance) * 0.05)
-                                        let lyricBlur: CGFloat = distance == 0 ? 0.0 : CGFloat(distance) * lyricBlurAmount
+                                        let distDouble = Double(distance)
+                                        let distCG = CGFloat(distance)
+
+                                        let lyricOpacity: Double = distance == 0 ? 1.0 : max(0.0, 1.0 - (distDouble * lyricDimming))
+                                        let lyricScale: CGFloat = distance == 0 ? 1.0 : 1.0 - (distCG * 0.05)
+                                        let lyricBlur: CGFloat = distance == 0 ? 0.0 : distCG * CGFloat(lyricBlurAmount)
 
                                         Text(lyric.text)
                                             .font(.system(size: 14, weight: .bold))
@@ -368,10 +364,15 @@ struct PlayerTabView: View {
                 }
             }
         )
-        .onReceive(localTimer) { _ in
-            if nowPlaying.isPlaying && !isDragging {
-                nowPlaying.currentTime += playbackClockInterval
-                nowPlaying.updateActiveLyric()
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                await MainActor.run {
+                    if nowPlaying.isPlaying && !isDragging {
+                        nowPlaying.currentTime += playbackClockInterval
+                        nowPlaying.updateActiveLyric()
+                    }
+                }
             }
         }
     }
