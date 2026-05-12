@@ -906,6 +906,15 @@ struct TurntablePluginSettingsView: View {
             Divider().opacity(0.15)
 
             PluginSettingToggle(
+                title: "Auto-hide when not playing",
+                description: "Automatically remove the turntable from the notch when no music is playing.",
+                key: "plugin_turntable_player_auto_hide",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
                 title: "Show control buttons",
                 description: "Display previous, play/pause, and next buttons on the turntable.",
                 key: "turntable_show_controls",
@@ -1048,6 +1057,15 @@ struct CassetteTapePluginSettingsView: View {
                 .labelsHidden()
                 .frame(maxWidth: 240)
             }
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Auto-hide when not playing",
+                description: "Automatically remove the cassette from the notch when no music is playing.",
+                key: "plugin_cassette_tape_auto_hide",
+                defaultValue: true
+            )
 
             Divider().opacity(0.15)
 

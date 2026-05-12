@@ -261,14 +261,14 @@ struct SettingsView: View {
     // ---------------------------------------------------------
     private var themeContent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 24) {
                 themeHero
+                themeAdjustmentsPanel
                 themePresetSection(.dynamic)
                 themePhotosSection
                 themePresetSection(.landscape)
                 themePresetSection(.cityscape)
                 themePresetSection(.minimal)
-                themeCustomizePanel
             }
             .padding(.horizontal, 30)
             .padding(.vertical, 26)
@@ -283,7 +283,7 @@ struct SettingsView: View {
     private var currentThemeName: String {
         switch themeBackgroundType {
         case "image":
-            return themeBackgroundImagePath.isEmpty ? "Custom Photo" : URL(fileURLWithPath: themeBackgroundImagePath).deletingPathExtension().lastPathComponent
+            return "Custom Photo"
         case "color":
             return "Solid Color"
         default:
@@ -294,7 +294,7 @@ struct SettingsView: View {
     private var currentThemeDescription: String {
         switch themeBackgroundType {
         case "image":
-            return "Uses your selected photo as the notch background."
+            return themeBackgroundImagePath.isEmpty ? "Choose a photo to use as the notch background." : URL(fileURLWithPath: themeBackgroundImagePath).lastPathComponent
         case "color":
             return "Uses a single custom color across the notch."
         default:
@@ -313,19 +313,20 @@ struct SettingsView: View {
                 blur: themeBackgroundBlur,
                 cornerRadius: 14
             )
-            .frame(width: 260, height: 150)
+            .frame(width: 300, height: 180)
 
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(currentThemeName)
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.system(size: 24, weight: .bold))
                             .lineLimit(1)
 
                         Text(currentThemeDescription)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(2)
+                            .frame(height: 38, alignment: .topLeading)
                     }
 
                     Spacer(minLength: 12)
@@ -342,12 +343,12 @@ struct SettingsView: View {
 
                 Divider()
 
-                Toggle("Glassy Widget Backgrounds", isOn: $themeGlassyWidgets)
+                HStack(spacing: 12) {
+                    Label(themeModeLabel, systemImage: themeModeIcon)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.secondary)
 
-                HStack(spacing: 10) {
-                    Button("Choose Photo...") {
-                        chooseThemeImage()
-                    }
+                    Spacer()
 
                     Button("Reset Theme") {
                         applyPreset(ThemePreset.preset(id: ThemePreset.defaultID))
@@ -355,7 +356,8 @@ struct SettingsView: View {
                 }
             }
             .padding(18)
-            .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(height: 180, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(Color.white.opacity(0.06))
@@ -365,6 +367,148 @@ struct SettingsView: View {
                     .stroke(Color.white.opacity(0.10), lineWidth: 1)
             )
         }
+        .frame(height: 180)
+    }
+
+    private var themeModeLabel: String {
+        switch themeBackgroundType {
+        case "image": return "Photo Background"
+        case "color": return "Solid Color"
+        default: return "Default Theme"
+        }
+    }
+
+    private var themeModeIcon: String {
+        switch themeBackgroundType {
+        case "image": return "photo"
+        case "color": return "paintpalette.fill"
+        default: return "sparkles"
+        }
+    }
+
+    private var themeAdjustmentsPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Label("Background Adjustments", systemImage: "slider.horizontal.3")
+                    .font(.system(size: 16, weight: .bold))
+
+                Spacer()
+
+                Toggle("Glassy Widgets", isOn: $themeGlassyWidgets)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+
+            HStack(alignment: .top, spacing: 18) {
+                adjustmentSlider(
+                    title: "Opacity",
+                    valueText: "\(Int(themeBackgroundOpacity * 100))%",
+                    rangeLabelStart: "0%",
+                    rangeLabelEnd: "100%",
+                    value: $themeBackgroundOpacity,
+                    range: 0.0...1.0,
+                    step: 0.05
+                )
+
+                if themeBackgroundType == "image" {
+                    adjustmentSlider(
+                        title: "Photo Blur",
+                        valueText: "\(Int(themeBackgroundBlur))",
+                        rangeLabelStart: "0",
+                        rangeLabelEnd: "40",
+                        value: $themeBackgroundBlur,
+                        range: 0.0...40.0,
+                        step: 1.0
+                    )
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Photo Blur")
+                                .font(.system(size: 13, weight: .semibold))
+                            Spacer()
+                            Text("Photo only")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.secondary)
+                        }
+
+                        Text("Blur appears when Photo mode is selected.")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .frame(height: 24, alignment: .leading)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+
+            HStack(spacing: 10) {
+                Picker("Background Type", selection: $themeBackgroundType) {
+                    Text("Theme").tag("preset")
+                    Text("Color").tag("color")
+                    Text("Photo").tag("image")
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 240)
+
+                if themeBackgroundType == "color" {
+                    ColorPicker("Color", selection: Binding(
+                        get: { Color(hex: themeBackgroundColorHex) ?? .black },
+                        set: { themeBackgroundColorHex = $0.toHex() }
+                    ))
+                    .labelsHidden()
+                    .frame(width: 44)
+                }
+
+                if themeBackgroundType == "image" {
+                    Button("Choose Photo...") {
+                        chooseThemeImage()
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+        )
+    }
+
+    private func adjustmentSlider(
+        title: String,
+        valueText: String,
+        rangeLabelStart: String,
+        rangeLabelEnd: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Text(valueText)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Text(rangeLabelStart)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(width: 34, alignment: .leading)
+                Slider(value: value, in: range, step: step)
+                    .labelsHidden()
+                Text(rangeLabelEnd)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(width: 40, alignment: .trailing)
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func themePresetSection(_ category: ThemePresetCategory) -> some View {

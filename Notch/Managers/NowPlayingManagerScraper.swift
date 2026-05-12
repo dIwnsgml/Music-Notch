@@ -127,11 +127,7 @@ extension NowPlayingManager {
                             self.parseAndApplyResult(result: result + "|||" + rawBrowser, browser: rawBrowser)
                             return
                         } else {
-                            // Tab is NOT playing. Immediately update UI to feel responsive,
-                            // but STILL fall through to full loop in case another tab started playing.
-                            DispatchQueue.main.async {
-                                if self.isPlaying { self.isPlaying = false }
-                            }
+                            // Tab is NOT playing. Fall through to full loop in case another tab started playing.
                         }
                     }
                 }

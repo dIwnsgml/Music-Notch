@@ -1,277 +1,521 @@
 import SwiftUI
 import ApplicationServices
-import Combine
 
 struct OnboardingView: View {
+    private let totalPages = 6
+
     @State private var currentPage = 0
-    @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
-    @AppStorage("enableAnalytics") var enableAnalytics = true
-    
     @State private var hasAccessibilityAccess = AXIsProcessTrusted()
 
-    // ⚡️ NEW: App Storage for Integrations
-    @AppStorage("enableAppleMusic") var enableAppleMusic = false
-    @AppStorage("enableSpotify") var enableSpotify = false
-    @AppStorage("enableChrome") var enableChrome = false
-    @AppStorage("enableBrave") var enableBrave = false
-    @AppStorage("enableEdge") var enableEdge = false
-    @AppStorage("enableSafari") var enableSafari = false
-    
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("enableAnalytics") private var enableAnalytics = true
+
+    @AppStorage("themeBackgroundType") private var themeBackgroundType = "preset"
+    @AppStorage("themePresetID") private var themePresetID = ThemePreset.defaultID
+    @AppStorage("themeBackgroundOpacity") private var themeBackgroundOpacity = 1.0
+    @AppStorage("themeGlassyWidgets") private var themeGlassyWidgets = true
+
+    @AppStorage("enableAppleMusic") private var enableAppleMusic = false
+    @AppStorage("enableSpotify") private var enableSpotify = false
+    @AppStorage("enableChrome") private var enableChrome = false
+    @AppStorage("enableBrave") private var enableBrave = false
+    @AppStorage("enableEdge") private var enableEdge = false
+    @AppStorage("enableSafari") private var enableSafari = false
+
+    private var selectedTheme: ThemePreset {
+        ThemePreset.preset(id: themePresetID)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            
             ZStack {
                 switch currentPage {
-                case 0: welcomePage.transition(.opacity)
-                case 1: permissionsPage.transition(.opacity)
-                case 2: integrationsPage.transition(.opacity) // ⚡️ NEW PAGE
-                case 3: gesturesPage.transition(.opacity)
-                case 4: finishPage.transition(.opacity)
+                case 0: welcomePage
+                case 1: permissionsPage
+                case 2: themePage
+                case 3: integrationsPage
+                case 4: gesturesPage
+                case 5: finishPage
                 default: EmptyView()
                 }
             }
             .id(currentPage)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            
+            .transition(.opacity)
+
             Divider()
-            
-            // Bottom Navigation Bar
-            HStack {
-                // Page Indicators
-                HStack(spacing: 8) {
-                    ForEach(0..<5) { index in // ⚡️ Bumped to 5
-                        Circle()
-                            .fill(currentPage == index ? Color.accentColor : Color.gray.opacity(0.3))
-                            .frame(width: 8, height: 8)
-                            .animation(.spring(), value: currentPage)
-                    }
-                }
-                
-                Spacer()
-                
-                if currentPage < 4 { // ⚡️ Bumped to 4
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.3)) { currentPage += 1 }
-                    }) {
-                        Text(currentPage == 1 && !hasAccessibilityAccess ? "Skip for now" : "Next")
-                            .font(.system(size: 13, weight: .medium))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(currentPage == 1 && !hasAccessibilityAccess ? .gray : .accentColor)
-                } else {
-                    Button(action: { finishOnboarding() }) {
-                        Text("Get Started")
-                            .font(.system(size: 13, weight: .bold))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
-                    }
-                    .buttonStyle(.borderedProminent)
+
+            footer
+        }
+        .frame(width: 720, height: 560)
+        .background(Color(NSColor.windowBackgroundColor))
+        .onAppear {
+            hasAccessibilityAccess = AXIsProcessTrusted()
+            if themeBackgroundType.isEmpty {
+                applyTheme(ThemePreset.preset(id: ThemePreset.defaultID))
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            hasAccessibilityAccess = AXIsProcessTrusted()
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 18) {
+            HStack(spacing: 8) {
+                ForEach(0..<totalPages, id: \.self) { index in
+                    Capsule()
+                        .fill(index == currentPage ? Color.accentColor : Color.secondary.opacity(0.25))
+                        .frame(width: index == currentPage ? 22 : 8, height: 8)
+                        .animation(.spring(response: 0.30, dampingFraction: 0.80), value: currentPage)
                 }
             }
-            .padding(24)
-            .background(Color(NSColor.windowBackgroundColor))
+
+            Spacer()
+
+            if currentPage > 0 {
+                Button("Back") {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        currentPage -= 1
+                    }
+                }
+            }
+
+            Button(action: advanceOrFinish) {
+                Text(primaryButtonTitle)
+                    .font(.system(size: 13, weight: .bold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(currentPage == 1 && !hasAccessibilityAccess ? .secondary : .accentColor)
         }
-        .frame(width: 500, height: 420)
+        .padding(.horizontal, 28)
+        .padding(.vertical, 18)
+        .background(Color(NSColor.windowBackgroundColor))
     }
-    
-    // ---------------------------------------------------------
-    // 📖 THE PAGES
-    // ---------------------------------------------------------
-    
+
+    private var primaryButtonTitle: String {
+        if currentPage == totalPages - 1 { return "Get Started" }
+        if currentPage == 0 { return "Set Up WaveNotch" }
+        if currentPage == 1 && !hasAccessibilityAccess { return "Skip for now" }
+        return "Continue"
+    }
+
     private var welcomePage: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(LinearGradient(colors: [Color.orange, Color.red], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 80, height: 80)
-                    .shadow(color: Color.orange.opacity(0.4), radius: 12, y: 6)
-                
-                Image(systemName: "music.note")
-                    .font(.system(size: 36, weight: .bold))
-                    .foregroundColor(.white)
+        OnboardingPage(
+            symbol: "waveform",
+            symbolColor: .orange,
+            title: "Welcome to WaveNotch",
+            subtitle: "Set up music controls, live lyrics, widgets, and your notch theme in a few steps."
+        ) {
+            HStack(spacing: 22) {
+                onboardingNotchPreview
+
+                VStack(alignment: .leading, spacing: 14) {
+                    OnboardingFeatureRow(icon: "music.note", color: .orange, title: "Music-aware notch", desc: "Shows what is playing and gives you quick playback controls.")
+                    OnboardingFeatureRow(icon: "text.quote", color: .blue, title: "Live lyrics", desc: "Displays synced lyrics in the expanded player and menu-bar banner.")
+                    OnboardingFeatureRow(icon: "square.grid.2x2", color: .purple, title: "Useful plugins", desc: "Add weather, timers, clipboard history, files, tasks, queues, and more.")
+                }
             }
-            .padding(.bottom, 8)
-            
-            Text("Welcome to WaveNotch")
-                .font(.system(size: 28, weight: .bold))
-            
-            Text("The Dynamic Island your Mac always deserved.\nControl your music, view your lyrics, and manage your day.")
-                .font(.system(size: 14))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
+            .padding(.top, 6)
         }
     }
-    
+
+    private var onboardingNotchPreview: some View {
+        ZStack {
+            ThemePresetBackground(presetID: themePresetID)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.25))
+                        .frame(width: 48, height: 48)
+                        .overlay(Image(systemName: "music.note").font(.system(size: 22, weight: .bold)))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Now Playing")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.white.opacity(0.65))
+                        Text("WaveNotch")
+                            .font(.system(size: 22, weight: .black))
+                            .foregroundColor(.white)
+                    }
+
+                    Spacer()
+                }
+
+                HStack(spacing: 26) {
+                    Image(systemName: "backward.fill")
+                    Image(systemName: "pause.fill")
+                    Image(systemName: "forward.fill")
+                    Image(systemName: "repeat")
+                }
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+
+                Capsule()
+                    .fill(Color.white.opacity(0.24))
+                    .frame(height: 8)
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.white.opacity(0.72))
+                            .frame(width: 96, height: 8)
+                    }
+            }
+            .padding(22)
+        }
+        .frame(width: 290, height: 190)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.22), radius: 18, y: 10)
+    }
+
     private var permissionsPage: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "hand.raised.fill")
-                .font(.system(size: 40))
-                .foregroundColor(.blue)
-                .padding(.bottom, 8)
-            
-            Text("We need a tiny favor.")
-                .font(.system(size: 24, weight: .bold))
-            
-            Text("To seamlessly read what song is playing and simulate media key presses (like skipping a track), WaveNotch requires Accessibility access.")
-                .font(.system(size: 14))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-            
-            VStack(spacing: 12) {
-                if hasAccessibilityAccess {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
-                        Text("Access Granted!").fontWeight(.semibold)
+        OnboardingPage(
+            symbol: hasAccessibilityAccess ? "checkmark.shield.fill" : "hand.raised.fill",
+            symbolColor: hasAccessibilityAccess ? .green : .blue,
+            title: "Allow media controls",
+            subtitle: "Accessibility lets WaveNotch read media state and send skip, pause, and play commands."
+        ) {
+            VStack(spacing: 16) {
+                HStack(spacing: 14) {
+                    Image(systemName: hasAccessibilityAccess ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(hasAccessibilityAccess ? .green : .orange)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(hasAccessibilityAccess ? "Access granted" : "Access not granted yet")
+                            .font(.system(size: 16, weight: .bold))
+                        Text(hasAccessibilityAccess ? "You can continue." : "You can skip this now and enable it later in Settings.")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.secondary)
                     }
-                    .padding()
-                    .background(Color.green.opacity(0.1))
-                    .cornerRadius(8)
-                } else {
-                    Button(action: { requestAccess() }) {
-                        Text("Open System Settings")
-                            .fontWeight(.semibold)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 8)
+
+                    Spacer()
+
+                    if !hasAccessibilityAccess {
+                        Button("Open System Settings") {
+                            requestAccess()
+                        }
                     }
-                    .buttonStyle(.bordered)
-                    
-                    Text("1. Click the button above\n2. Turn on the toggle next to WaveNotch")
-                        .font(.system(size: 11))
-                        .foregroundColor(.gray)
-                        .multilineTextAlignment(.center)
                 }
+                .padding(18)
+                .background(panelBackground)
+
+                Text("In System Settings, enable WaveNotch under Privacy & Security > Accessibility.")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.secondary)
             }
-            .padding(.top, 10)
+            .frame(maxWidth: 560)
         }
     }
-    
-    // ⚡️ NEW: Integrations Page (Layout Fixed!)
+
+    private var themePage: some View {
+        OnboardingPage(
+            symbol: "paintbrush.pointed.fill",
+            symbolColor: .pink,
+            title: "Choose your theme",
+            subtitle: "Pick a default background now. You can still use custom colors or photos from Settings later."
+        ) {
+            HStack(alignment: .top, spacing: 20) {
+                VStack(alignment: .leading, spacing: 12) {
+                    ThemePresetBackground(presetID: themePresetID)
+                        .frame(width: 260, height: 160)
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(Color.white.opacity(0.16), lineWidth: 1)
+                        )
+
+                    Text(selectedTheme.name)
+                        .font(.system(size: 22, weight: .bold))
+                    Text(selectedTheme.subtitle)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.secondary)
+
+                    Toggle("Use glassy widget backgrounds", isOn: $themeGlassyWidgets)
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.top, 4)
+                }
+                .frame(width: 270, alignment: .leading)
+
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(112), spacing: 12), count: 3), spacing: 12) {
+                    ForEach(onboardingThemePresets) { preset in
+                        OnboardingThemeCard(
+                            preset: preset,
+                            isSelected: themeBackgroundType == "preset" && themePresetID == preset.id
+                        ) {
+                            applyTheme(preset)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: 650)
+        }
+    }
+
+    private var onboardingThemePresets: [ThemePreset] {
+        [
+            ThemePreset.preset(id: "venturaGlow"),
+            ThemePreset.preset(id: "tahoeBlue"),
+            ThemePreset.preset(id: "sequoiaPrism"),
+            ThemePreset.preset(id: "sonomaRibbon"),
+            ThemePreset.preset(id: "tahoeDay"),
+            ThemePreset.preset(id: "cherryBlossom")
+        ]
+    }
+
     private var integrationsPage: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "puzzlepiece.extension.fill")
-                .font(.system(size: 40))
-                .foregroundColor(.green)
-                .padding(.bottom, 4)
-            
-            Text("Connect Your Media")
-                .font(.system(size: 24, weight: .bold))
-            
-            Text("Which apps do you use to listen to music? WaveNotch will watch these tabs and applications to track your current song.")
-                .font(.system(size: 14))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-                .padding(.bottom, 8)
-            
-            // ⚡️ THE FIX: Top alignment and fixed spacing
-            HStack(alignment: .top, spacing: 40) {
-                
-                // LEFT COLUMN
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("NATIVE PLAYERS")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.gray)
-                    
-                    Toggle("Spotify", isOn: $enableSpotify)
-                    Toggle("Apple Music", isOn: $enableAppleMusic)
+        OnboardingPage(
+            symbol: "puzzlepiece.extension.fill",
+            symbolColor: .green,
+            title: "Connect your media",
+            subtitle: "Enable the apps and browsers you use. Browser toggles allow WaveNotch to detect music playing in tabs."
+        ) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Native Players")
+                        .font(.system(size: 12, weight: .black))
+                        .foregroundColor(.secondary)
+                    OnboardingToggleRow(icon: "music.note", title: "Apple Music", isOn: $enableAppleMusic)
+                    OnboardingToggleRow(icon: "speaker.wave.2.fill", title: "Spotify", isOn: $enableSpotify)
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading) // ⚡️ Forces exactly 50% width
-                
-                // RIGHT COLUMN
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("WEB BROWSERS")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.gray)
-                    
-                    Toggle("Google Chrome", isOn: $enableChrome)
-                    Toggle("Brave Browser", isOn: $enableBrave)
-                    Toggle("Safari", isOn: $enableSafari)
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .background(panelBackground)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Browsers")
+                        .font(.system(size: 12, weight: .black))
+                        .foregroundColor(.secondary)
+                    OnboardingToggleRow(icon: "globe", title: "Chrome", isOn: $enableChrome)
+                    OnboardingToggleRow(icon: "shield.fill", title: "Brave", isOn: $enableBrave)
+                    OnboardingToggleRow(icon: "safari.fill", title: "Safari", isOn: $enableSafari)
+                    OnboardingToggleRow(icon: "globe.americas.fill", title: "Edge", isOn: $enableEdge)
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading) // ⚡️ Forces exactly 50% width
-                
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .background(panelBackground)
             }
-            .toggleStyle(.switch)
-            .padding(.horizontal, 30)
-            .padding(.vertical, 20)
-            .background(Color.black.opacity(0.15)) // Slightly darker for better contrast
-            .cornerRadius(12)
-            .padding(.horizontal, 40) // Adds breathing room around the outside of the box
+            .frame(maxWidth: 600)
         }
     }
-    
+
     private var gesturesPage: some View {
-        VStack(spacing: 24) {
-            Text("Pro Tips & Gestures")
-                .font(.system(size: 24, weight: .bold))
-            
-            VStack(alignment: .leading, spacing: 20) {
-                FeatureRow(icon: "hand.draw.fill", color: .purple, title: "Swipe to Skip", desc: "Hover over the notch and scroll left or right on your mouse/trackpad to skip tracks.")
-                FeatureRow(icon: "cursorarrow.click.2", color: .blue, title: "Double Click", desc: "Double click the expanded player to instantly open Spotify, Apple Music, or your Browser.")
-                FeatureRow(icon: "keyboard", color: .orange, title: "The Boss Key", desc: "Press ^⌘H to completely hide or show the notch from anywhere on your Mac.")
+        OnboardingPage(
+            symbol: "hand.draw.fill",
+            symbolColor: .purple,
+            title: "Learn the quick controls",
+            subtitle: "These defaults make the notch useful without opening Settings every time."
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                OnboardingFeatureRow(icon: "hand.draw.fill", color: .purple, title: "Swipe or scroll to skip", desc: "Hover over the notch and scroll left or right to move between tracks.")
+                OnboardingFeatureRow(icon: "cursorarrow.click.2", color: .blue, title: "Double click to open", desc: "Double click the expanded player to open the active media app or browser.")
+                OnboardingFeatureRow(icon: "keyboard", color: .orange, title: "Hide instantly", desc: "Use Control + Command + H to hide or show WaveNotch globally.")
             }
-            .padding(.horizontal, 40)
+            .padding(20)
+            .frame(maxWidth: 560, alignment: .leading)
+            .background(panelBackground)
         }
     }
-    
+
     private var finishPage: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 40))
-                .foregroundColor(.yellow)
-                .padding(.bottom, 8)
-            
-            Text("You're all set!")
-                .font(.system(size: 24, weight: .bold))
-            
-            Text("WaveNotch is running quietly in your menu bar.\nPlay a song in Spotify, Music, or your browser to see it in action.")
-                .font(.system(size: 14))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-            
-            Toggle("Share anonymous crash & usage data to help us improve", isOn: $enableAnalytics)
-                .font(.system(size: 12))
-                .padding(.horizontal, 40)
-                .padding(.top, 20)
+        OnboardingPage(
+            symbol: "sparkles",
+            symbolColor: .yellow,
+            title: "You are ready",
+            subtitle: "WaveNotch will run from the menu bar. Play music, hover near the notch, and tune the rest from Settings."
+        ) {
+            VStack(spacing: 18) {
+                HStack(spacing: 14) {
+                    ThemePresetBackground(presetID: themePresetID)
+                        .frame(width: 92, height: 58)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Theme: \(selectedTheme.name)")
+                            .font(.system(size: 14, weight: .bold))
+                        Text("Media apps and plugin layout can be changed anytime.")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+                }
+                .padding(16)
+                .background(panelBackground)
+
+                Toggle("Share anonymous crash and usage data", isOn: $enableAnalytics)
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(maxWidth: 420)
+            }
+            .frame(maxWidth: 540)
         }
     }
-    
-    // ---------------------------------------------------------
-    // ⚡️ HELPERS
-    // ---------------------------------------------------------
+
+    private var panelBackground: some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(Color.white.opacity(0.06))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            )
+    }
+
+    private func advanceOrFinish() {
+        if currentPage >= totalPages - 1 {
+            finishOnboarding()
+        } else {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                currentPage += 1
+            }
+        }
+    }
+
+    private func applyTheme(_ preset: ThemePreset) {
+        themePresetID = preset.id
+        themeBackgroundType = "preset"
+        themeBackgroundOpacity = 1.0
+    }
+
     private func requestAccess() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
+        hasAccessibilityAccess = AXIsProcessTrusted()
     }
-    
+
     private func finishOnboarding() {
         hasCompletedOnboarding = true
         OnboardingWindowManager.shared.close()
-        // ⚡️ Removed the Settings open here since they just set everything up!
     }
 }
 
-struct FeatureRow: View {
-    var icon: String
-    var color: Color
-    var title: String
-    var desc: String
-    
+private struct OnboardingPage<Content: View>: View {
+    let symbol: String
+    let symbolColor: Color
+    let title: String
+    let subtitle: String
+    @ViewBuilder let content: Content
+
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 20))
-                .foregroundColor(color)
-                .frame(width: 30)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 14, weight: .bold))
-                Text(desc).font(.system(size: 13)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+        VStack(spacing: 22) {
+            VStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(symbolColor.opacity(0.16))
+                        .frame(width: 72, height: 72)
+                    Image(systemName: symbol)
+                        .font(.system(size: 30, weight: .bold))
+                        .foregroundColor(symbolColor)
+                }
+
+                VStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 30, weight: .black))
+                        .multilineTextAlignment(.center)
+
+                    Text(subtitle)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .frame(maxWidth: 560)
+                }
             }
+
+            content
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 34)
+        .padding(.top, 34)
+        .padding(.bottom, 18)
+    }
+}
+
+private struct OnboardingThemeCard: View {
+    let preset: ThemePreset
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 7) {
+                ZStack(alignment: .bottomLeading) {
+                    ThemePresetBackground(presetID: preset.id)
+                        .frame(width: 112, height: 68)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
+                            .padding(6)
+                    }
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.14), lineWidth: isSelected ? 3 : 1)
+                )
+
+                Text(preset.name)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .frame(width: 112)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct OnboardingToggleRow: View {
+    let icon: String
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 13, weight: .semibold))
+        }
+        .toggleStyle(.switch)
+    }
+}
+
+private struct OnboardingFeatureRow: View {
+    let icon: String
+    let color: Color
+    let title: String
+    let desc: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(color.opacity(0.14))
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(color)
+            }
+            .frame(width: 38, height: 38)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 14, weight: .bold))
+                Text(desc)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
         }
     }
 }

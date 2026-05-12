@@ -80,6 +80,14 @@ class DashboardManager: ObservableObject {
                 self?.refreshWidgets()
             }
             .store(in: &cancellables)
+
+        // ⚡️ NEW: Observe playing state for turntable/cassette auto-hide
+        NowPlayingManager.shared.$isPlaying
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.refreshWidgets()
+            }
+            .store(in: &cancellables)
         
         refreshWidgets()
     }
@@ -135,9 +143,16 @@ class DashboardManager: ObservableObject {
         let ytQueueAutoHide = UserDefaults.standard.object(forKey: "plugin_youtube_queue_auto_hide") as? Bool ?? true
         let ytPlaylistsAutoHide = UserDefaults.standard.object(forKey: "plugin_youtube_playlists_auto_hide") as? Bool ?? true
         
+        // ⚡️ Auto-hide logic for Turntable and Cassette
+        let turntableAutoHide = UserDefaults.standard.object(forKey: "plugin_turntable_player_auto_hide") as? Bool ?? true
+        let cassetteAutoHide = UserDefaults.standard.object(forKey: "plugin_cassette_tape_auto_hide") as? Bool ?? true
+        
         let lastBrowser = NowPlayingManager.shared.lastActiveBrowser ?? ""
         let isSpotifyActive = lastBrowser == "SpotifyNative" || lastBrowser.contains("Spotify")
         let isYTActive = lastBrowser.contains("YouTube Music") || lastBrowser.contains("Music.YouTube")
+        
+        // ⚡️ Only hide if NO music is detected at all (even if paused)
+        let isMusicDetected = NowPlayingManager.shared.isPlaying || NowPlayingManager.shared.currentSong != "No Music"
         
         let order = getWidgetOrder()
         var widgets: [NotchWidgetType] = []
@@ -161,8 +176,22 @@ class DashboardManager: ObservableObject {
                         widgets.append(.spotifyPlaylists)
                     }
                 }
-            case .turntable: if turntableEnabled { widgets.append(.turntable) }
-            case .cassette: if cassetteEnabled { widgets.append(.cassette) }
+            case .turntable:
+                if turntableEnabled {
+                    if turntableAutoHide && !isMusicDetected {
+                        // Skip adding it
+                    } else {
+                        widgets.append(.turntable)
+                    }
+                }
+            case .cassette:
+                if cassetteEnabled {
+                    if cassetteAutoHide && !isMusicDetected {
+                        // Skip adding it
+                    } else {
+                        widgets.append(.cassette)
+                    }
+                }
             case .youtubeQueue:
                 if ytQueueEnabled {
                     if ytQueueAutoHide && !isYTActive {

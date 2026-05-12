@@ -52,7 +52,7 @@ struct ThemePreset: Identifiable, Equatable {
     static let defaultID = ThemePresetStyle.venturaGlow.rawValue
 
     static let all: [ThemePreset] = [
-        ThemePreset(id: ThemePresetStyle.venturaGlow.rawValue, name: "Ventura", subtitle: "Warm abstract layers", category: .dynamic, style: .venturaGlow),
+        ThemePreset(id: ThemePresetStyle.venturaGlow.rawValue, name: "Ventura", subtitle: "Muted warm abstract", category: .dynamic, style: .venturaGlow),
         ThemePreset(id: ThemePresetStyle.tahoeBlue.rawValue, name: "Tahoe", subtitle: "Blue dynamic waves", category: .dynamic, style: .tahoeBlue),
         ThemePreset(id: ThemePresetStyle.sequoiaPrism.rawValue, name: "Sequoia", subtitle: "Sharp color prisms", category: .dynamic, style: .sequoiaPrism),
         ThemePreset(id: ThemePresetStyle.sonomaRibbon.rawValue, name: "Sonoma", subtitle: "Rolling color ribbon", category: .dynamic, style: .sonomaRibbon),
@@ -104,9 +104,11 @@ struct ThemePresetBackground: View {
         case .venturaGlow:
             LinearGradient(
                 colors: [
-                    Color(red: 0.08, green: 0.50, blue: 0.86),
-                    Color(red: 0.99, green: 0.63, blue: 0.12),
-                    Color(red: 0.93, green: 0.20, blue: 0.20)
+                    Color(red: 0.05, green: 0.16, blue: 0.38),
+                    Color(red: 0.33, green: 0.34, blue: 0.58),
+                    Color(red: 0.82, green: 0.42, blue: 0.18),
+                    Color(red: 0.70, green: 0.18, blue: 0.16),
+                    Color(red: 0.14, green: 0.04, blue: 0.14)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -259,9 +261,10 @@ struct ThemePresetBackground: View {
     private func detailLayer(for style: ThemePresetStyle, size: CGSize) -> some View {
         switch style {
         case .venturaGlow:
-            ellipse(color: .yellow.opacity(0.45), width: 0.70, height: 0.72, x: -0.18, y: -0.12, rotation: -24)
-            ellipse(color: .orange.opacity(0.55), width: 0.74, height: 0.74, x: 0.20, y: 0.03, rotation: 22)
-            ellipse(color: .blue.opacity(0.40), width: 0.72, height: 0.82, x: -0.30, y: 0.32, rotation: 14)
+            softEllipse(color: Color(red: 1.00, green: 0.72, blue: 0.28).opacity(0.18), width: 0.66, height: 0.56, x: 0.16, y: -0.02, rotation: 18)
+            softEllipse(color: Color(red: 0.95, green: 0.28, blue: 0.24).opacity(0.20), width: 0.70, height: 0.62, x: 0.24, y: 0.26, rotation: -14)
+            softEllipse(color: Color(red: 0.14, green: 0.52, blue: 0.86).opacity(0.28), width: 0.72, height: 0.72, x: -0.30, y: -0.20, rotation: -18)
+            softEllipse(color: Color(red: 0.46, green: 0.18, blue: 0.66).opacity(0.18), width: 0.64, height: 0.62, x: -0.18, y: 0.26, rotation: 26)
         case .tahoeBlue:
             diagonalRibbon(size: size, color: .white.opacity(0.20), y: 0.36, height: 0.16, slope: -0.20)
             diagonalRibbon(size: size, color: .cyan.opacity(0.28), y: 0.50, height: 0.22, slope: -0.12)
@@ -314,6 +317,16 @@ struct ThemePresetBackground: View {
             .rotationEffect(.degrees(rotation))
             .blur(radius: 18)
             .blendMode(.plusLighter)
+    }
+
+    private func softEllipse(color: Color, width: CGFloat, height: CGFloat, x: CGFloat, y: CGFloat, rotation: Double) -> some View {
+        Ellipse()
+            .fill(color)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .scaleEffect(x: width, y: height)
+            .offset(x: x * 240, y: y * 160)
+            .rotationEffect(.degrees(rotation))
+            .blur(radius: 22)
     }
 
     private func diagonalRibbon(size: CGSize, color: Color, y: CGFloat, height: CGFloat, slope: CGFloat) -> some View {
