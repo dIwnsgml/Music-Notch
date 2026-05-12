@@ -15,6 +15,438 @@ private enum FileDropTypeIdentifiers {
     ]
 }
 
+enum ThemePresetCategory: String, CaseIterable, Identifiable {
+    case dynamic = "Dynamic Wallpapers"
+    case landscape = "Landscape"
+    case cityscape = "Cityscape"
+    case minimal = "Minimal"
+
+    var id: String { rawValue }
+}
+
+enum ThemePresetStyle: String {
+    case venturaGlow
+    case tahoeBlue
+    case sequoiaPrism
+    case sonomaRibbon
+    case macintoshMono
+    case tahoeDay
+    case sequoiaSunrise
+    case sonomaHorizon
+    case coastalDrift
+    case dubaiHaze
+    case glassTowers
+    case nightCrossing
+    case graphiteGlass
+    case cherryBlossom
+    case cobaltBloom
+}
+
+struct ThemePreset: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let subtitle: String
+    let category: ThemePresetCategory
+    let style: ThemePresetStyle
+
+    static let defaultID = ThemePresetStyle.venturaGlow.rawValue
+
+    static let all: [ThemePreset] = [
+        ThemePreset(id: ThemePresetStyle.venturaGlow.rawValue, name: "Ventura", subtitle: "Warm abstract layers", category: .dynamic, style: .venturaGlow),
+        ThemePreset(id: ThemePresetStyle.tahoeBlue.rawValue, name: "Tahoe", subtitle: "Blue dynamic waves", category: .dynamic, style: .tahoeBlue),
+        ThemePreset(id: ThemePresetStyle.sequoiaPrism.rawValue, name: "Sequoia", subtitle: "Sharp color prisms", category: .dynamic, style: .sequoiaPrism),
+        ThemePreset(id: ThemePresetStyle.sonomaRibbon.rawValue, name: "Sonoma", subtitle: "Rolling color ribbon", category: .dynamic, style: .sonomaRibbon),
+        ThemePreset(id: ThemePresetStyle.macintoshMono.rawValue, name: "Macintosh", subtitle: "Classic mono pattern", category: .dynamic, style: .macintoshMono),
+        ThemePreset(id: ThemePresetStyle.tahoeDay.rawValue, name: "Tahoe Day", subtitle: "Lake and mountain light", category: .landscape, style: .tahoeDay),
+        ThemePreset(id: ThemePresetStyle.sequoiaSunrise.rawValue, name: "Sequoia Sunrise", subtitle: "Forest morning glow", category: .landscape, style: .sequoiaSunrise),
+        ThemePreset(id: ThemePresetStyle.sonomaHorizon.rawValue, name: "Sonoma Horizon", subtitle: "Soft hills at sunset", category: .landscape, style: .sonomaHorizon),
+        ThemePreset(id: ThemePresetStyle.coastalDrift.rawValue, name: "Coastal Drift", subtitle: "Beach and water split", category: .landscape, style: .coastalDrift),
+        ThemePreset(id: ThemePresetStyle.dubaiHaze.rawValue, name: "Dubai Haze", subtitle: "Golden skyline wash", category: .cityscape, style: .dubaiHaze),
+        ThemePreset(id: ThemePresetStyle.glassTowers.rawValue, name: "Glass Towers", subtitle: "Cool architectural glass", category: .cityscape, style: .glassTowers),
+        ThemePreset(id: ThemePresetStyle.nightCrossing.rawValue, name: "Night Crossing", subtitle: "Neon city lights", category: .cityscape, style: .nightCrossing),
+        ThemePreset(id: ThemePresetStyle.graphiteGlass.rawValue, name: "Graphite", subtitle: "Quiet dark glass", category: .minimal, style: .graphiteGlass),
+        ThemePreset(id: ThemePresetStyle.cherryBlossom.rawValue, name: "Cherry Blossom", subtitle: "Soft pink canopy", category: .minimal, style: .cherryBlossom),
+        ThemePreset(id: ThemePresetStyle.cobaltBloom.rawValue, name: "Cobalt Bloom", subtitle: "Deep blue glow", category: .minimal, style: .cobaltBloom)
+    ]
+
+    static func preset(id: String) -> ThemePreset {
+        all.first { $0.id == id } ?? all[0]
+    }
+
+    static func presets(in category: ThemePresetCategory) -> [ThemePreset] {
+        all.filter { $0.category == category }
+    }
+}
+
+struct ThemePresetBackground: View {
+    let presetID: String
+
+    private var style: ThemePresetStyle {
+        ThemePreset.preset(id: presetID).style
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+
+            ZStack {
+                baseLayer(for: style)
+                detailLayer(for: style, size: size)
+            }
+            .frame(width: size.width, height: size.height)
+            .clipped()
+        }
+    }
+
+    @ViewBuilder
+    private func baseLayer(for style: ThemePresetStyle) -> some View {
+        switch style {
+        case .venturaGlow:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.08, green: 0.50, blue: 0.86),
+                    Color(red: 0.99, green: 0.63, blue: 0.12),
+                    Color(red: 0.93, green: 0.20, blue: 0.20)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .tahoeBlue:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.64, green: 0.91, blue: 1.00),
+                    Color(red: 0.09, green: 0.37, blue: 0.92),
+                    Color(red: 0.02, green: 0.10, blue: 0.44)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .sequoiaPrism:
+            LinearGradient(
+                colors: [
+                    Color(red: 1.00, green: 0.43, blue: 0.58),
+                    Color(red: 0.99, green: 0.66, blue: 0.14),
+                    Color(red: 0.42, green: 0.24, blue: 0.92),
+                    Color(red: 0.12, green: 0.75, blue: 0.92)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .sonomaRibbon:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.99, green: 0.34, blue: 0.24),
+                    Color(red: 0.10, green: 0.56, blue: 0.95),
+                    Color(red: 0.36, green: 0.82, blue: 0.28)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .macintoshMono:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.82, green: 0.82, blue: 0.82),
+                    Color(red: 0.54, green: 0.54, blue: 0.56),
+                    Color(red: 0.16, green: 0.16, blue: 0.18)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .tahoeDay:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.54, green: 0.82, blue: 1.00),
+                    Color(red: 0.12, green: 0.48, blue: 0.90),
+                    Color(red: 0.03, green: 0.33, blue: 0.58)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        case .sequoiaSunrise:
+            LinearGradient(
+                colors: [
+                    Color(red: 1.00, green: 0.68, blue: 0.28),
+                    Color(red: 0.50, green: 0.26, blue: 0.12),
+                    Color(red: 0.08, green: 0.18, blue: 0.09)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        case .sonomaHorizon:
+            LinearGradient(
+                colors: [
+                    Color(red: 1.00, green: 0.73, blue: 0.38),
+                    Color(red: 0.51, green: 0.67, blue: 0.25),
+                    Color(red: 0.17, green: 0.34, blue: 0.17)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .coastalDrift:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.03, green: 0.47, blue: 0.68),
+                    Color(red: 0.15, green: 0.75, blue: 0.80),
+                    Color(red: 0.95, green: 0.77, blue: 0.42)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .dubaiHaze:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.96, green: 0.76, blue: 0.55),
+                    Color(red: 0.64, green: 0.38, blue: 0.67),
+                    Color(red: 0.11, green: 0.11, blue: 0.20)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        case .glassTowers:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.78, green: 0.90, blue: 0.96),
+                    Color(red: 0.35, green: 0.58, blue: 0.72),
+                    Color(red: 0.09, green: 0.17, blue: 0.24)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .nightCrossing:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.02, green: 0.02, blue: 0.08),
+                    Color(red: 0.10, green: 0.04, blue: 0.22),
+                    Color(red: 0.80, green: 0.05, blue: 0.58)
+                ],
+                startPoint: .top,
+                endPoint: .bottomTrailing
+            )
+        case .graphiteGlass:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.16, green: 0.17, blue: 0.18),
+                    Color(red: 0.04, green: 0.05, blue: 0.06),
+                    Color(red: 0.28, green: 0.25, blue: 0.22)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .cherryBlossom:
+            LinearGradient(
+                colors: [
+                    Color(red: 1.00, green: 0.79, blue: 0.89),
+                    Color(red: 0.92, green: 0.30, blue: 0.55),
+                    Color(red: 0.23, green: 0.32, blue: 0.46)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .cobaltBloom:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.02, green: 0.10, blue: 0.36),
+                    Color(red: 0.08, green: 0.34, blue: 0.80),
+                    Color(red: 0.76, green: 0.18, blue: 0.56)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func detailLayer(for style: ThemePresetStyle, size: CGSize) -> some View {
+        switch style {
+        case .venturaGlow:
+            ellipse(color: .yellow.opacity(0.45), width: 0.70, height: 0.72, x: -0.18, y: -0.12, rotation: -24)
+            ellipse(color: .orange.opacity(0.55), width: 0.74, height: 0.74, x: 0.20, y: 0.03, rotation: 22)
+            ellipse(color: .blue.opacity(0.40), width: 0.72, height: 0.82, x: -0.30, y: 0.32, rotation: 14)
+        case .tahoeBlue:
+            diagonalRibbon(size: size, color: .white.opacity(0.20), y: 0.36, height: 0.16, slope: -0.20)
+            diagonalRibbon(size: size, color: .cyan.opacity(0.28), y: 0.50, height: 0.22, slope: -0.12)
+        case .sequoiaPrism:
+            prism(size: size, color: .white.opacity(0.22), points: [CGPoint(x: 0.08, y: 1.0), CGPoint(x: 0.42, y: 0.0), CGPoint(x: 0.70, y: 1.0)])
+            prism(size: size, color: .purple.opacity(0.28), points: [CGPoint(x: 0.45, y: 0.0), CGPoint(x: 1.0, y: 0.18), CGPoint(x: 0.68, y: 1.0)])
+            prism(size: size, color: .yellow.opacity(0.20), points: [CGPoint(x: 0.0, y: 0.18), CGPoint(x: 0.37, y: 0.0), CGPoint(x: 0.18, y: 0.75)])
+        case .sonomaRibbon:
+            diagonalRibbon(size: size, color: .green.opacity(0.35), y: 0.55, height: 0.26, slope: 0.18)
+            diagonalRibbon(size: size, color: .red.opacity(0.34), y: 0.26, height: 0.22, slope: -0.18)
+            ellipse(color: .blue.opacity(0.25), width: 0.65, height: 0.55, x: 0.28, y: -0.15, rotation: 12)
+        case .macintoshMono:
+            symbolPattern(size: size)
+        case .tahoeDay:
+            mountain(size: size, color: Color.white.opacity(0.70), peakX: 0.34, peakY: 0.20, baseY: 0.62)
+            mountain(size: size, color: Color(red: 0.08, green: 0.22, blue: 0.34).opacity(0.62), peakX: 0.74, peakY: 0.30, baseY: 0.66)
+            lake(size: size, color: Color.cyan.opacity(0.35), y: 0.60)
+        case .sequoiaSunrise:
+            forest(size: size)
+            ellipse(color: .orange.opacity(0.34), width: 0.55, height: 0.55, x: 0.20, y: -0.22, rotation: 0)
+        case .sonomaHorizon:
+            rollingHills(size: size)
+        case .coastalDrift:
+            diagonalRibbon(size: size, color: .white.opacity(0.72), y: 0.58, height: 0.10, slope: -0.28)
+            diagonalRibbon(size: size, color: .green.opacity(0.26), y: 0.12, height: 0.36, slope: -0.20)
+        case .dubaiHaze:
+            skyline(size: size, warm: true)
+        case .glassTowers:
+            glassTowers(size: size)
+        case .nightCrossing:
+            skyline(size: size, warm: false)
+            diagonalRibbon(size: size, color: .cyan.opacity(0.28), y: 0.64, height: 0.08, slope: 0.10)
+        case .graphiteGlass:
+            ellipse(color: .white.opacity(0.08), width: 0.70, height: 0.42, x: -0.18, y: -0.18, rotation: -15)
+            ellipse(color: .orange.opacity(0.12), width: 0.58, height: 0.60, x: 0.30, y: 0.18, rotation: 20)
+        case .cherryBlossom:
+            blossomPattern(size: size)
+        case .cobaltBloom:
+            ellipse(color: .cyan.opacity(0.35), width: 0.68, height: 0.62, x: -0.20, y: -0.10, rotation: -18)
+            ellipse(color: .pink.opacity(0.32), width: 0.72, height: 0.70, x: 0.25, y: 0.20, rotation: 15)
+        }
+    }
+
+    private func ellipse(color: Color, width: CGFloat, height: CGFloat, x: CGFloat, y: CGFloat, rotation: Double) -> some View {
+        Ellipse()
+            .fill(color)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .scaleEffect(x: width, y: height)
+            .offset(x: x * 240, y: y * 160)
+            .rotationEffect(.degrees(rotation))
+            .blur(radius: 18)
+            .blendMode(.plusLighter)
+    }
+
+    private func diagonalRibbon(size: CGSize, color: Color, y: CGFloat, height: CGFloat, slope: CGFloat) -> some View {
+        Path { path in
+            path.move(to: CGPoint(x: 0, y: size.height * y))
+            path.addLine(to: CGPoint(x: size.width, y: size.height * (y + slope)))
+            path.addLine(to: CGPoint(x: size.width, y: size.height * (y + slope + height)))
+            path.addLine(to: CGPoint(x: 0, y: size.height * (y + height)))
+            path.closeSubpath()
+        }
+        .fill(color)
+        .blur(radius: 4)
+    }
+
+    private func prism(size: CGSize, color: Color, points: [CGPoint]) -> some View {
+        Path { path in
+            guard let first = points.first else { return }
+            path.move(to: CGPoint(x: first.x * size.width, y: first.y * size.height))
+            for point in points.dropFirst() {
+                path.addLine(to: CGPoint(x: point.x * size.width, y: point.y * size.height))
+            }
+            path.closeSubpath()
+        }
+        .fill(color)
+    }
+
+    private func mountain(size: CGSize, color: Color, peakX: CGFloat, peakY: CGFloat, baseY: CGFloat) -> some View {
+        Path { path in
+            path.move(to: CGPoint(x: 0, y: size.height * baseY))
+            path.addLine(to: CGPoint(x: size.width * peakX, y: size.height * peakY))
+            path.addLine(to: CGPoint(x: size.width, y: size.height * baseY))
+            path.addLine(to: CGPoint(x: size.width, y: size.height))
+            path.addLine(to: CGPoint(x: 0, y: size.height))
+            path.closeSubpath()
+        }
+        .fill(color)
+    }
+
+    private func lake(size: CGSize, color: Color, y: CGFloat) -> some View {
+        Path { path in
+            path.move(to: CGPoint(x: 0, y: size.height * y))
+            path.addCurve(
+                to: CGPoint(x: size.width, y: size.height * (y + 0.03)),
+                control1: CGPoint(x: size.width * 0.26, y: size.height * (y - 0.06)),
+                control2: CGPoint(x: size.width * 0.68, y: size.height * (y + 0.10))
+            )
+            path.addLine(to: CGPoint(x: size.width, y: size.height))
+            path.addLine(to: CGPoint(x: 0, y: size.height))
+            path.closeSubpath()
+        }
+        .fill(color)
+    }
+
+    private func forest(size: CGSize) -> some View {
+        ZStack {
+            ForEach(0..<13, id: \.self) { index in
+                let x = CGFloat(index) / 12.0
+                Rectangle()
+                    .fill(Color(red: 0.09, green: 0.14, blue: 0.08).opacity(index.isMultiple(of: 2) ? 0.70 : 0.45))
+                    .frame(width: max(2, size.width * 0.025), height: size.height * (0.42 + CGFloat(index % 4) * 0.08))
+                    .offset(x: (x - 0.5) * size.width, y: size.height * 0.18)
+            }
+        }
+    }
+
+    private func rollingHills(size: CGSize) -> some View {
+        ZStack {
+            lake(size: size, color: Color(red: 0.42, green: 0.57, blue: 0.22).opacity(0.58), y: 0.45)
+            lake(size: size, color: Color(red: 0.17, green: 0.35, blue: 0.14).opacity(0.74), y: 0.63)
+        }
+    }
+
+    private func skyline(size: CGSize, warm: Bool) -> some View {
+        ZStack(alignment: .bottom) {
+            ForEach(0..<12, id: \.self) { index in
+                let height = size.height * (0.20 + CGFloat((index * 7) % 8) * 0.035)
+                Rectangle()
+                    .fill((warm ? Color(red: 0.18, green: 0.12, blue: 0.20) : Color.black).opacity(0.55))
+                    .frame(width: size.width * 0.08, height: height)
+                    .offset(x: (CGFloat(index) / 11.0 - 0.5) * size.width, y: size.height * 0.36 - height / 2)
+            }
+            Path { path in
+                path.move(to: CGPoint(x: size.width * 0.58, y: size.height * 0.85))
+                path.addLine(to: CGPoint(x: size.width * 0.62, y: size.height * 0.18))
+                path.addLine(to: CGPoint(x: size.width * 0.67, y: size.height * 0.85))
+                path.closeSubpath()
+            }
+            .fill((warm ? Color.orange : Color.cyan).opacity(0.24))
+        }
+    }
+
+    private func glassTowers(size: CGSize) -> some View {
+        ZStack {
+            ForEach(0..<5, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.white.opacity(0.16))
+                    .frame(width: size.width * 0.18, height: size.height * (0.55 + CGFloat(index % 2) * 0.18))
+                    .rotationEffect(.degrees(index.isMultiple(of: 2) ? -8 : 9))
+                    .offset(x: (CGFloat(index) - 2) * size.width * 0.17, y: size.height * 0.08)
+            }
+        }
+    }
+
+    private func symbolPattern(size: CGSize) -> some View {
+        ZStack {
+            ForEach(0..<18, id: \.self) { index in
+                Image(systemName: ["command", "sparkles", "cursorarrow", "folder", "paintbrush"][index % 5])
+                    .font(.system(size: max(8, size.width * 0.08), weight: .bold))
+                    .foregroundColor(.black.opacity(0.18))
+                    .rotationEffect(.degrees(Double((index * 23) % 360)))
+                    .offset(
+                        x: (CGFloat(index % 6) / 5.0 - 0.5) * size.width * 0.95,
+                        y: (CGFloat(index / 6) / 2.0 - 0.5) * size.height * 0.86
+                    )
+            }
+        }
+    }
+
+    private func blossomPattern(size: CGSize) -> some View {
+        ZStack {
+            ForEach(0..<22, id: \.self) { index in
+                Circle()
+                    .fill(index.isMultiple(of: 2) ? Color.white.opacity(0.22) : Color.pink.opacity(0.28))
+                    .frame(width: size.width * 0.07, height: size.width * 0.07)
+                    .offset(
+                        x: (CGFloat((index * 37) % 100) / 100.0 - 0.5) * size.width,
+                        y: (CGFloat((index * 61) % 100) / 100.0 - 0.5) * size.height
+                    )
+            }
+        }
+    }
+}
+
 enum AppTab {
     case player
     case playlist
@@ -43,7 +475,8 @@ struct ContentView: View {
     @State private var isAppHidden = false
 
     // ⚡️ THEME
-    @AppStorage("themeBackgroundType") var themeBackgroundType: String = "color"
+    @AppStorage("themeBackgroundType") var themeBackgroundType: String = "preset"
+    @AppStorage("themePresetID") var themePresetID: String = ThemePreset.defaultID
     @AppStorage("themeBackgroundColorHex") var themeBackgroundColorHex: String = "000000"
     @AppStorage("themeBackgroundImagePath") var themeBackgroundImagePath: String = ""
     @AppStorage("themeBackgroundOpacity") var themeBackgroundOpacity: Double = 1.0
@@ -129,6 +562,23 @@ struct ContentView: View {
         expandedHeight(for: layoutWidgets)
     }
 
+    private var showsCollapsedBanner: Bool {
+        let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
+        return isShowingBanner || shouldShowPomodoroTimerBanner || (isShowingLyricBanner && hasMedia)
+    }
+
+    private var currentCollapsedHeight: CGFloat {
+        showsCollapsedBanner ? (notchHeight + bannerHeightAddon) : notchHeight
+    }
+
+    private var currentWidth: CGFloat {
+        isExpanded ? expandedWidth : collapsedWidth
+    }
+
+    private var currentHeight: CGFloat {
+        isExpanded ? expandedHeight : currentCollapsedHeight
+    }
+
     private var isFileDropMode: Bool {
         fileTrayPluginEnabled && isFileDropTargeted
     }
@@ -175,11 +625,6 @@ struct ContentView: View {
 
     var body: some View {
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
-
-        let currentWidth: CGFloat = isExpanded ? expandedWidth : collapsedWidth
-        let showsCollapsedBanner = isShowingBanner || isShowingLyricBanner || shouldShowPomodoroTimerBanner
-        let currentCollapsedHeight: CGFloat = showsCollapsedBanner ? (notchHeight + bannerHeightAddon) : notchHeight
-        let currentHeight: CGFloat = isExpanded ? expandedHeight : currentCollapsedHeight
 
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
@@ -253,6 +698,9 @@ struct ContentView: View {
             expandedLayerRenderTask = nil
         }
         .onChange(of: themeBackgroundImagePath) { _, _ in
+            loadThemeImage()
+        }
+        .onChange(of: themeBackgroundType) { _, _ in
             loadThemeImage()
         }
         .onChange(of: isExpanded) { _, expanded in
@@ -406,7 +854,12 @@ struct ContentView: View {
             .opacity(themeBackgroundType == "color" ? themeBackgroundOpacity : 1.0)
             .overlay(
                 Group {
-                    if themeBackgroundType == "image", let nsImage = cachedThemeImage {
+                    if themeBackgroundType == "preset" {
+                        ThemePresetBackground(presetID: themePresetID)
+                            .frame(width: currentWidth, height: currentHeight)
+                            .opacity(themeBackgroundOpacity)
+                            .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: notchBlendRadius))
+                    } else if themeBackgroundType == "image", let nsImage = cachedThemeImage {
                         Image(nsImage: nsImage)
                             .resizable()
                             .scaledToFill()
@@ -529,8 +982,7 @@ struct ContentView: View {
             .padding(.horizontal, 24)
             .frame(height: notchHeight)
 
-            let showAnyBanner: Bool = isShowingBanner || showTimerBanner || (isShowingLyricBanner && hasMedia)
-            if showAnyBanner {
+            if showsCollapsedBanner {
                 ZStack {
                     if isShowingBanner {
                         MarqueeText(text: bannerText, font: .system(size: 12, weight: .bold), alignment: .center)

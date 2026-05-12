@@ -47,7 +47,8 @@ struct SettingsView: View {
     @AppStorage("enableAnalytics") var enableAnalytics = true
 
     // ⚡️ THEME
-    @AppStorage("themeBackgroundType") var themeBackgroundType: String = "color"
+    @AppStorage("themeBackgroundType") var themeBackgroundType: String = "preset"
+    @AppStorage("themePresetID") var themePresetID: String = ThemePreset.defaultID
     @AppStorage("themeBackgroundColorHex") var themeBackgroundColorHex: String = "000000"
     @AppStorage("themeBackgroundImagePath") var themeBackgroundImagePath: String = ""
     @AppStorage("themeBackgroundOpacity") var themeBackgroundOpacity: Double = 1.0
@@ -156,11 +157,12 @@ struct SettingsView: View {
                         PluginStoreView()
                     } else if selectedTab == .layout {
                         DashboardSettingsView()
+                    } else if selectedTab == .theme {
+                        themeContent
                     } else {
                         Form {
                             switch selectedTab {
                             case .general: generalContent
-                            case .theme: themeContent
                             case .lyrics: lyricsContent
                             case .shortcuts: shortcutsContent
                             case .integrations: integrationsContent
@@ -181,7 +183,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .frame(width: 650, height: 550)
+        .frame(width: 820, height: 680)
         .onAppear {
             hasAccessibilityAccess = AXIsProcessTrusted()
             launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -258,120 +260,335 @@ struct SettingsView: View {
     // 🎨 THEME TAB
     // ---------------------------------------------------------
     private var themeContent: some View {
-        Group {
-            Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                themeHero
+                themePresetSection(.dynamic)
+                themePhotosSection
+                themePresetSection(.landscape)
+                themePresetSection(.cityscape)
+                themePresetSection(.minimal)
+                themeCustomizePanel
+            }
+            .padding(.horizontal, 30)
+            .padding(.vertical, 26)
+        }
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    private var selectedTheme: ThemePreset {
+        ThemePreset.preset(id: themePresetID)
+    }
+
+    private var currentThemeName: String {
+        switch themeBackgroundType {
+        case "image":
+            return themeBackgroundImagePath.isEmpty ? "Custom Photo" : URL(fileURLWithPath: themeBackgroundImagePath).deletingPathExtension().lastPathComponent
+        case "color":
+            return "Solid Color"
+        default:
+            return selectedTheme.name
+        }
+    }
+
+    private var currentThemeDescription: String {
+        switch themeBackgroundType {
+        case "image":
+            return "Uses your selected photo as the notch background."
+        case "color":
+            return "Uses a single custom color across the notch."
+        default:
+            return selectedTheme.subtitle
+        }
+    }
+
+    private var themeHero: some View {
+        HStack(alignment: .top, spacing: 20) {
+            ThemePreviewThumbnail(
+                backgroundType: themeBackgroundType,
+                presetID: themePresetID,
+                colorHex: themeBackgroundColorHex,
+                imagePath: themeBackgroundImagePath,
+                opacity: themeBackgroundOpacity,
+                blur: themeBackgroundBlur,
+                cornerRadius: 14
+            )
+            .frame(width: 260, height: 150)
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(currentThemeName)
+                            .font(.system(size: 22, weight: .bold))
+                            .lineLimit(1)
+
+                        Text(currentThemeDescription)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 12)
+
+                    Picker("Mode", selection: $themeBackgroundType) {
+                        Text("Theme").tag("preset")
+                        Text("Color").tag("color")
+                        Text("Photo").tag("image")
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 120)
+                }
+
+                Divider()
+
+                Toggle("Glassy Widget Backgrounds", isOn: $themeGlassyWidgets)
+
+                HStack(spacing: 10) {
+                    Button("Choose Photo...") {
+                        chooseThemeImage()
+                    }
+
+                    Button("Reset Theme") {
+                        applyPreset(ThemePreset.preset(id: ThemePreset.defaultID))
+                    }
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            )
+        }
+    }
+
+    private func themePresetSection(_ category: ThemePresetCategory) -> some View {
+        let presets = ThemePreset.presets(in: category)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(category.rawValue)
+                    .font(.system(size: 18, weight: .bold))
+                Spacer()
+                Text("Show All (\(presets.count))")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 18) {
+                    ForEach(presets) { preset in
+                        presetCard(preset)
+                    }
+                }
+                .padding(.vertical, 2)
+                .padding(.horizontal, 1)
+            }
+        }
+    }
+
+    private func presetCard(_ preset: ThemePreset) -> some View {
+        let isSelected = themeBackgroundType == "preset" && themePresetID == preset.id
+
+        return Button {
+            applyPreset(preset)
+        } label: {
+            VStack(alignment: .center, spacing: 8) {
+                ZStack(alignment: .bottomLeading) {
+                    ThemePresetBackground(presetID: preset.id)
+                        .frame(width: 154, height: 86)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.55), radius: 4, y: 1)
+                            .padding(8)
+                    }
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.10), lineWidth: isSelected ? 3 : 1)
+                )
+
+                Text(preset.name)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .frame(width: 154)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var themePhotosSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Your Photos")
+                .font(.system(size: 18, weight: .bold))
+
+            HStack(alignment: .top, spacing: 18) {
+                Button {
+                    chooseThemeImage()
+                } label: {
+                    VStack(spacing: 10) {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(0.07))
+                            .frame(width: 154, height: 86)
+                            .overlay(
+                                Image(systemName: "photo.badge.plus")
+                                    .font(.system(size: 28, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                            )
+
+                        Text("Add Photo...")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.secondary)
+                            .frame(width: 154)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                if !themeBackgroundImagePath.isEmpty {
+                    Button {
+                        themeBackgroundType = "image"
+                    } label: {
+                        VStack(spacing: 8) {
+                            ThemePreviewThumbnail(
+                                backgroundType: "image",
+                                presetID: themePresetID,
+                                colorHex: themeBackgroundColorHex,
+                                imagePath: themeBackgroundImagePath,
+                                opacity: themeBackgroundOpacity,
+                                blur: themeBackgroundBlur,
+                                cornerRadius: 8
+                            )
+                            .frame(width: 154, height: 86)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(themeBackgroundType == "image" ? Color.accentColor : Color.white.opacity(0.10), lineWidth: themeBackgroundType == "image" ? 3 : 1)
+                            )
+
+                            Text("Current Photo")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.primary)
+                                .frame(width: 154)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var themeCustomizePanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Customize")
+                .font(.system(size: 18, weight: .bold))
+
+            VStack(alignment: .leading, spacing: 18) {
                 Picker("Background Type", selection: $themeBackgroundType) {
+                    Text("Default Theme").tag("preset")
                     Text("Solid Color").tag("color")
-                    Text("Image").tag("image")
+                    Text("Photo").tag("image")
                 }
                 .pickerStyle(.segmented)
-            } header: { Text("Background Mode") }
 
-            if themeBackgroundType == "color" {
-                Section {
+                if themeBackgroundType == "color" {
                     ColorPicker("Notch Background Color", selection: Binding(
                         get: { Color(hex: themeBackgroundColorHex) ?? .black },
                         set: { themeBackgroundColorHex = $0.toHex() }
                     ))
-                } header: { Text("Color Settings") }
-            } else {
-                Section {
-                    HStack {
-                        if !themeBackgroundImagePath.isEmpty, let image = NSImage(contentsOfFile: themeBackgroundImagePath) {
-                            Image(nsImage: image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 80, height: 80)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .padding(.trailing, 8)
-                        } else {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.gray.opacity(0.2))
-                                .frame(width: 80, height: 80)
-                                .overlay(Image(systemName: "photo").foregroundColor(.gray))
-                                .padding(.trailing, 8)
-                        }
+                }
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(themeBackgroundImagePath.isEmpty ? "No image selected" : (URL(fileURLWithPath: themeBackgroundImagePath).lastPathComponent))
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-
-                            HStack {
-                                Button("Choose Image...") {
-                                    let panel = NSOpenPanel()
-                                    panel.allowedContentTypes = [.image]
-                                    panel.allowsMultipleSelection = false
-                                    panel.canChooseDirectories = false
-                                    panel.canChooseFiles = true
-
-                                    if panel.runModal() == .OK, let url = panel.url {
-                                        // Save a copy to our app support folder to ensure we always have access
-                                        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-                                            let appFolder = appSupport.appendingPathComponent("WaveNotch", isDirectory: true)
-                                            try? FileManager.default.createDirectory(at: appFolder, withIntermediateDirectories: true)
-
-                                            let destURL = appFolder.appendingPathComponent("custom_bg_\(UUID().uuidString).\(url.pathExtension)")
-                                            do {
-                                                try FileManager.default.copyItem(at: url, to: destURL)
-
-                                                // Clean up old image if there was one
-                                                if !themeBackgroundImagePath.isEmpty {
-                                                    try? FileManager.default.removeItem(atPath: themeBackgroundImagePath)
-                                                }
-
-                                                themeBackgroundImagePath = destURL.path
-                                            } catch {
-                                                print("Failed to copy background image: \(error)")
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if !themeBackgroundImagePath.isEmpty {
-                                    Button("Clear") {
-                                        if !themeBackgroundImagePath.isEmpty {
-                                            try? FileManager.default.removeItem(atPath: themeBackgroundImagePath)
-                                        }
-                                        themeBackgroundImagePath = ""
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } header: { Text("Image Settings") }
-            }
-
-            Section {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Background Opacity: \(Int(themeBackgroundOpacity * 100))%")
+                        .font(.system(size: 13, weight: .semibold))
                     HStack(spacing: 8) {
                         Text("0%").font(.caption).foregroundColor(.secondary).frame(width: 30, alignment: .leading)
                         Slider(value: $themeBackgroundOpacity, in: 0.0...1.0, step: 0.05).labelsHidden()
-                        Text("100%").font(.caption).foregroundColor(.secondary).frame(width: 30, alignment: .trailing)
+                        Text("100%").font(.caption).foregroundColor(.secondary).frame(width: 34, alignment: .trailing)
                     }
                 }
-                .padding(.vertical, 4)
 
                 if themeBackgroundType == "image" {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Background Blur: \(Int(themeBackgroundBlur))")
+                            .font(.system(size: 13, weight: .semibold))
                         HStack(spacing: 8) {
                             Text("0").font(.caption).foregroundColor(.secondary).frame(width: 30, alignment: .leading)
                             Slider(value: $themeBackgroundBlur, in: 0.0...40.0, step: 1.0).labelsHidden()
-                            Text("40").font(.caption).foregroundColor(.secondary).frame(width: 30, alignment: .trailing)
+                            Text("40").font(.caption).foregroundColor(.secondary).frame(width: 34, alignment: .trailing)
                         }
                     }
-                    .padding(.vertical, 4)
-                }
-            } header: { Text("Visuals") }
 
-            Section {
-                Toggle("Glassy Widget Backgrounds", isOn: $themeGlassyWidgets)
-                Text("Applies a native macOS frosted glass effect to widgets when a custom theme is active, making text easier to read.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            } header: { Text("Widget Style") }
+                    HStack(spacing: 10) {
+                        Button("Choose Image...") {
+                            chooseThemeImage()
+                        }
+
+                        if !themeBackgroundImagePath.isEmpty {
+                            Button("Clear Image") {
+                                clearThemeImage()
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            )
+        }
+    }
+
+    private func applyPreset(_ preset: ThemePreset) {
+        themePresetID = preset.id
+        themeBackgroundType = "preset"
+        themeBackgroundOpacity = 1.0
+    }
+
+    private func chooseThemeImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+
+        let appFolder = appSupport.appendingPathComponent("WaveNotch", isDirectory: true)
+        try? FileManager.default.createDirectory(at: appFolder, withIntermediateDirectories: true)
+
+        let destination = appFolder.appendingPathComponent("custom_bg_\(UUID().uuidString).\(url.pathExtension)")
+
+        do {
+            try FileManager.default.copyItem(at: url, to: destination)
+            clearThemeImage(removeStoredPathOnly: true)
+            themeBackgroundImagePath = destination.path
+            themeBackgroundType = "image"
+        } catch {
+            print("Failed to copy background image: \(error)")
+        }
+    }
+
+    private func clearThemeImage(removeStoredPathOnly: Bool = false) {
+        if !themeBackgroundImagePath.isEmpty {
+            try? FileManager.default.removeItem(atPath: themeBackgroundImagePath)
+        }
+        if !removeStoredPathOnly {
+            themeBackgroundImagePath = ""
         }
     }
 
@@ -661,6 +878,55 @@ struct SettingsView: View {
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") { NSWorkspace.shared.open(url) }
         }
         hasAccessibilityAccess = accessEnabled
+    }
+}
+
+private struct ThemePreviewThumbnail: View {
+    let backgroundType: String
+    let presetID: String
+    let colorHex: String
+    let imagePath: String
+    let opacity: Double
+    let blur: Double
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+
+            ZStack {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(backgroundType == "color" ? (Color(hex: colorHex) ?? .black) : .black)
+
+                if backgroundType == "preset" {
+                    ThemePresetBackground(presetID: presetID)
+                        .frame(width: size.width, height: size.height)
+                        .opacity(opacity)
+                } else if backgroundType == "image", let image = NSImage(contentsOfFile: imagePath) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: size.width, height: size.height)
+                        .opacity(opacity)
+                        .blur(radius: blur)
+                        .clipped()
+                } else if backgroundType == "image" {
+                    VStack(spacing: 8) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 26, weight: .semibold))
+                        Text("No Photo")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundColor(.secondary)
+                }
+
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
+            }
+            .frame(width: size.width, height: size.height)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
+        .clipped()
     }
 }
 

@@ -919,6 +919,7 @@ private struct CassetteTapeDeckView: View {
     var body: some View {
         ZStack {
             cassetteShell
+            cassetteBottom
             cassetteLabel
             staticTapeWindowBackground
             AnimatedCassetteReels(
@@ -928,7 +929,6 @@ private struct CassetteTapeDeckView: View {
                 isPlaying: isPlaying,
                 reelSpeed: reelSpeed
             )
-            cassetteBottom
             screws
         }
         .frame(width: width, height: height)
@@ -1024,6 +1024,8 @@ private struct CassetteTapeDeckView: View {
         let coverSize = min(height * 0.17, 34)
         let titleLeft = showAlbumCover ? width * 0.24 : width * 0.14
         let titleWidth = width * 0.56 // Increased to prevent horizontal truncation
+        let authorLeft = width * 0.115
+        let authorWidth = width * 0.395
 
         let currentLabelColor = baseLabelColor
 
@@ -1064,8 +1066,8 @@ private struct CassetteTapeDeckView: View {
                 .animation(.easeInOut(duration: 0.5), value: currentLabelColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.62)
-                .frame(width: width * 0.42, alignment: .leading)
-                .position(x: width * 0.30, y: height * 0.30)
+                .frame(width: authorWidth, alignment: .leading)
+                .position(x: authorLeft + authorWidth / 2, y: height * 0.30)
 
             VStack(alignment: .trailing, spacing: -4) {
                 Text("90")
