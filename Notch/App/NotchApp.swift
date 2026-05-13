@@ -28,6 +28,8 @@ extension Notification.Name {
     static let fileTrayDropTargetChanged = Notification.Name("FileTrayDropTargetChanged")
     static let fileTrayDropCompleted = Notification.Name("FileTrayDropCompleted")
     static let pomodoroSessionCompleted = Notification.Name("PomodoroSessionCompleted")
+    static let screenCaptureWillStart = Notification.Name("ScreenCaptureWillStart")
+    static let screenCaptureDidFinish = Notification.Name("ScreenCaptureDidFinish")
 }
 
 @main
@@ -444,6 +446,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.scheduleSkyLightRestore(after: 0.35)
             }
         }
+        NotificationCenter.default.addObserver(forName: .screenCaptureWillStart, object: nil, queue: .main) { _ in
+            self.hidePanelForScreenCapture()
+        }
+        NotificationCenter.default.addObserver(forName: .screenCaptureDidFinish, object: nil, queue: .main) { _ in
+            self.restorePanelAfterScreenCapture()
+        }
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -518,6 +526,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.enableSkyLight()
             }
         }
+    }
+
+    private func hidePanelForScreenCapture() {
+        disableSkyLight()
+        panel.orderOut(nil)
+    }
+
+    private func restorePanelAfterScreenCapture() {
+        centerPanel(on: screenForPanel() ?? NSScreen.main ?? NSScreen.screens.first)
+        panel.orderFrontRegardless()
+        scheduleSkyLightRestore(after: 0.15)
     }
 
     private func repositionAfterScreenChange() {

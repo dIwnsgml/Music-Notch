@@ -1086,6 +1086,7 @@ struct ContentView: View {
         case .clipboard, .fileTray, .tasks: return 220
         case .kaomoji: return 220
         case .weather: return 132
+        case .screenCapture: return 174
         default: return 160
         }
     }

@@ -121,6 +121,15 @@ class PluginManager: ObservableObject {
             assetImageName: nil,
             category: .system,
             storageKeyBase: "plugin_weather"
+        ),
+        WaveNotchPlugin(
+            id: "screen_capture",
+            name: "Screen Capture",
+            description: "Take fullscreen, area, window, and clipboard screenshots, plus quick screen recordings from the notch.",
+            iconName: "camera.viewfinder",
+            assetImageName: nil,
+            category: .system,
+            storageKeyBase: "plugin_screen_capture"
         )
     ]
 }

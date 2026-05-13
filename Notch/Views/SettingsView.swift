@@ -1095,6 +1095,7 @@ struct DashboardSettingsView: View {
     @AppStorage("plugin_tasks_enabled") var tasksEnabled = false
     @AppStorage("plugin_kaomoji_board_enabled") var kaomojiEnabled = false
     @AppStorage("plugin_weather_enabled") var weatherEnabled = false
+    @AppStorage("plugin_screen_capture_enabled") var screenCaptureEnabled = false
     @AppStorage("expandedPadding") var expandedPadding: Double = 16.0
 
     var body: some View {
@@ -1190,6 +1191,7 @@ struct DashboardSettingsView: View {
         case .tasks: return $tasksEnabled
         case .kaomoji: return $kaomojiEnabled
         case .weather: return $weatherEnabled
+        case .screenCapture: return $screenCaptureEnabled
         }
     }
 }

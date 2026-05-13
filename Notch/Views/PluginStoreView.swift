@@ -602,6 +602,8 @@ struct PluginDetailView: View {
                     )
                 } else if plugin.id == "weather" {
                     WeatherPluginSettingsView()
+                } else if plugin.id == "screen_capture" {
+                    ScreenCapturePluginSettingsView()
                 } else if plugin.id == "turntable_player" {
                     TurntablePluginSettingsView()
                 } else if plugin.id == "cassette_tape" {
@@ -690,6 +692,8 @@ struct PluginIcon: View {
             return .pink
         case let id where id.contains("weather"):
             return .orange
+        case let id where id.contains("screen_capture"):
+            return .cyan
         default:
             return .accentColor
         }
@@ -839,6 +843,172 @@ struct WeatherPluginSettingsView: View {
             Text("Weather data by Open-Meteo.")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.secondary)
+        }
+    }
+}
+
+struct ScreenCapturePluginSettingsView: View {
+    @AppStorage("screen_capture_save_location") private var saveLocation = "desktop"
+    @AppStorage("screen_capture_image_format") private var imageFormat = "png"
+    @StateObject private var capture = ScreenCaptureManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Screen Recording Permission")
+                        .font(.system(size: 13, weight: .medium))
+                    Text(capture.hasScreenCapturePermission ? "Ready for screenshots and recordings." : "Required before this plugin can capture the screen.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                Button(capture.hasScreenCapturePermission ? "Open Settings" : "Allow") {
+                    capture.hasScreenCapturePermission ? capture.openScreenRecordingSettings() : capture.requestPermission()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            Divider().opacity(0.15)
+
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Save Location")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Where captured files are saved.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Picker("", selection: $saveLocation) {
+                    Text("Desktop").tag("desktop")
+                    Text("Downloads").tag("downloads")
+                    Text("Pictures").tag("pictures")
+                }
+                .pickerStyle(.menu)
+                .frame(width: 126)
+            }
+
+            Divider().opacity(0.15)
+
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Screenshot Format")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Used for screen, area, and window captures.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Picker("", selection: $imageFormat) {
+                    Text("PNG").tag("png")
+                    Text("JPG").tag("jpg")
+                    Text("TIFF").tag("tiff")
+                    Text("PDF").tag("pdf")
+                }
+                .pickerStyle(.menu)
+                .frame(width: 126)
+            }
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Hide notch while capturing",
+                description: "Temporarily hides WaveNotch so it does not appear in screenshots or recordings.",
+                key: "screen_capture_hide_notch",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Include cursor in screenshots",
+                description: "Adds the pointer to fullscreen and clipboard captures.",
+                key: "screen_capture_include_cursor",
+                defaultValue: false
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Play capture sound",
+                description: "Use the native macOS screenshot sound for still captures.",
+                key: "screen_capture_play_sound",
+                defaultValue: false
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Open after capture",
+                description: "Open screenshots in Preview and recordings in QuickTime Player.",
+                key: "screen_capture_open_after_capture",
+                defaultValue: false
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Add captures to File Tray",
+                description: "New files are added to File Tray after successful captures.",
+                key: "screen_capture_add_to_file_tray",
+                defaultValue: false
+            )
+
+            Divider().opacity(0.15)
+
+            PomodoroSettingStepper(
+                title: "Recording Limit",
+                key: "screen_capture_recording_duration",
+                range: 0...600,
+                defaultValue: 15,
+                suffix: "sec"
+            )
+
+            Text("Set recording limit to 0 seconds to stop manually from the native recording controls.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Record microphone audio",
+                description: "Uses the default input device during screen recordings.",
+                key: "screen_capture_record_audio",
+                defaultValue: false
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show clicks in recordings",
+                description: "Displays mouse clicks in captured videos.",
+                key: "screen_capture_show_clicks",
+                defaultValue: true
+            )
+
+            Button {
+                capture.openSaveLocation()
+            } label: {
+                HStack {
+                    Image(systemName: "folder")
+                    Text("Open Capture Folder")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .onAppear {
+            capture.refreshPermissionStatus()
         }
     }
 }
