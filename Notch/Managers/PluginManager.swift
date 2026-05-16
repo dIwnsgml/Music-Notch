@@ -123,6 +123,15 @@ class PluginManager: ObservableObject {
             storageKeyBase: "plugin_weather"
         ),
         WaveNotchPlugin(
+            id: "hardware_hud",
+            name: "Hardware HUD",
+            description: "Glance at per-core CPU usage, memory pressure, and internal temperature directly in the notch.",
+            iconName: "cpu.fill",
+            assetImageName: nil,
+            category: .system,
+            storageKeyBase: "plugin_hardware_hud"
+        ),
+        WaveNotchPlugin(
             id: "screen_capture",
             name: "Screen Capture",
             description: "Take fullscreen, area, window, and clipboard screenshots, plus quick screen recordings from the notch.",

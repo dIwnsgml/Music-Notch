@@ -16,6 +16,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
     case tasks
     case kaomoji
     case weather
+    case hardwareHUD
     case screenCapture
     
     var id: String { self.rawValue }
@@ -36,6 +37,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .tasks: return "Tasks"
         case .kaomoji: return "Kaomoji & Emoji Board"
         case .weather: return "Weather"
+        case .hardwareHUD: return "Hardware HUD"
         case .screenCapture: return "Screen Capture"
         }
     }
@@ -56,6 +58,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .tasks: return UserDefaults.standard.bool(forKey: "plugin_tasks_installed")
         case .kaomoji: return UserDefaults.standard.bool(forKey: "plugin_kaomoji_board_installed")
         case .weather: return UserDefaults.standard.bool(forKey: "plugin_weather_installed")
+        case .hardwareHUD: return UserDefaults.standard.bool(forKey: "plugin_hardware_hud_installed")
         case .screenCapture: return UserDefaults.standard.bool(forKey: "plugin_screen_capture_installed")
         }
     }
@@ -134,6 +137,7 @@ class DashboardManager: ObservableObject {
         let tasksEnabled = UserDefaults.standard.bool(forKey: "plugin_tasks_enabled")
         let kaomojiEnabled = UserDefaults.standard.bool(forKey: "plugin_kaomoji_board_enabled")
         let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
+        let hardwareHUDEnabled = UserDefaults.standard.bool(forKey: "plugin_hardware_hud_enabled")
         let screenCaptureEnabled = UserDefaults.standard.bool(forKey: "plugin_screen_capture_enabled")
         if clipboardEnabled {
             _ = ClipboardHistoryManager.shared
@@ -219,6 +223,7 @@ class DashboardManager: ObservableObject {
             case .tasks: if tasksEnabled { widgets.append(.tasks) }
             case .kaomoji: if kaomojiEnabled { widgets.append(.kaomoji) }
             case .weather: if weatherEnabled { widgets.append(.weather) }
+            case .hardwareHUD: if hardwareHUDEnabled { widgets.append(.hardwareHUD) }
             case .screenCapture: if screenCaptureEnabled { widgets.append(.screenCapture) }
             }
         }

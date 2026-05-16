@@ -602,6 +602,8 @@ struct PluginDetailView: View {
                     )
                 } else if plugin.id == "weather" {
                     WeatherPluginSettingsView()
+                } else if plugin.id == "hardware_hud" {
+                    HardwareHUDPluginSettingsView()
                 } else if plugin.id == "screen_capture" {
                     ScreenCapturePluginSettingsView()
                 } else if plugin.id == "turntable_player" {
@@ -692,6 +694,8 @@ struct PluginIcon: View {
             return .pink
         case let id where id.contains("weather"):
             return .orange
+        case let id where id.contains("hardware_hud"):
+            return .mint
         case let id where id.contains("screen_capture"):
             return .cyan
         default:
@@ -844,6 +848,111 @@ struct WeatherPluginSettingsView: View {
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.secondary)
         }
+    }
+}
+
+struct HardwareHUDPluginSettingsView: View {
+    @AppStorage("hardware_hud_refresh_interval") private var refreshInterval = 2.0
+    @StateObject private var hardware = HardwareHUDManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Refresh Rate")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Lower intervals feel more live, higher intervals use less CPU.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                Picker("", selection: $refreshInterval) {
+                    Text("1 sec").tag(1.0)
+                    Text("2 sec").tag(2.0)
+                    Text("5 sec").tag(5.0)
+                    Text("10 sec").tag(10.0)
+                }
+                .pickerStyle(.menu)
+                .frame(width: 92)
+            }
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show per-core bars",
+                description: "Display individual CPU core usage instead of only the average.",
+                key: "hardware_hud_show_per_core",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show internal temperature",
+                description: "Reads SMC temperature sensors when available, otherwise uses macOS thermal state.",
+                key: "hardware_hud_show_temperature",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Current Reading")
+                        .font(.system(size: 13, weight: .medium))
+                    Text(currentReadingText)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                Button {
+                    hardware.refresh()
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Refresh")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .onAppear {
+            hardware.refresh()
+        }
+    }
+
+    private var currentReadingText: String {
+        let snapshot = hardware.snapshot
+        let cpu = "\(Int(snapshot.cpuAverage * 100))% CPU"
+        let memory = "\(formatBytes(snapshot.memoryUsedBytes)) / \(formatBytes(snapshot.memoryTotalBytes)) memory"
+        let temperature = snapshot.temperatureCelsius.map { "\(Int($0.rounded()))°C" } ?? thermalStateText(snapshot.thermalState)
+        return "\(cpu) · \(memory) · \(temperature)"
+    }
+
+    private func thermalStateText(_ state: ProcessInfo.ThermalState) -> String {
+        switch state {
+        case .nominal: return "Nominal"
+        case .fair: return "Warm"
+        case .serious: return "Hot"
+        case .critical: return "Critical"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    private func formatBytes(_ bytes: UInt64) -> String {
+        let gb = Double(bytes) / 1_073_741_824
+        if gb >= 10 {
+            return "\(Int(gb.rounded())) GB"
+        }
+        return String(format: "%.1f GB", gb)
     }
 }
 

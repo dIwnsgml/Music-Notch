@@ -44,6 +44,7 @@ struct WidgetFactoryView: View {
                     case .tasks: TasksWidget()
                     case .kaomoji: KaomojiBoardWidget()
                     case .weather: WeatherWidget()
+                    case .hardwareHUD: HardwareHUDWidget()
                     case .screenCapture: ScreenCaptureWidget()
                     }
                 }
