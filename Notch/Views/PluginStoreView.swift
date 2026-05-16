@@ -545,14 +545,14 @@ struct PluginDetailView: View {
                         title: "Show countdown text next to notch",
                         description: "Display the remaining time on the right side of the notch.",
                         key: "pomodoro_show_time_text",
-                        defaultValue: true
+                        defaultValue: false
                     )
                     Divider().opacity(0.15)
                     PluginSettingToggle(
                         title: "Show timer banner while running",
                         description: "Show the active Pomodoro countdown in the collapsed banner row.",
                         key: "pomodoro_show_timer_banner",
-                        defaultValue: false
+                        defaultValue: true
                     )
                     Divider().opacity(0.15)
                     PluginSettingToggle(

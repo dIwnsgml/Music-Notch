@@ -494,6 +494,7 @@ struct ContentView: View {
     @AppStorage("themeBackgroundImagePath") var themeBackgroundImagePath: String = ""
     @AppStorage("themeBackgroundOpacity") var themeBackgroundOpacity: Double = 1.0
     @AppStorage("themeBackgroundBlur") var themeBackgroundBlur: Double = 0.0
+    @AppStorage("themeBackgroundHoverOnly") var themeBackgroundHoverOnly = false
 
     @AppStorage("expandedPadding") var expandedPadding: Double = 16.0
 
@@ -509,8 +510,8 @@ struct ContentView: View {
     @AppStorage("plugin_pomodoro_timer_enabled") var pomodoroPluginEnabled = false
     @AppStorage("plugin_file_tray_enabled") var fileTrayPluginEnabled = false
     @AppStorage("pomodoro_show_notch_timer") var showPomodoroNotchTimer = true
-    @AppStorage("pomodoro_show_time_text") var showPomodoroTimeText = true
-    @AppStorage("pomodoro_show_timer_banner") var showPomodoroTimerBanner = false
+    @AppStorage("pomodoro_show_time_text") var showPomodoroTimeText = false
+    @AppStorage("pomodoro_show_timer_banner") var showPomodoroTimerBanner = true
     @AppStorage("pomodoro_show_mode_change_banner") var showPomodoroModeChangeBanner = true
 
     @State private var isShowingBanner = false
@@ -525,6 +526,7 @@ struct ContentView: View {
     @State private var isFileDropLayoutLocked = false
     @State private var shouldRenderExpandedLayer = false
     @State private var expandedLayerRenderTask: Task<Void, Never>? = nil
+    @State private var isHoveringNotch = false
 
     @State private var cachedThemeImage: NSImage? = nil
 
@@ -561,7 +563,17 @@ struct ContentView: View {
     let pomodoroWidgetHeight: CGFloat = 160
     let playerWidgetHeightBuffer: CGFloat = 18
 
-    var collapsedWidth: CGFloat { CGFloat(storedCollapsedWidth) }
+    private var shouldShowPomodoroCollapsedTimeText: Bool {
+        pomodoroPluginEnabled && showPomodoroTimeText
+    }
+
+    private var pomodoroCollapsedTimeTextWidthAddon: CGFloat {
+        shouldShowPomodoroCollapsedTimeText ? 72 : 0
+    }
+
+    var collapsedWidth: CGFloat {
+        CGFloat(storedCollapsedWidth) + pomodoroCollapsedTimeTextWidthAddon
+    }
 
     var activeWidgetsCount: Int {
         layoutWidgets.count
@@ -602,6 +614,14 @@ struct ContentView: View {
 
     private var layoutWidgets: [NotchWidgetType] {
         usesFileDropOnlyLayout ? [.fileTray] : dashboardManager.activeWidgets
+    }
+
+    private var shouldRevealThemeBackground: Bool {
+        !themeBackgroundHoverOnly || isHoveringNotch || isExpanded || usesFileDropOnlyLayout
+    }
+
+    private var themeLayerOpacity: Double {
+        shouldRevealThemeBackground ? themeBackgroundOpacity : 0.0
     }
 
     private var fileDropExpandedWidth: CGFloat {
@@ -661,6 +681,11 @@ struct ContentView: View {
                 settingsButtonLayer
             }
             .frame(width: currentWidth, height: currentHeight, alignment: .top)
+            .onHover { hovering in
+                if isHoveringNotch != hovering {
+                    isHoveringNotch = hovering
+                }
+            }
             .onChange(of: currentWidth) { _, _ in
                 NotificationCenter.default.post(name: NSNotification.Name("CenterAppWindow"), object: nil)
             }
@@ -683,6 +708,7 @@ struct ContentView: View {
             )
             .animation(.easeOut(duration: 0.18), value: shouldRenderExpandedLayer)
             .animation(.spring(response: 0.30, dampingFraction: 1.0, blendDuration: 0.1), value: showsCollapsedBanner)
+            .animation(.spring(response: 0.28, dampingFraction: 0.9, blendDuration: 0.08), value: collapsedWidth)
 
             Spacer()
         }
@@ -758,7 +784,12 @@ struct ContentView: View {
                     }
 
                     let mouseLoc = NSEvent.mouseLocation
-                    guard let screen = screenForHover(at: mouseLoc) else { return }
+                    guard let screen = screenForHover(at: mouseLoc) else {
+                        if isHoveringNotch {
+                            isHoveringNotch = false
+                        }
+                        return
+                    }
 
                     let currentW = isExpanded ? expandedWidth : collapsedWidth
                     let currentH = isExpanded ? expandedHeight : currentCollapsedHeight
@@ -772,6 +803,9 @@ struct ContentView: View {
                     )
 
                     let isHovering = panelRect.contains(mouseLoc)
+                    if isHoveringNotch != isHovering {
+                        isHoveringNotch = isHovering
+                    }
 
                     if isPostFileDropExpansionSuppressed {
                         hoverTask?.cancel()
@@ -863,25 +897,31 @@ struct ContentView: View {
     @ViewBuilder
     private func backgroundLayer(currentWidth: CGFloat, currentHeight: CGFloat) -> some View {
         DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: notchBlendRadius)
-            .fill(themeBackgroundType == "color" ? (Color(hex: themeBackgroundColorHex) ?? .black) : .black)
-            .opacity(themeBackgroundType == "color" ? themeBackgroundOpacity : 1.0)
+            .fill(themeBackgroundType == "color" && !themeBackgroundHoverOnly ? (Color(hex: themeBackgroundColorHex) ?? .black) : .black)
+            .opacity(themeBackgroundType == "color" && !themeBackgroundHoverOnly ? themeBackgroundOpacity : 1.0)
             .overlay(
                 Group {
-                    if themeBackgroundType == "preset" {
+                    if themeBackgroundType == "color" && themeBackgroundHoverOnly {
+                        (Color(hex: themeBackgroundColorHex) ?? .black)
+                            .frame(width: currentWidth, height: currentHeight)
+                            .opacity(themeLayerOpacity)
+                            .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: notchBlendRadius))
+                    } else if themeBackgroundType == "preset" {
                         ThemePresetBackground(presetID: themePresetID)
                             .frame(width: currentWidth, height: currentHeight)
-                            .opacity(themeBackgroundOpacity)
+                            .opacity(themeLayerOpacity)
                             .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: notchBlendRadius))
                     } else if themeBackgroundType == "image", let nsImage = cachedThemeImage {
                         Image(nsImage: nsImage)
                             .resizable()
                             .scaledToFill()
                             .frame(width: currentWidth, height: currentHeight)
-                            .opacity(themeBackgroundOpacity)
+                            .opacity(themeLayerOpacity)
                             .blur(radius: themeBackgroundBlur)
                             .clipShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: notchBlendRadius))
                     }
                 }
+                .animation(.easeInOut(duration: 0.22), value: shouldRevealThemeBackground)
             )
             .frame(width: currentWidth, height: currentHeight)
             .contentShape(DynamicNotchShape(cornerRadius: isExpanded ? 24 : 16, blendRadius: notchBlendRadius))
@@ -949,7 +989,7 @@ struct ContentView: View {
     @ViewBuilder
     private func collapsedLayer(hasMedia: Bool, currentCollapsedHeight: CGFloat) -> some View {
         let showTimerIcon = pomodoroPluginEnabled && showPomodoroNotchTimer
-        let showTimerText = pomodoroPluginEnabled && showPomodoroTimeText
+        let showTimerText = shouldShowPomodoroCollapsedTimeText
         let showTimerBanner = shouldShowPomodoroTimerBanner
 
         VStack(spacing: 0) {

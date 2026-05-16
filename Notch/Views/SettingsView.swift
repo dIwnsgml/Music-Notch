@@ -54,6 +54,7 @@ struct SettingsView: View {
     @AppStorage("themeBackgroundOpacity") var themeBackgroundOpacity: Double = 1.0
     @AppStorage("themeBackgroundBlur") var themeBackgroundBlur: Double = 0.0
     @AppStorage("themeGlassyWidgets") var themeGlassyWidgets: Bool = true
+    @AppStorage("themeBackgroundHoverOnly") var themeBackgroundHoverOnly = false
 
     // ⚡️ LYRICS & BANNER
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
@@ -65,9 +66,10 @@ struct SettingsView: View {
     @AppStorage("lyricBlurAmount") var lyricBlurAmount: Double = 0.4
     @AppStorage("globalLyricOffset") var globalLyricOffset: Double = 0.0
     @AppStorage("plugin_pomodoro_timer_installed") var pomodoroInstalled = false
+    @AppStorage("plugin_pomodoro_timer_enabled") var pomodoroEnabled = false
     @AppStorage("pomodoro_show_notch_timer") var showPomodoroNotchTimer = true
-    @AppStorage("pomodoro_show_time_text") var showPomodoroTimeText = true
-    @AppStorage("pomodoro_show_timer_banner") var showPomodoroTimerBanner = false
+    @AppStorage("pomodoro_show_time_text") var showPomodoroTimeText = false
+    @AppStorage("pomodoro_show_timer_banner") var showPomodoroTimerBanner = true
 
     @State private var hasAccessibilityAccess = false
 
@@ -280,6 +282,14 @@ struct SettingsView: View {
         ThemePreset.preset(id: themePresetID)
     }
 
+    private var pomodoroCollapsedWidthAddon: Double {
+        pomodoroEnabled && showPomodoroTimeText ? 72 : 0
+    }
+
+    private var effectiveCollapsedWidth: Double {
+        collapsedWidth + pomodoroCollapsedWidthAddon
+    }
+
     private var currentThemeName: String {
         switch themeBackgroundType {
         case "image":
@@ -394,8 +404,11 @@ struct SettingsView: View {
 
                 Spacer()
 
-                Toggle("Glassy Widgets", isOn: $themeGlassyWidgets)
-                    .font(.system(size: 12, weight: .semibold))
+                HStack(spacing: 12) {
+                    Toggle("Only On Hover", isOn: $themeBackgroundHoverOnly)
+                    Toggle("Glassy Widgets", isOn: $themeGlassyWidgets)
+                }
+                .font(.system(size: 12, weight: .semibold))
             }
 
             HStack(alignment: .top, spacing: 18) {
@@ -744,6 +757,11 @@ struct SettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Collapsed Notch Width: \(Int(collapsedWidth))px")
+                    if pomodoroCollapsedWidthAddon > 0 {
+                        Text("Effective width: \(Int(effectiveCollapsedWidth))px with Pomodoro countdown")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                     HStack(spacing: 8) {
                         Text("200px").font(.caption).foregroundColor(.secondary).frame(width: 40, alignment: .leading)
                         Slider(value: $collapsedWidth, in: 200...400, step: 10).labelsHidden()
