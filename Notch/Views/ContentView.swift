@@ -539,7 +539,7 @@ struct ContentView: View {
     @State private var glowOpacity: Double = 0.0
     @State private var skipDirection: Int = 1
     @State private var lastSongChangeTime: Date = Date.distantPast
-    private let playbackClockInterval: TimeInterval = 0.25
+    private let collapsedPlaybackClockInterval: TimeInterval = 0.5
     private let fileDropTypes = FileDropTypeIdentifiers.all
 
     // ---------------------------------------------------------
@@ -727,6 +727,8 @@ struct ContentView: View {
             registerKeyboardShortcuts()
             loadThemeImage()
             setupFileDragDetector()
+            nowPlaying.setNotchExpanded(isExpanded)
+            updateHardwareHUDVisibility()
         }
         .onDisappear {
             if let keyLocal = localMediaKeyMonitor { NSEvent.removeMonitor(keyLocal) }
@@ -735,6 +737,7 @@ struct ContentView: View {
             fileDragDetector = nil
             expandedLayerRenderTask?.cancel()
             expandedLayerRenderTask = nil
+            HardwareHUDManager.shared.setDashboardVisible(false)
         }
         .onChange(of: themeBackgroundImagePath) { _, _ in
             loadThemeImage()
@@ -743,6 +746,8 @@ struct ContentView: View {
             loadThemeImage()
         }
         .onChange(of: isExpanded) { _, expanded in
+            nowPlaying.setNotchExpanded(expanded)
+            updateHardwareHUDVisibility()
             updateExpandedLayerRendering(isExpanded: expanded)
 
             if !expanded {
@@ -770,14 +775,25 @@ struct ContentView: View {
         .onChange(of: nowPlaying.currentSong) { _, newSong in
             handleSongChange(newSong)
         }
+        .onChange(of: dashboardManager.activeWidgets) { _, _ in
+            updateHardwareHUDVisibility()
+        }
         .task {
+            var lastPlaybackUpdate = Date()
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 250_000_000)
+                let loopInterval = await MainActor.run { contentLoopInterval }
+                try? await Task.sleep(nanoseconds: UInt64(loopInterval * 1_000_000_000))
                 await MainActor.run {
-                    if !isExpanded && nowPlaying.isPlaying {
-                        nowPlaying.currentTime += playbackClockInterval
+                    let now = Date()
+                    let elapsed = min(max(now.timeIntervalSince(lastPlaybackUpdate), 0), 2.0)
+                    lastPlaybackUpdate = now
+
+                    if shouldAdvanceCollapsedPlaybackClock {
+                        nowPlaying.currentTime += elapsed
                         nowPlaying.updateActiveLyric()
                     }
+
+                    guard shouldPollHoverFallback else { return }
 
                     if isFileDropTargeted {
                         return
@@ -1029,7 +1045,8 @@ struct ContentView: View {
                         .contentTransition(.numericText())
                         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pomodoroTimer.timeText)
                 } else {
-                    WaveformView(isPlaying: nowPlaying.isPlaying, color: nowPlaying.artworkDominantColor).frame(width: 24, alignment: .trailing)
+                    WaveformView(isPlaying: nowPlaying.isPlaying, color: nowPlaying.artworkDominantColor)
+                        .frame(width: 24, alignment: .trailing)
                 }
             }
             .padding(.horizontal, 24)
@@ -1114,6 +1131,25 @@ struct ContentView: View {
                 .foregroundColor(.white.opacity(0.9))
         }
         .frame(width: 22, height: 22)
+    }
+
+    private var shouldAdvanceCollapsedPlaybackClock: Bool {
+        !isExpanded && nowPlaying.isPlaying && showBannerLyrics && !nowPlaying.lyrics.isEmpty
+    }
+
+    private var shouldPollHoverFallback: Bool {
+        isExpanded || isHoveringNotch || isPostFileDropExpansionSuppressed || isFileDropTargeted || hoverTask != nil
+    }
+
+    private var contentLoopInterval: TimeInterval {
+        if shouldPollHoverFallback { return 0.35 }
+        if shouldAdvanceCollapsedPlaybackClock { return collapsedPlaybackClockInterval }
+        return 1.0
+    }
+
+    private func updateHardwareHUDVisibility() {
+        let isVisible = isExpanded && layoutWidgets.contains(.hardwareHUD)
+        HardwareHUDManager.shared.setDashboardVisible(isVisible)
     }
 
     private func expandedWidgetHeight(for widget: NotchWidgetType, playerHeight: CGFloat) -> CGFloat {

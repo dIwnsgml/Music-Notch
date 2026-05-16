@@ -33,12 +33,14 @@ final class HardwareHUDManager: ObservableObject {
     private var previousCPULoad: [[UInt64]] = []
     private var smcReader = SMCReader()
     private var currentRefreshInterval: TimeInterval = 2
+    private let temperatureRefreshInterval: TimeInterval = 10
+    private var lastTemperatureRead = Date(timeIntervalSince1970: 0)
+    private var cachedTemperatureCelsius: Double?
     private var isRefreshing = false
+    private var isDashboardVisible = false
 
     private init() {
         currentRefreshInterval = Self.refreshIntervalFromDefaults()
-        startTimer()
-        refresh()
 
         defaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
@@ -53,6 +55,19 @@ final class HardwareHUDManager: ObservableObject {
         timer?.invalidate()
         if let defaultsObserver {
             NotificationCenter.default.removeObserver(defaultsObserver)
+        }
+    }
+
+    func setDashboardVisible(_ visible: Bool) {
+        guard isDashboardVisible != visible else { return }
+        isDashboardVisible = visible
+
+        if visible {
+            startTimer()
+            refresh()
+        } else {
+            timer?.invalidate()
+            timer = nil
         }
     }
 
@@ -72,6 +87,11 @@ final class HardwareHUDManager: ObservableObject {
     private func startTimer() {
         timer?.invalidate()
 
+        guard Self.isPluginEnabled, isDashboardVisible else {
+            timer = nil
+            return
+        }
+
         let timer = Timer(timeInterval: currentRefreshInterval, repeats: true) { [weak self] _ in
             self?.refresh()
         }
@@ -81,10 +101,20 @@ final class HardwareHUDManager: ObservableObject {
     }
 
     private func restartTimerIfNeeded() {
+        guard Self.isPluginEnabled, isDashboardVisible else {
+            timer?.invalidate()
+            timer = nil
+            return
+        }
+
         let interval = Self.refreshIntervalFromDefaults()
-        guard abs(interval - currentRefreshInterval) > 0.01 else { return }
+        guard timer == nil || abs(interval - currentRefreshInterval) > 0.01 else { return }
         currentRefreshInterval = interval
         startTimer()
+    }
+
+    private static var isPluginEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "plugin_hardware_hud_enabled")
     }
 
     private static func refreshIntervalFromDefaults() -> TimeInterval {
@@ -98,7 +128,7 @@ final class HardwareHUDManager: ObservableObject {
             cpuCores: readCPUCoreUsage(),
             memoryUsedBytes: readMemoryUsedBytes(),
             memoryTotalBytes: ProcessInfo.processInfo.physicalMemory,
-            temperatureCelsius: readInternalTemperature(),
+            temperatureCelsius: readInternalTemperatureIfNeeded(),
             thermalState: ProcessInfo.processInfo.thermalState,
             updatedAt: Date()
         )
@@ -176,6 +206,17 @@ final class HardwareHUDManager: ObservableObject {
             + UInt64(stats.wire_count)
             + UInt64(stats.compressor_page_count)
         return usedPages * UInt64(pageSize)
+    }
+
+    private func readInternalTemperatureIfNeeded() -> Double? {
+        let now = Date()
+        guard cachedTemperatureCelsius == nil || now.timeIntervalSince(lastTemperatureRead) >= temperatureRefreshInterval else {
+            return cachedTemperatureCelsius
+        }
+
+        lastTemperatureRead = now
+        cachedTemperatureCelsius = readInternalTemperature()
+        return cachedTemperatureCelsius
     }
 
     private func readInternalTemperature() -> Double? {

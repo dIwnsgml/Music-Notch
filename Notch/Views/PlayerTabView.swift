@@ -36,7 +36,7 @@ struct PlayerTabView: View {
     @State private var lastSwipeTime: Date = Date()
     @State private var localEventMonitor: Any?
 
-    private let playbackClockInterval: TimeInterval = 0.25
+    private let playbackClockInterval: TimeInterval = 0.5
 
     var body: some View {        let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
@@ -365,11 +365,16 @@ struct PlayerTabView: View {
             }
         )
         .task {
+            var lastPlaybackUpdate = Date()
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 250_000_000)
+                try? await Task.sleep(nanoseconds: UInt64(playbackClockInterval * 1_000_000_000))
                 await MainActor.run {
+                    let now = Date()
+                    let elapsed = min(max(now.timeIntervalSince(lastPlaybackUpdate), 0), 2.0)
+                    lastPlaybackUpdate = now
+
                     if nowPlaying.isPlaying && !isDragging {
-                        nowPlaying.currentTime += playbackClockInterval
+                        nowPlaying.currentTime += elapsed
                         nowPlaying.updateActiveLyric()
                     }
                 }

@@ -3,6 +3,10 @@ import Combine
 import AppKit
 import CoreLocation
 
+private enum WidgetPerformance {
+    static let mediaAnimationFrameInterval: TimeInterval = 1.0 / 10.0
+}
+
 struct WidgetFactoryView: View {
     let widgetType: NotchWidgetType
     
@@ -523,13 +527,14 @@ private struct AnimatedTurntableDisc: View {
     @State private var lastFrameDate: Date?
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isPlaying && abs(spinVelocity) < 0.05)) { timeline in
+        TimelineView(.animation(minimumInterval: WidgetPerformance.mediaAnimationFrameInterval, paused: !isPlaying && abs(spinVelocity) < 0.05)) { timeline in
             StaticTurntableDisc(
                 size: size,
                 hasMedia: hasMedia,
                 displayedArtworkURL: displayedArtworkURL,
                 labelFlipDegrees: labelFlipDegrees
             )
+            .drawingGroup(opaque: false, colorMode: .linear)
             .rotationEffect(.degrees(rotation))
             .onAppear {
                 lastFrameDate = timeline.date
@@ -605,22 +610,22 @@ private struct StaticTurntableDisc: View {
                 .stroke(Color.white.opacity(0.055), lineWidth: 1.5)
                 .padding(18)
 
-            ForEach(0..<46, id: \.self) { index in
-                let ringSize = size * (0.25 + CGFloat(index) * 0.016)
+            ForEach(0..<24, id: \.self) { index in
+                let ringSize = size * (0.25 + CGFloat(index) * 0.03)
                 Circle()
                     .stroke(
-                        Color.white.opacity(index.isMultiple(of: 6) ? 0.065 : 0.022),
-                        lineWidth: index.isMultiple(of: 6) ? 0.75 : 0.38
+                        Color.white.opacity(index.isMultiple(of: 4) ? 0.065 : 0.022),
+                        lineWidth: index.isMultiple(of: 4) ? 0.75 : 0.38
                     )
                     .frame(width: ringSize, height: ringSize)
             }
 
-            ForEach(0..<36, id: \.self) { index in
+            ForEach(0..<18, id: \.self) { index in
                 Rectangle()
                     .fill(Color.white.opacity(index.isMultiple(of: 3) ? 0.018 : 0.009))
                     .frame(width: 1, height: size * 0.36)
                     .offset(y: -size * 0.18)
-                    .rotationEffect(.degrees(Double(index) * 10))
+                    .rotationEffect(.degrees(Double(index) * 20))
                     .blendMode(.screen)
             }
 
@@ -1261,7 +1266,7 @@ private struct AnimatedCassetteReels: View {
     @State private var lastFrameDate: Date?
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isPlaying && abs(reelVelocity) < 0.05)) { timeline in
+        TimelineView(.animation(minimumInterval: WidgetPerformance.mediaAnimationFrameInterval, paused: !isPlaying && abs(reelVelocity) < 0.05)) { timeline in
             let windowHeight = height * 0.21
             let windowY = height * 0.50
             let leftCenter = CGPoint(x: width * 0.35, y: windowY)
@@ -1285,6 +1290,7 @@ private struct AnimatedCassetteReels: View {
                     .frame(width: reelSize, height: reelSize)
                     .position(rightCenter)
             }
+            .drawingGroup(opaque: false, colorMode: .linear)
             .onAppear {
                 lastFrameDate = timeline.date
                 reelVelocity = isPlaying ? targetReelVelocity : 0
@@ -2312,6 +2318,7 @@ final class ClipboardHistoryManager: ObservableObject {
 
     private let pasteboard = NSPasteboard.general
     private let defaults = UserDefaults.standard
+    private let imageCache = NSCache<NSString, NSImage>()
     private var lastChangeCount: Int
     private var timer: Timer?
 
@@ -2330,6 +2337,7 @@ final class ClipboardHistoryManager: ObservableObject {
 
     private init() {
         lastChangeCount = pasteboard.changeCount
+        imageCache.countLimit = 60
         loadItems()
         schedulePolling()
     }
@@ -2379,6 +2387,7 @@ final class ClipboardHistoryManager: ObservableObject {
     func delete(_ item: ClipboardHistoryItem) {
         if let removed = items.first(where: { $0.id == item.id }) {
             removeImageFile(for: removed)
+            imageCache.removeObject(forKey: removed.id.uuidString as NSString)
         }
         items.removeAll { $0.id == item.id }
         persistItems()
@@ -2386,6 +2395,7 @@ final class ClipboardHistoryManager: ObservableObject {
 
     func clearHistory() {
         items.forEach(removeImageFile)
+        imageCache.removeAllObjects()
         items.removeAll()
         persistItems()
     }
@@ -2399,8 +2409,18 @@ final class ClipboardHistoryManager: ObservableObject {
     }
 
     func image(for item: ClipboardHistoryItem) -> NSImage? {
-        guard let data = imageData(for: item) else { return nil }
-        return NSImage(data: data)
+        let cacheKey = item.id.uuidString as NSString
+        if let cached = imageCache.object(forKey: cacheKey) {
+            return cached
+        }
+
+        guard let data = imageData(for: item),
+              let image = NSImage(data: data) else {
+            return nil
+        }
+
+        imageCache.setObject(image, forKey: cacheKey)
+        return image
     }
 
     private func schedulePolling() {
@@ -2525,7 +2545,10 @@ final class ClipboardHistoryManager: ObservableObject {
 
     private func record(_ item: ClipboardHistoryItem) {
         let duplicates = items.filter { $0.payloadHash == item.payloadHash }
-        duplicates.forEach(removeImageFile)
+        duplicates.forEach {
+            removeImageFile(for: $0)
+            imageCache.removeObject(forKey: $0.id.uuidString as NSString)
+        }
         items.removeAll { $0.payloadHash == item.payloadHash }
         items.insert(item, at: 0)
         pruneToLimit()
@@ -2541,7 +2564,10 @@ final class ClipboardHistoryManager: ObservableObject {
 
     private func pruneToLimit() {
         if items.count > historyLimit {
-            items.dropFirst(historyLimit).forEach(removeImageFile)
+            items.dropFirst(historyLimit).forEach {
+                removeImageFile(for: $0)
+                imageCache.removeObject(forKey: $0.id.uuidString as NSString)
+            }
             items = Array(items.prefix(historyLimit))
         }
     }
@@ -4048,7 +4074,7 @@ struct SpotifyQueueWidget: View {
                 )
 
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 8) {
+                    LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(Array(spotifyManager.currentQueueItems.prefix(50).enumerated()), id: \.offset) { index, item in
                             SpotifyQueueRow(index: index + 1, track: item.track) {
                                 spotifyManager.skipToQueueItem(index: index)

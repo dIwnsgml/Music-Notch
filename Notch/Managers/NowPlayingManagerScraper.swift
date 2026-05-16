@@ -54,6 +54,7 @@ extension NowPlayingManager {
                 } else if self.lastActiveBrowser == "AppleMusicNative" {
                     DispatchQueue.main.async {
                         if self.isPlaying { self.isPlaying = false }
+                        self.refreshFetchTimerIfNeeded()
                     }
                 }
             }
@@ -95,6 +96,7 @@ extension NowPlayingManager {
                 } else if self.lastActiveBrowser == "SpotifyNative" {
                     DispatchQueue.main.async {
                         if self.isPlaying { self.isPlaying = false }
+                        self.refreshFetchTimerIfNeeded()
                     }
                 }
             }
@@ -102,6 +104,7 @@ extension NowPlayingManager {
             if activeBrowsers.isEmpty {
                 DispatchQueue.main.async {
                     if self.isPlaying { self.isPlaying = false }
+                    self.refreshFetchTimerIfNeeded()
                     self.isFetching = false
                 }
                 return
@@ -115,20 +118,34 @@ extension NowPlayingManager {
             }
             
             let jsCode = "(function(){if(document.wasDiscarded||document.prerendering)return 'NOT_PLAYING';function pt(str){if(!str)return 0;var p=str.split(':');var s=0,m=1;while(p.length>0){s+=m*parseInt(p.pop(),10);m*=60;}return s;}var host=window.location.hostname;var active=null;var cTitle='',cArtist='',cImg='NO_IMAGE',cCurr=-1,cDur=-1,loopState='NONE',playlist='';if(host.includes('music.youtube.com')){active=document.querySelector('.html5-main-video');var tEl=document.querySelector('ytmusic-player-bar .title');var aEl=document.querySelector('ytmusic-player-bar .byline');if(tEl)cTitle=tEl.innerText;if(aEl)cArtist=aEl.innerText.split('•')[0].trim();var time=document.querySelector('.time-info.ytmusic-player-bar');if(time){var p=time.innerText.split('/');if(p.length===2){cCurr=pt(p[0]);cDur=pt(p[1]);}}var btns=document.querySelectorAll('ytmusic-player-bar button, ytmusic-player-bar tp-yt-paper-icon-button');for(var i=0;i<btns.length;i++){var lbl=(btns[i].getAttribute('aria-label')||btns[i].getAttribute('title')||'').toLowerCase();var html=btns[i].innerHTML;if(html.includes('17.293')||html.includes('21 10a1')||html.includes('M7 7h10')||lbl.includes('repeat')||lbl.includes('반복')){if(lbl.includes('one')||lbl.includes('1')||lbl.includes('한'))loopState='ONE';else if(lbl.includes('all')||lbl.includes('전체'))loopState='ALL';else if(lbl.includes('off')||lbl.includes('안함'))loopState='NONE';else loopState=(window.getComputedStyle(btns[i]).opacity<0.6||window.getComputedStyle(btns[i]).color==='rgb(144, 144, 144)')?'NONE':'ALL';break;}}try{var qItems=document.querySelectorAll('ytmusic-player-queue-item');var pArr=[];var start=0;for(var i=0;i<qItems.length;i++){if(qItems[i].hasAttribute('selected')||qItems[i].getAttribute('play-button-state')==='playing'){start=i;break;}}for(var j=start;j<qItems.length;j++){var tN=qItems[j].querySelector('.song-title, .title, yt-formatted-string[title]');var aN=qItems[j].querySelector('.byline');var iN=qItems[j].querySelector('img');var tText=tN?(tN.innerText||tN.getAttribute('title')||'').trim():'';var aText=aN?aN.innerText.replace(/\\\\n/g,'').trim():'Unknown';var iSrc=iN?(iN.src||''):'NO_IMAGE';if(tText){pArr.push(tText+'~~~'+aText+'~~~'+iSrc);}if(pArr.length>=15)break;}playlist=pArr.join('&&&');}catch(e){}}else if(host.includes('spotify.com')){active=document.querySelector('video, audio');var tEl=document.querySelector('[data-testid=context-item-info-title]');var aEl=document.querySelector('[data-testid=context-item-info-artist]');if(tEl)cTitle=tEl.innerText;if(aEl)cArtist=aEl.innerText;var cEl=document.querySelector('[data-testid=playback-position]');var dEl=document.querySelector('[data-testid=playback-duration]');if(cEl)cCurr=pt(cEl.innerText);if(dEl)cDur=pt(dEl.innerText);var sRep=document.querySelector('[data-testid=\"control-button-repeat\"]');if(sRep){var aLbl=(sRep.getAttribute('aria-label')||'').toLowerCase();var aChk=sRep.getAttribute('aria-checked');if(aLbl.includes('one')||aLbl.includes('1'))loopState='ONE';else if(aChk==='true'||aChk==='mixed'||aLbl.includes('disable'))loopState='ALL';else loopState='NONE';}}else if(host.includes('youtube.com')){active=document.querySelector('.html5-main-video');loopState=(active&&(active.loop||active.hasAttribute('loop')))?'ALL':'NONE';if(active&&active.duration>0.05){cDur=active.duration-0.05;}var attrTitle=document.querySelector('.ytVideoAttributeViewModelTitle')||document.querySelector('#title h1 yt-formatted-string');var attrArtist=document.querySelector('.ytVideoAttributeViewModelSubtitle')||document.querySelector('#owner-name a');if(attrTitle)cTitle=attrTitle.innerText.trim();if(attrArtist)cArtist=attrArtist.innerText.trim();try{var ytdItems=document.querySelectorAll('ytd-playlist-panel-video-renderer');var ytdArr=[];var ytdStart=0;for(var k=0;k<ytdItems.length;k++){if(ytdItems[k].hasAttribute('selected')){ytdStart=k;break;}}for(var l=ytdStart;l<ytdItems.length;l++){var yT=ytdItems[l].querySelector('#video-title');var yA=ytdItems[l].querySelector('#byline');var yI=ytdItems[l].querySelector('img');var iSrc=yI?(yI.src||''):'NO_IMAGE';if(yT&&yT.innerText.trim()){ytdArr.push(yT.innerText.trim()+'~~~'+(yA?yA.innerText.trim():'Unknown')+'~~~'+iSrc);}if(ytdArr.length>=15)break;}playlist=ytdArr.join('&&&');}catch(e){}}else{var media=document.querySelectorAll('video, audio');for(var i=0;i<media.length;i++){if(!media[i].paused&&media[i].currentTime>0){active=media[i];break;}}if(!active&&media.length>0)active=media[0];if(active){loopState=(active.loop||active.hasAttribute('loop'))?'ALL':'NONE';}}var isPlaying = (active && !active.paused && !active.ended && active.currentTime > 0);if (!active && navigator.mediaSession && navigator.mediaSession.playbackState === 'playing') isPlaying = true;if (isPlaying) {var title=cTitle||document.title;var artist=cArtist||'EMPTY_ARTIST';var curr=cCurr!==-1?cCurr:(active?active.currentTime:0);var dur=cDur!==-1&&isNaN(cDur)===false&&cDur!==0?cDur:(active?(active.duration||1):1);if(navigator.mediaSession&&navigator.mediaSession.metadata){var m=navigator.mediaSession.metadata;if(!cTitle&&m.title)title=m.title;if(artist==='EMPTY_ARTIST'&&m.artist)artist=m.artist;if(cImg==='NO_IMAGE'&&m.artwork&&m.artwork.length>0)cImg=m.artwork[m.artwork.length-1].src;}var hostFlag=host.includes('music.youtube.com')?'YOUTUBE_MUSIC':(host.includes('youtube.com')?'YOUTUBE_STANDARD':(host.includes('spotify.com')?'SPOTIFY_WEB':'OTHER'));return title+'|||'+artist+'|||'+cImg+'|||'+loopState+'|||'+curr+'|||'+dur+'@@@'+hostFlag+'|||'+playlist;}return 'NOT_PLAYING';})();"
+            let shouldUseDetailedScript = self.shouldUseDetailedMediaScrape
+            if shouldUseDetailedScript {
+                self.markDetailedMediaScrapeRun()
+            }
+            let effectiveJSCode = shouldUseDetailedScript ? jsCode : self.lightweightBrowserSnapshotScript()
             
             // ⚡️ FAST PATH: Instantly check the last known active tab
             if let rawBrowser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
                 let cleanBrowser = rawBrowser.replacingOccurrences(of: "_YT", with: "").replacingOccurrences(of: "_YouTube Music", with: "").replacingOccurrences(of: "_Spotify Web", with: "")
                 if activeBrowsers.contains(cleanBrowser) {
-                    let fastScript = self.buildAppleScript(browser: cleanBrowser, jsCode: jsCode, wIdx: wIdx, tIdx: tIdx)
+                    let fastScript = self.buildAppleScript(browser: cleanBrowser, jsCode: effectiveJSCode, wIdx: wIdx, tIdx: tIdx)
                     if let result = NSAppleScript(source: fastScript)?.executeAndReturnError(nil).stringValue {
                         if result != "NOT_PLAYING" && !result.isEmpty {
                             // Still playing on the same tab! Process it and we are done.
                             self.parseAndApplyResult(result: result + "|||" + rawBrowser, browser: rawBrowser)
                             return
+                        } else if result == "NOT_PLAYING" {
+                            if !self.isNotchExpandedForPolling {
+                                DispatchQueue.main.async {
+                                    if self.isPlaying { self.isPlaying = false }
+                                    self.refreshFetchTimerIfNeeded()
+                                    self.isFetching = false
+                                }
+                                return
+                            }
+                            // Expanded mode can afford a full loop in case another tab started playing.
                         } else {
                             self.clearBrowserFastPath(browser: rawBrowser, windowIndex: wIdx, tabIndex: tIdx)
-                            // Tab is NOT playing. Fall through to full loop in case another tab started playing.
                         }
                     } else {
                         self.clearBrowserFastPath(browser: rawBrowser, windowIndex: wIdx, tabIndex: tIdx)
@@ -137,12 +154,23 @@ extension NowPlayingManager {
             }
             
             // FULL LOOP: Only probe known media tabs; generic background tabs can be suspended by Memory Saver.
-            self.runFullAppleScriptLoop(jsCode: jsCode) { result in
+            guard self.shouldRunFullBrowserDiscovery else {
+                DispatchQueue.main.async {
+                    if self.isPlaying { self.isPlaying = false }
+                    self.refreshFetchTimerIfNeeded()
+                    self.isFetching = false
+                }
+                return
+            }
+            self.markFullBrowserDiscoveryRun()
+
+            self.runFullAppleScriptLoop(jsCode: effectiveJSCode) { result in
                 if let res = result {
                     self.parseAndApplyResult(result: res, browser: res.components(separatedBy: "|||").last ?? "Unknown")
                 } else {
                     DispatchQueue.main.async {
                         if self.isPlaying { self.isPlaying = false }
+                        self.refreshFetchTimerIfNeeded()
                         self.isFetching = false
                     }
                 }
@@ -188,6 +216,7 @@ extension NowPlayingManager {
             guard components.count >= 6 else { self.isFetching = false; return }
             
             if !self.isPlaying { self.isPlaying = true }
+            self.refreshFetchTimerIfNeeded()
             let rawTitle = components[0].replacingOccurrences(of: " - YouTube Music", with: "").replacingOccurrences(of: " - YouTube", with: "").replacingOccurrences(of: " | Spotify", with: "")
             let rawArtist = components[1] == "EMPTY_ARTIST" ? "" : components[1]
             let imgString = components[2]
@@ -270,7 +299,7 @@ extension NowPlayingManager {
                     uniqueTracks.append(PlaylistTrack(title: t, artist: a, imageURL: img))
                 }
             }
-            if self.playlist != uniqueTracks { self.playlist = uniqueTracks }
+            if !playlistString.isEmpty, self.playlist != uniqueTracks { self.playlist = uniqueTracks }
             
             let newDuration = Double(durString) ?? 1.0
             if abs(self.duration - newDuration) > 0.25 { self.duration = newDuration }
@@ -347,6 +376,10 @@ extension NowPlayingManager {
                 }
             }
         }.resume()
+    }
+
+    private func lightweightBrowserSnapshotScript() -> String {
+        "(function(){if(document.wasDiscarded||document.prerendering)return 'NOT_PLAYING';function pt(str){if(!str)return 0;var p=str.split(':');var s=0,m=1;while(p.length>0){s+=m*parseInt(p.pop(),10)||0;m*=60;}return s;}var host=window.location.hostname;var active=null,title='',artist='',img='NO_IMAGE',curr=-1,dur=-1,loopState='NONE';if(host.includes('youtube.com')){active=document.querySelector('.html5-main-video');if(active&&active.duration>0.05)dur=active.duration-0.05;if(active)loopState=(active.loop||active.hasAttribute('loop'))?'ALL':'NONE';if(host.includes('music.youtube.com')){var tEl=document.querySelector('ytmusic-player-bar .title');var aEl=document.querySelector('ytmusic-player-bar .byline');var time=document.querySelector('.time-info.ytmusic-player-bar');if(tEl)title=tEl.innerText.trim();if(aEl)artist=aEl.innerText.split('•')[0].trim();if(time){var tp=time.innerText.split('/');if(tp.length===2){curr=pt(tp[0]);dur=pt(tp[1]);}}}else{var ytTitle=document.querySelector('.ytVideoAttributeViewModelTitle')||document.querySelector('#title h1 yt-formatted-string');var ytArtist=document.querySelector('.ytVideoAttributeViewModelSubtitle')||document.querySelector('#owner-name a');if(ytTitle)title=ytTitle.innerText.trim();if(ytArtist)artist=ytArtist.innerText.trim();}}else if(host.includes('spotify.com')){active=document.querySelector('video, audio');var sTitle=document.querySelector('[data-testid=context-item-info-title]');var sArtist=document.querySelector('[data-testid=context-item-info-artist]');var cEl=document.querySelector('[data-testid=playback-position]');var dEl=document.querySelector('[data-testid=playback-duration]');if(sTitle)title=sTitle.innerText.trim();if(sArtist)artist=sArtist.innerText.trim();if(cEl)curr=pt(cEl.innerText);if(dEl)dur=pt(dEl.innerText);}else{var media=document.querySelectorAll('video, audio');for(var i=0;i<media.length;i++){if(!media[i].paused&&media[i].currentTime>0){active=media[i];break;}}if(!active&&media.length>0)active=media[0];if(active)loopState=(active.loop||active.hasAttribute('loop'))?'ALL':'NONE';}var isPlaying=(active&&!active.paused&&!active.ended&&active.currentTime>0);if(!isPlaying&&navigator.mediaSession&&navigator.mediaSession.playbackState==='playing')isPlaying=true;if(!isPlaying)return 'NOT_PLAYING';if(active){if(curr===-1)curr=active.currentTime||0;if(dur===-1||isNaN(dur)||dur===0)dur=active.duration||1;}if(navigator.mediaSession&&navigator.mediaSession.metadata){var m=navigator.mediaSession.metadata;if(!title&&m.title)title=m.title;if(!artist&&m.artist)artist=m.artist;if(m.artwork&&m.artwork.length>0)img=m.artwork[m.artwork.length-1].src;}if(!title)title=document.title;if(!artist)artist='EMPTY_ARTIST';var hostFlag=host.includes('music.youtube.com')?'YOUTUBE_MUSIC':(host.includes('youtube.com')?'YOUTUBE_STANDARD':(host.includes('spotify.com')?'SPOTIFY_WEB':'OTHER'));return title+'|||'+artist+'|||'+img+'|||'+loopState+'|||'+curr+'|||'+dur+'@@@'+hostFlag+'|||';})();"
     }
     
     func buildAppleScript(browser: String, jsCode: String, wIdx: Int? = nil, tIdx: Int? = nil) -> String {

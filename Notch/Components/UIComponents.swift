@@ -24,52 +24,33 @@ struct DynamicNotchShape: Shape {
 struct WaveformView: View {
     var isPlaying: Bool
     var color: Color
-    
-    @State private var phase = false
-    
+    var animates: Bool = true
+
     // ⚡️ Exaggerated heights so it bounces energetically when playing
-    let maxHeights: [CGFloat] = [16, 24, 18, 22]
-    
-    // ⚡️ Desynced durations so it looks like organic, chaotic audio
-    let durations: [Double] = [0.35, 0.42, 0.28, 0.38]
+    private let maxHeights: [CGFloat] = [16, 24, 18, 22]
+    private let waveformFrameInterval: TimeInterval = 1.0 / 8.0
     
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<4, id: \.self) { index in
-                Capsule()
-                    .fill(isPlaying ? color : Color.gray.opacity(0.5))
-                // 1. If playing & phase is true, bounce up to Max. Otherwise, sit at 4.
-                    .frame(width: 3, height: isPlaying ? (phase ? maxHeights[index] : 4) : 4)
-                
-                // 2. THE FIX: Dynamically swap the physics engine based on playback state!
-                    .animation(
-                        isPlaying
-                        ? .easeInOut(duration: durations[index]).repeatForever(autoreverses: true)
-                        : .easeOut(duration: 0.3), // ⚡️ Gracefully coasts to a stop when paused!
-                        value: phase
-                    )
-                
-                // 3. Smooth color fading
-                    .animation(.easeOut(duration: 0.3), value: isPlaying)
-            }
-        }
-        .onChange(of: isPlaying) { playing in
-            if playing {
-                // A tiny 0.05s delay gives SwiftUI enough time to register the new
-                // .repeatForever modifier before we pull the trigger on the 'phase' state.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    phase = true
+        TimelineView(.animation(minimumInterval: waveformFrameInterval, paused: !isPlaying || !animates)) { timeline in
+            HStack(spacing: 3) {
+                ForEach(0..<4, id: \.self) { index in
+                    Capsule()
+                        .fill(isPlaying ? color : Color.gray.opacity(0.5))
+                        .frame(width: 3, height: barHeight(index: index, date: timeline.date))
+                        .animation(.easeOut(duration: 0.22), value: isPlaying)
                 }
-            } else {
-                // Instantly collapses the wave with the .easeOut animation
-                phase = false
             }
         }
-        .onAppear {
-            if isPlaying {
-                phase = true
-            }
-        }
+    }
+
+    private func barHeight(index: Int, date: Date) -> CGFloat {
+        guard isPlaying else { return 4 }
+        guard animates else { return maxHeights[index] * 0.55 }
+
+        let speed = [5.4, 6.2, 7.1, 5.8][index]
+        let offset = Double(index) * 1.37
+        let wave = (sin(date.timeIntervalSinceReferenceDate * speed + offset) + 1) * 0.5
+        return 4 + (maxHeights[index] - 4) * CGFloat(0.28 + wave * 0.72)
     }
 }
 

@@ -54,6 +54,15 @@ class NowPlayingManager: ObservableObject {
     var isFetching = false
     var lastFetchTime = Date(timeIntervalSince1970: 0)
     var lastLoopToggleTime = Date(timeIntervalSince1970: 0)
+    var isNotchExpandedForPolling = false
+    private var currentFetchInterval: TimeInterval = 8.0
+    private let activeFetchInterval: TimeInterval = 1.0
+    private let idleFetchInterval: TimeInterval = 8.0
+    private let expandedDetailedScrapeInterval: TimeInterval = 5.0
+    private let collapsedFullBrowserDiscoveryInterval: TimeInterval = 60.0
+    private var lastFullBrowserDiscoveryTime = Date(timeIntervalSince1970: 0)
+    private var lastDetailedMediaScrapeTime = Date(timeIntervalSince1970: 0)
+    private var nativePlaybackObservers: [NSObjectProtocol] = []
     
     @Published var lastActiveBrowser: String? = nil
     var lastWindowIndex: Int? = nil
@@ -70,10 +79,101 @@ class NowPlayingManager: ObservableObject {
             self.lastTabIndex = UserDefaults.standard.integer(forKey: "lastTabIndex")
         }
 
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        registerNativePlaybackObservers()
+        scheduleFetchTimer(interval: currentFetchInterval)
+    }
+
+    deinit {
+        nativePlaybackObservers.forEach {
+            DistributedNotificationCenter.default().removeObserver($0)
+        }
+    }
+
+    func setNotchExpanded(_ expanded: Bool) {
+        guard isNotchExpandedForPolling != expanded else { return }
+        isNotchExpandedForPolling = expanded
+        scheduleFetchTimer(interval: preferredFetchInterval)
+
+        if expanded {
+            triggerFastFetch()
+        }
+    }
+
+    var shouldUseDetailedMediaScrape: Bool {
+        guard isNotchExpandedForPolling else { return false }
+        return Date().timeIntervalSince(lastDetailedMediaScrapeTime) >= expandedDetailedScrapeInterval
+    }
+
+    func markDetailedMediaScrapeRun() {
+        lastDetailedMediaScrapeTime = Date()
+    }
+
+    var shouldRunFullBrowserDiscovery: Bool {
+        isNotchExpandedForPolling || Date().timeIntervalSince(lastFullBrowserDiscoveryTime) >= collapsedFullBrowserDiscoveryInterval
+    }
+
+    func markFullBrowserDiscoveryRun() {
+        lastFullBrowserDiscoveryTime = Date()
+    }
+
+    private var preferredFetchInterval: TimeInterval {
+        if isNotchExpandedForPolling || isPlaying || lastActiveBrowser != nil {
+            return activeFetchInterval
+        }
+        return idleFetchInterval
+    }
+
+    func refreshFetchTimerIfNeeded() {
+        let interval = preferredFetchInterval
+        guard abs(interval - currentFetchInterval) > 0.01 else { return }
+        scheduleFetchTimer(interval: interval)
+    }
+
+    private func scheduleFetchTimer(interval: TimeInterval) {
+        timer?.invalidate()
+        currentFetchInterval = interval
+
+        let newTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             self?.fetchTitle()
         }
-        timer?.tolerance = 0.5
+        newTimer.tolerance = interval < 2 ? 0.08 : max(0.75, interval * 0.25)
+        timer = newTimer
+        RunLoop.main.add(newTimer, forMode: .common)
+    }
+
+    private func registerNativePlaybackObservers() {
+        let center = DistributedNotificationCenter.default()
+        let names = [
+            "com.spotify.client.PlaybackStateChanged",
+            "com.apple.iTunes.playerInfo",
+            "com.apple.Music.playerInfo"
+        ]
+
+        nativePlaybackObservers = names.map { name in
+            center.addObserver(
+                forName: Notification.Name(name),
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                self?.handleNativePlaybackNotification(notification)
+            }
+        }
+    }
+
+    private func handleNativePlaybackNotification(_ notification: Notification) {
+        let notificationName = notification.name.rawValue
+        if notificationName.contains("spotify"), !enableSpotify { return }
+        if notificationName.contains("Music") || notificationName.contains("iTunes"), !enableAppleMusic { return }
+
+        let state = (notification.userInfo?["Player State"] as? String ?? "").lowercased()
+        if state.contains("playing") {
+            if !isPlaying { isPlaying = true }
+        } else if state.contains("paused") || state.contains("stopped") {
+            if isPlaying { isPlaying = false }
+        }
+
+        refreshFetchTimerIfNeeded()
+        triggerFastFetch()
     }
     
     // ---------------------------------------------------------
