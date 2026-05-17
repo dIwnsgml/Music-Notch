@@ -95,6 +95,7 @@ struct ThemePresetBackground: View {
             }
             .frame(width: size.width, height: size.height)
             .clipped()
+            .drawingGroup(opaque: false, colorMode: .linear)
         }
     }
 

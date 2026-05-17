@@ -26,18 +26,30 @@ struct WaveformView: View {
     var color: Color
     var animates: Bool = true
 
-    // ⚡️ Exaggerated heights so it bounces energetically when playing
     private let maxHeights: [CGFloat] = [16, 24, 18, 22]
-    private let waveformFrameInterval: TimeInterval = 1.0 / 8.0
+    private let waveformFrameInterval: TimeInterval = 1.0 / 30.0
     
     var body: some View {
         TimelineView(.animation(minimumInterval: waveformFrameInterval, paused: !isPlaying || !animates)) { timeline in
-            HStack(spacing: 3) {
-                ForEach(0..<4, id: \.self) { index in
-                    Capsule()
-                        .fill(isPlaying ? color : Color.gray.opacity(0.5))
-                        .frame(width: 3, height: barHeight(index: index, date: timeline.date))
-                        .animation(.easeOut(duration: 0.22), value: isPlaying)
+            Canvas(rendersAsynchronously: true) { context, size in
+                let barWidth: CGFloat = min(3, max(2, size.width / 8))
+                let spacing: CGFloat = 3
+                let totalWidth = CGFloat(maxHeights.count) * barWidth + CGFloat(maxHeights.count - 1) * spacing
+                let startX = (size.width - totalWidth) / 2
+                let fill = isPlaying ? color : Color.gray.opacity(0.5)
+
+                for index in maxHeights.indices {
+                    let height = barHeight(index: index, date: timeline.date)
+                    let rect = CGRect(
+                        x: startX + CGFloat(index) * (barWidth + spacing),
+                        y: (size.height - height) / 2,
+                        width: barWidth,
+                        height: height
+                    )
+                    context.fill(
+                        Path(roundedRect: rect, cornerRadius: barWidth / 2),
+                        with: .color(fill)
+                    )
                 }
             }
         }

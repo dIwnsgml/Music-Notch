@@ -4,7 +4,24 @@ import AppKit
 import CoreLocation
 
 private enum WidgetPerformance {
-    static let mediaAnimationFrameInterval: TimeInterval = 1.0 / 10.0
+    static let mediaAnimationFrameInterval: TimeInterval = 1.0 / 30.0
+    static let mediaStartRampDuration: TimeInterval = 0.65
+    static let mediaStopRampDuration: TimeInterval = 0.85
+
+    static func smoothstep(_ value: Double) -> Double {
+        let t = min(max(value, 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+
+    static func smoothstepIntegral(_ value: Double) -> Double {
+        let t = min(max(value, 0), 1)
+        return t * t * t - 0.5 * t * t * t * t
+    }
+
+    static func easingOutIntegral(_ value: Double) -> Double {
+        let t = min(max(value, 0), 1)
+        return t - t * t * t + 0.5 * t * t * t * t
+    }
 }
 
 struct WidgetFactoryView: View {
@@ -522,30 +539,41 @@ private struct AnimatedTurntableDisc: View {
     let displayedArtworkURL: URL?
     let labelFlipDegrees: Double
 
-    @State private var rotation: Double = 0
-    @State private var spinVelocity: Double = 0
-    @State private var lastFrameDate: Date?
+    @State private var phaseAtTransition: Double = 0
+    @State private var velocityAtTransition: Double = 0
+    @State private var transitionDate = Date()
+    @State private var animateAfterPause = false
+    @State private var pauseAnimationTask: Task<Void, Never>? = nil
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: WidgetPerformance.mediaAnimationFrameInterval, paused: !isPlaying && abs(spinVelocity) < 0.05)) { timeline in
-            StaticTurntableDisc(
-                size: size,
-                hasMedia: hasMedia,
-                displayedArtworkURL: displayedArtworkURL,
-                labelFlipDegrees: labelFlipDegrees
-            )
-            .drawingGroup(opaque: false, colorMode: .linear)
-            .rotationEffect(.degrees(rotation))
+        TimelineView(.animation(minimumInterval: WidgetPerformance.mediaAnimationFrameInterval, paused: !isPlaying && !animateAfterPause)) { timeline in
+            ZStack {
+                TurntableVinylBase(size: size)
+                    .equatable()
+
+                TurntableCenterLabel(
+                    size: size,
+                    hasMedia: hasMedia,
+                    displayedArtworkURL: displayedArtworkURL,
+                    labelFlipDegrees: labelFlipDegrees
+                )
+                .equatable()
+                .rotationEffect(.degrees(rotation(at: timeline.date)))
+            }
             .onAppear {
-                lastFrameDate = timeline.date
-                spinVelocity = isPlaying ? targetSpinVelocity : 0
+                transitionDate = timeline.date
+                velocityAtTransition = isPlaying ? targetSpinVelocity : 0
             }
-            .onChange(of: timeline.date) { _, date in
-                advanceSpin(to: date)
+            .onChange(of: isPlaying) { wasPlaying, _ in
+                resetMotion(at: timeline.date, wasPlaying: wasPlaying)
             }
-            .onChange(of: isPlaying) { _, _ in
-                lastFrameDate = timeline.date
+            .onChange(of: spinSpeed) { _, _ in
+                resetMotion(at: timeline.date, wasPlaying: isPlaying)
             }
+        }
+        .onDisappear {
+            pauseAnimationTask?.cancel()
+            pauseAnimationTask = nil
         }
     }
 
@@ -553,33 +581,70 @@ private struct AnimatedTurntableDisc: View {
         122 * min(max(spinSpeed, 0.5), 2.0)
     }
 
-    private func advanceSpin(to date: Date) {
-        guard let lastFrameDate else {
-            self.lastFrameDate = date
-            return
+    private func rotation(at date: Date) -> Double {
+        rotation(at: date, playing: isPlaying)
+    }
+
+    private func rotation(at date: Date, playing: Bool) -> Double {
+        let elapsed = max(0, date.timeIntervalSince(transitionDate))
+
+        if playing {
+            let ramp = WidgetPerformance.mediaStartRampDuration
+            if elapsed < ramp {
+                return phaseAtTransition + targetSpinVelocity * ramp * WidgetPerformance.smoothstepIntegral(elapsed / ramp)
+            }
+            return phaseAtTransition + targetSpinVelocity * ((ramp * 0.5) + (elapsed - ramp))
         }
 
-        let delta = min(max(date.timeIntervalSince(lastFrameDate), 0), 0.06)
-        self.lastFrameDate = date
+        let ramp = WidgetPerformance.mediaStopRampDuration
+        if elapsed < ramp {
+            return phaseAtTransition + velocityAtTransition * ramp * WidgetPerformance.easingOutIntegral(elapsed / ramp)
+        }
+        return phaseAtTransition + velocityAtTransition * ramp * 0.5
+    }
 
-        let target = isPlaying ? targetSpinVelocity : 0
-        let response = isPlaying ? 4.8 : 2.4
-        let blend = min(1, delta * response)
-        spinVelocity += (target - spinVelocity) * blend
+    private func velocity(at date: Date) -> Double {
+        velocity(at: date, playing: isPlaying)
+    }
 
-        if !isPlaying && abs(spinVelocity) < 0.05 {
-            spinVelocity = 0
+    private func velocity(at date: Date, playing: Bool) -> Double {
+        let elapsed = max(0, date.timeIntervalSince(transitionDate))
+
+        if playing {
+            let ramp = WidgetPerformance.mediaStartRampDuration
+            guard elapsed < ramp else { return targetSpinVelocity }
+            return targetSpinVelocity * WidgetPerformance.smoothstep(elapsed / ramp)
         }
 
-        rotation = (rotation + spinVelocity * delta).truncatingRemainder(dividingBy: 360)
+        let ramp = WidgetPerformance.mediaStopRampDuration
+        guard elapsed < ramp else { return 0 }
+        return velocityAtTransition * (1 - WidgetPerformance.smoothstep(elapsed / ramp))
+    }
+
+    private func resetMotion(at date: Date, wasPlaying: Bool) {
+        phaseAtTransition = rotation(at: date, playing: wasPlaying).truncatingRemainder(dividingBy: 360)
+        velocityAtTransition = velocity(at: date, playing: wasPlaying)
+        transitionDate = date
+
+        pauseAnimationTask?.cancel()
+        if isPlaying {
+            animateAfterPause = false
+        } else {
+            animateAfterPause = true
+            pauseAnimationTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64((WidgetPerformance.mediaStopRampDuration + 0.1) * 1_000_000_000))
+                animateAfterPause = false
+            }
+        }
     }
 }
 
-private struct StaticTurntableDisc: View {
+private struct TurntableVinylBase: View, Equatable {
     let size: CGFloat
-    let hasMedia: Bool
-    let displayedArtworkURL: URL?
-    let labelFlipDegrees: Double
+
+    static func == (lhs: TurntableVinylBase, rhs: TurntableVinylBase) -> Bool {
+        abs(lhs.size - rhs.size) < 0.5
+    }
 
     var body: some View {
         ZStack {
@@ -610,22 +675,22 @@ private struct StaticTurntableDisc: View {
                 .stroke(Color.white.opacity(0.055), lineWidth: 1.5)
                 .padding(18)
 
-            ForEach(0..<24, id: \.self) { index in
-                let ringSize = size * (0.25 + CGFloat(index) * 0.03)
+            ForEach(0..<14, id: \.self) { index in
+                let ringSize = size * (0.27 + CGFloat(index) * 0.045)
                 Circle()
                     .stroke(
-                        Color.white.opacity(index.isMultiple(of: 4) ? 0.065 : 0.022),
-                        lineWidth: index.isMultiple(of: 4) ? 0.75 : 0.38
+                        Color.white.opacity(index.isMultiple(of: 3) ? 0.060 : 0.020),
+                        lineWidth: index.isMultiple(of: 3) ? 0.72 : 0.36
                     )
                     .frame(width: ringSize, height: ringSize)
             }
 
-            ForEach(0..<18, id: \.self) { index in
+            ForEach(0..<8, id: \.self) { index in
                 Rectangle()
-                    .fill(Color.white.opacity(index.isMultiple(of: 3) ? 0.018 : 0.009))
-                    .frame(width: 1, height: size * 0.36)
-                    .offset(y: -size * 0.18)
-                    .rotationEffect(.degrees(Double(index) * 20))
+                    .fill(Color.white.opacity(index.isMultiple(of: 2) ? 0.014 : 0.007))
+                    .frame(width: 1, height: size * 0.34)
+                    .offset(y: -size * 0.17)
+                    .rotationEffect(.degrees(Double(index) * 45))
                     .blendMode(.screen)
             }
 
@@ -634,17 +699,35 @@ private struct StaticTurntableDisc: View {
                     AngularGradient(
                         colors: [
                             Color.clear,
-                            Color.white.opacity(0.11),
+                            Color.white.opacity(0.09),
                             Color.clear,
-                            Color.white.opacity(0.06),
+                            Color.white.opacity(0.045),
                             Color.clear
                         ],
                         center: .center
                     ),
-                    lineWidth: 8
+                    lineWidth: 7
                 )
                 .padding(size * 0.09)
+        }
+    }
+}
 
+private struct TurntableCenterLabel: View, Equatable {
+    let size: CGFloat
+    let hasMedia: Bool
+    let displayedArtworkURL: URL?
+    let labelFlipDegrees: Double
+
+    static func == (lhs: TurntableCenterLabel, rhs: TurntableCenterLabel) -> Bool {
+        abs(lhs.size - rhs.size) < 0.5
+            && lhs.hasMedia == rhs.hasMedia
+            && lhs.displayedArtworkURL == rhs.displayedArtworkURL
+            && abs(lhs.labelFlipDegrees - rhs.labelFlipDegrees) < 0.5
+    }
+
+    var body: some View {
+        ZStack {
             Circle()
                 .fill(labelBackground)
                 .frame(width: size * 0.50, height: size * 0.50)
@@ -1260,13 +1343,14 @@ private struct AnimatedCassetteReels: View {
     let isPlaying: Bool
     let reelSpeed: Double
 
-    @State private var reelRotation: Double = 0
-    @State private var reelVelocity: Double = 0
-    @State private var tapePhase: Double = 0
-    @State private var lastFrameDate: Date?
+    @State private var phaseAtTransition: Double = 0
+    @State private var velocityAtTransition: Double = 0
+    @State private var transitionDate = Date()
+    @State private var animateAfterPause = false
+    @State private var pauseAnimationTask: Task<Void, Never>? = nil
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: WidgetPerformance.mediaAnimationFrameInterval, paused: !isPlaying && abs(reelVelocity) < 0.05)) { timeline in
+        TimelineView(.animation(minimumInterval: WidgetPerformance.mediaAnimationFrameInterval, paused: !isPlaying && !animateAfterPause)) { timeline in
             let windowHeight = height * 0.21
             let windowY = height * 0.50
             let leftCenter = CGPoint(x: width * 0.35, y: windowY)
@@ -1275,59 +1359,268 @@ private struct AnimatedCassetteReels: View {
             let clampedProgress = min(max(playbackProgress, 0), 1)
             let leftSpool = 0.76 - clampedProgress * 0.34
             let rightSpool = 0.38 + clampedProgress * 0.34
+            let reelRotation = rotation(at: timeline.date)
+            let tapePhase = (reelRotation * 0.045).truncatingRemainder(dividingBy: 16)
 
-            ZStack {
-                CassetteTapeStripView(phase: tapePhase, isPlaying: isPlaying)
-                    .frame(width: width * 0.22, height: windowHeight * 0.52)
-                    .position(x: width / 2, y: windowY)
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-
-                CassetteReelView(rotation: reelRotation, spoolFraction: leftSpool, isPlaying: isPlaying)
-                    .frame(width: reelSize, height: reelSize)
-                    .position(leftCenter)
-
-                CassetteReelView(rotation: -reelRotation * 1.08, spoolFraction: rightSpool, isPlaying: isPlaying)
-                    .frame(width: reelSize, height: reelSize)
-                    .position(rightCenter)
+            Canvas(rendersAsynchronously: true) { context, _ in
+                drawTapeStrip(
+                    context: &context,
+                    center: CGPoint(x: width / 2, y: windowY),
+                    size: CGSize(width: width * 0.22, height: windowHeight * 0.52),
+                    phase: tapePhase,
+                    isPlaying: isPlaying
+                )
+                drawReel(
+                    context: &context,
+                    center: leftCenter,
+                    size: reelSize,
+                    rotation: reelRotation,
+                    spoolFraction: leftSpool,
+                    isPlaying: isPlaying
+                )
+                drawReel(
+                    context: &context,
+                    center: rightCenter,
+                    size: reelSize,
+                    rotation: -reelRotation * 1.08,
+                    spoolFraction: rightSpool,
+                    isPlaying: isPlaying
+                )
             }
-            .drawingGroup(opaque: false, colorMode: .linear)
             .onAppear {
-                lastFrameDate = timeline.date
-                reelVelocity = isPlaying ? targetReelVelocity : 0
+                transitionDate = timeline.date
+                velocityAtTransition = isPlaying ? targetReelVelocity : 0
             }
-            .onChange(of: timeline.date) { _, date in
-                advanceMotion(to: date)
+            .onChange(of: isPlaying) { wasPlaying, _ in
+                resetMotion(at: timeline.date, wasPlaying: wasPlaying)
             }
-            .onChange(of: isPlaying) { _, _ in
-                lastFrameDate = timeline.date
+            .onChange(of: reelSpeed) { _, _ in
+                resetMotion(at: timeline.date, wasPlaying: isPlaying)
             }
         }
+        .onDisappear {
+            pauseAnimationTask?.cancel()
+            pauseAnimationTask = nil
+        }
+    }
+
+    private func drawTapeStrip(
+        context: inout GraphicsContext,
+        center: CGPoint,
+        size: CGSize,
+        phase: Double,
+        isPlaying: Bool
+    ) {
+        let rect = CGRect(
+            x: center.x - size.width / 2,
+            y: center.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+        let strip = Path(roundedRect: rect, cornerRadius: 4)
+        context.fill(
+            strip,
+            with: .linearGradient(
+                Gradient(colors: [
+                    Color(red: 0.07, green: 0.04, blue: 0.025),
+                    Color(red: 0.27, green: 0.18, blue: 0.10),
+                    Color(red: 0.08, green: 0.04, blue: 0.025)
+                ]),
+                startPoint: CGPoint(x: rect.minX, y: rect.midY),
+                endPoint: CGPoint(x: rect.maxX, y: rect.midY)
+            )
+        )
+
+        context.stroke(
+            Path { path in
+                path.move(to: CGPoint(x: rect.minX + 5, y: rect.midY))
+                path.addLine(to: CGPoint(x: rect.maxX - 5, y: rect.midY))
+            },
+            with: .color(Color.white.opacity(0.24)),
+            lineWidth: 0.9
+        )
+
+        guard isPlaying else { return }
+
+        let phaseOffset = CGFloat(phase.truncatingRemainder(dividingBy: 16))
+        for index in -2...6 {
+            let x = rect.minX + CGFloat(index) * 8 + phaseOffset
+            context.stroke(
+                Path { path in
+                    path.move(to: CGPoint(x: x, y: rect.minY + 3))
+                    path.addLine(to: CGPoint(x: x + 7, y: rect.maxY - 3))
+                },
+                with: .color(Color.white.opacity(0.08)),
+                lineWidth: 0.7
+            )
+        }
+    }
+
+    private func drawReel(
+        context: inout GraphicsContext,
+        center: CGPoint,
+        size: CGFloat,
+        rotation: Double,
+        spoolFraction: CGFloat,
+        isPlaying: Bool
+    ) {
+        let outerSize = size * 0.92
+        let outerRect = CGRect(
+            x: center.x - outerSize / 2,
+            y: center.y - outerSize / 2,
+            width: outerSize,
+            height: outerSize
+        )
+        let outer = Path(ellipseIn: outerRect)
+
+        context.fill(
+            outer,
+            with: .radialGradient(
+                Gradient(colors: [
+                    Color.black.opacity(0.96),
+                    Color(red: 0.19, green: 0.16, blue: 0.12),
+                    Color.black.opacity(0.88)
+                ]),
+                center: center,
+                startRadius: 2,
+                endRadius: size * 0.45
+            )
+        )
+        context.stroke(outer, with: .color(Color.white.opacity(0.16)), lineWidth: 1)
+
+        let spoolSize = size * min(max(spoolFraction, 0.36), 0.78)
+        context.fill(
+            Path(ellipseIn: CGRect(
+                x: center.x - spoolSize / 2,
+                y: center.y - spoolSize / 2,
+                width: spoolSize,
+                height: spoolSize
+            )),
+            with: .radialGradient(
+                Gradient(colors: [
+                    Color(red: 0.23, green: 0.15, blue: 0.08),
+                    Color(red: 0.10, green: 0.06, blue: 0.035),
+                    Color.black
+                ]),
+                center: center,
+                startRadius: 1,
+                endRadius: spoolSize * 0.52
+            )
+        )
+
+        let baseTransform = CGAffineTransform(translationX: center.x, y: center.y)
+            .rotated(by: CGFloat(rotation * .pi / 180))
+            .translatedBy(x: -center.x, y: -center.y)
+        let spokeWidth = size * 0.12
+        let spokeHeight = size * 0.28
+        let spokeOffset = size * 0.18
+
+        for index in 0..<6 {
+            let transform = baseTransform
+                .translatedBy(x: center.x, y: center.y)
+                .rotated(by: CGFloat(index) * .pi / 3)
+                .translatedBy(x: -center.x, y: -center.y)
+            let rect = CGRect(
+                x: center.x - spokeWidth / 2,
+                y: center.y - spokeOffset - spokeHeight / 2,
+                width: spokeWidth,
+                height: spokeHeight
+            )
+            context.fill(
+                Path(roundedRect: rect, cornerRadius: spokeWidth * 0.32).applying(transform),
+                with: .color(Color.white.opacity(0.76))
+            )
+        }
+
+        let hubRect = CGRect(
+            x: center.x - size * 0.18,
+            y: center.y - size * 0.18,
+            width: size * 0.36,
+            height: size * 0.36
+        )
+        context.fill(
+            Path(ellipseIn: hubRect),
+            with: .radialGradient(
+                Gradient(colors: [
+                    Color.white.opacity(0.95),
+                    Color(red: 0.62, green: 0.62, blue: 0.58),
+                    Color.white.opacity(0.62)
+                ]),
+                center: CGPoint(x: hubRect.minX, y: hubRect.minY),
+                startRadius: 1,
+                endRadius: size * 0.22
+            )
+        )
+        context.fill(
+            Path(ellipseIn: CGRect(
+                x: center.x - size * 0.07,
+                y: center.y - size * 0.07,
+                width: size * 0.14,
+                height: size * 0.14
+            )),
+            with: .color(Color.black.opacity(isPlaying ? 0.30 : 0.24))
+        )
     }
 
     private var targetReelVelocity: Double {
         235 * min(max(reelSpeed, 0.5), 2.0)
     }
 
-    private func advanceMotion(to date: Date) {
-        guard let lastFrameDate else {
-            self.lastFrameDate = date
-            return
+    private func rotation(at date: Date) -> Double {
+        rotation(at: date, playing: isPlaying)
+    }
+
+    private func rotation(at date: Date, playing: Bool) -> Double {
+        let elapsed = max(0, date.timeIntervalSince(transitionDate))
+
+        if playing {
+            let ramp = WidgetPerformance.mediaStartRampDuration
+            if elapsed < ramp {
+                return phaseAtTransition + targetReelVelocity * ramp * WidgetPerformance.smoothstepIntegral(elapsed / ramp)
+            }
+            return phaseAtTransition + targetReelVelocity * ((ramp * 0.5) + (elapsed - ramp))
         }
 
-        let delta = min(max(date.timeIntervalSince(lastFrameDate), 0), 0.06)
-        self.lastFrameDate = date
+        let ramp = WidgetPerformance.mediaStopRampDuration
+        if elapsed < ramp {
+            return phaseAtTransition + velocityAtTransition * ramp * WidgetPerformance.easingOutIntegral(elapsed / ramp)
+        }
+        return phaseAtTransition + velocityAtTransition * ramp * 0.5
+    }
 
-        let target = isPlaying ? targetReelVelocity : 0
-        let response = isPlaying ? 5.2 : 2.6
-        let blend = min(1, delta * response)
-        reelVelocity += (target - reelVelocity) * blend
+    private func velocity(at date: Date) -> Double {
+        velocity(at: date, playing: isPlaying)
+    }
 
-        if !isPlaying && abs(reelVelocity) < 0.05 {
-            reelVelocity = 0
+    private func velocity(at date: Date, playing: Bool) -> Double {
+        let elapsed = max(0, date.timeIntervalSince(transitionDate))
+
+        if playing {
+            let ramp = WidgetPerformance.mediaStartRampDuration
+            guard elapsed < ramp else { return targetReelVelocity }
+            return targetReelVelocity * WidgetPerformance.smoothstep(elapsed / ramp)
         }
 
-        reelRotation = (reelRotation + reelVelocity * delta).truncatingRemainder(dividingBy: 360)
-        tapePhase = (tapePhase + reelVelocity * delta * 0.045).truncatingRemainder(dividingBy: 16)
+        let ramp = WidgetPerformance.mediaStopRampDuration
+        guard elapsed < ramp else { return 0 }
+        return velocityAtTransition * (1 - WidgetPerformance.smoothstep(elapsed / ramp))
+    }
+
+    private func resetMotion(at date: Date, wasPlaying: Bool) {
+        phaseAtTransition = rotation(at: date, playing: wasPlaying).truncatingRemainder(dividingBy: 360)
+        velocityAtTransition = velocity(at: date, playing: wasPlaying)
+        transitionDate = date
+
+        pauseAnimationTask?.cancel()
+        if isPlaying {
+            animateAfterPause = false
+        } else {
+            animateAfterPause = true
+            pauseAnimationTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64((WidgetPerformance.mediaStopRampDuration + 0.1) * 1_000_000_000))
+                animateAfterPause = false
+            }
+        }
     }
 }
 private struct CassetteArtworkView: View {
@@ -1360,122 +1653,6 @@ private struct CassetteArtworkView: View {
                 .stroke(Color.black.opacity(0.55), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.24), radius: 2, y: 1)
-    }
-}
-
-private struct CassetteReelView: View {
-    let rotation: Double
-    let spoolFraction: CGFloat
-    let isPlaying: Bool
-
-    var body: some View {
-        GeometryReader { geo in
-            let size = min(geo.size.width, geo.size.height)
-            let spoolSize = size * min(max(spoolFraction, 0.36), 0.78)
-
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color.black.opacity(0.95),
-                                Color(red: 0.19, green: 0.16, blue: 0.12),
-                                Color.black.opacity(0.88)
-                            ],
-                            center: .center,
-                            startRadius: 2,
-                            endRadius: size * 0.45
-                        )
-                    )
-                    .frame(width: size * 0.92, height: size * 0.92)
-                    .overlay(
-                        Circle()
-                            .stroke(Color.white.opacity(0.18), lineWidth: 1.2)
-                            .frame(width: size * 0.92, height: size * 0.92)
-                    )
-
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color(red: 0.24, green: 0.15, blue: 0.08),
-                                Color(red: 0.10, green: 0.06, blue: 0.035),
-                                Color.black
-                            ],
-                            center: .center,
-                            startRadius: 1,
-                            endRadius: spoolSize * 0.52
-                        )
-                    )
-                    .frame(width: spoolSize, height: spoolSize)
-
-                ZStack {
-                    ForEach(0..<6, id: \.self) { index in
-                        RoundedRectangle(cornerRadius: size * 0.035, style: .continuous)
-                            .fill(Color.white.opacity(0.76))
-                            .frame(width: size * 0.12, height: size * 0.28)
-                            .offset(y: -size * 0.18)
-                            .rotationEffect(.degrees(Double(index) * 60))
-                    }
-
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    Color.white.opacity(0.95),
-                                    Color(red: 0.62, green: 0.62, blue: 0.58),
-                                    Color.white.opacity(0.62)
-                                ],
-                                center: .topLeading,
-                                startRadius: 1,
-                                endRadius: size * 0.22
-                            )
-                        )
-                        .frame(width: size * 0.36, height: size * 0.36)
-
-                    Circle()
-                        .fill(Color.black.opacity(0.26))
-                        .frame(width: size * 0.14, height: size * 0.14)
-                }
-                .rotationEffect(.degrees(rotation))
-                .shadow(color: .white.opacity(isPlaying ? 0.16 : 0.06), radius: isPlaying ? 5 : 2)
-            }
-            .frame(width: geo.size.width, height: geo.size.height)
-        }
-    }
-}
-
-private struct CassetteTapeStripView: View {
-    let phase: Double
-    let isPlaying: Bool
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.08, green: 0.045, blue: 0.025),
-                                Color(red: 0.26, green: 0.18, blue: 0.11),
-                                Color(red: 0.08, green: 0.045, blue: 0.025)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-
-                ForEach(0..<18, id: \.self) { index in
-                    Rectangle()
-                        .fill(Color.white.opacity(isPlaying ? 0.16 : 0.08))
-                        .frame(width: 1, height: geo.size.height * 0.62)
-                        .position(
-                            x: CGFloat(index) * 9 - CGFloat(phase),
-                            y: geo.size.height / 2
-                        )
-                }
-            }
-        }
     }
 }
 

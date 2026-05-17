@@ -35,11 +35,14 @@ struct PlayerTabView: View {
     @State private var isLyricOffsetRailHovering = false
     @State private var lastSwipeTime: Date = Date()
     @State private var localEventMonitor: Any?
+    @State private var displayTime: Double = 0
+    @State private var displayActiveLyricIndex: Int = 0
 
     private let playbackClockInterval: TimeInterval = 0.5
 
     var body: some View {        let hasAnyAccess = enableAppleMusic || enableSpotify || enableChrome || enableBrave || enableEdge || enableSafari
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
+        let progressTime = isDragging ? (dragProgress * nowPlaying.duration) : displayTime
         
         let hPad: CGFloat = isCompact ? 10 : 14
         let playerPanelWidth: CGFloat = expandedWidth
@@ -188,7 +191,7 @@ struct PlayerTabView: View {
                     // 2. THE PROGRESS BAR
                     if hasMedia {
                         HStack(spacing: 8) {
-                            Text(formatTime(isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
+                            Text(formatTime(progressTime))
                                 .font(.system(size: 9, design: .monospaced))
                                 .monospacedDigit()
                                 .foregroundColor(.gray)
@@ -200,7 +203,7 @@ struct PlayerTabView: View {
                                         .fill(Color.white.opacity(0.13))
                                         .frame(height: 7)
                                     
-                                    let progressRatio = min(1.0, max(0.0, isDragging ? dragProgress : (nowPlaying.currentTime / nowPlaying.duration)))
+                                    let progressRatio = min(1.0, max(0.0, isDragging ? dragProgress : (progressTime / nowPlaying.duration)))
                                     
                                     Capsule()
                                         .fill(
@@ -222,13 +225,15 @@ struct PlayerTabView: View {
                                     .onEnded { v in
                                         guard ensurePermissions() else { return }
                                         let dragRatio = min(max(0, v.location.x / geo.size.width), 0.99)
+                                        displayTime = min(max(nowPlaying.duration * dragRatio, 0), max(nowPlaying.duration, 1))
+                                        updateDisplayActiveLyric()
                                         nowPlaying.seek(to: dragRatio)
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { isDragging = false }
                                     }
                                 )
                             }.frame(height: 7)
                             
-                            let remaining = max(0, nowPlaying.duration - (isDragging ? (dragProgress * nowPlaying.duration) : nowPlaying.currentTime))
+                            let remaining = max(0, nowPlaying.duration - progressTime)
                             Text("-" + formatTime(remaining))
                                 .font(.system(size: 9, design: .monospaced))
                                 .monospacedDigit()
@@ -245,12 +250,12 @@ struct PlayerTabView: View {
                             GeometryReader { geo in
                                 let itemHeight: CGFloat = 26
                                 let exactFrameHeight: CGFloat = CGFloat(visibleLyricLines) * itemHeight
-                                let activeOffset = CGFloat(nowPlaying.activeLyricIndex) * itemHeight
+                                let activeOffset = CGFloat(displayActiveLyricIndex) * itemHeight
                                 let centerAdjustment = (exactFrameHeight - itemHeight) / 2.0
 
                                 VStack(spacing: 0) {
                                     ForEach(Array(nowPlaying.lyrics.enumerated()), id: \.offset) { index, lyric in
-                                        let distance = abs(index - nowPlaying.activeLyricIndex)
+                                        let distance = abs(index - displayActiveLyricIndex)
                                         let distDouble = Double(distance)
                                         let distCG = CGFloat(distance)
 
@@ -272,7 +277,7 @@ struct PlayerTabView: View {
                                 }
                                 .frame(width: geo.size.width, alignment: .center)
                                 .offset(y: -activeOffset + centerAdjustment)
-                                .animation(.spring(response: 0.6, dampingFraction: 0.8), value: nowPlaying.activeLyricIndex)
+                                .animation(.spring(response: 0.6, dampingFraction: 0.8), value: displayActiveLyricIndex)
                             }
                             .frame(height: CGFloat(visibleLyricLines) * 26.0)
                             .clipped()
@@ -365,6 +370,7 @@ struct PlayerTabView: View {
             }
         )
         .task {
+            syncDisplayClock(from: nowPlaying.currentTime, force: true)
             var lastPlaybackUpdate = Date()
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(playbackClockInterval * 1_000_000_000))
@@ -374,11 +380,26 @@ struct PlayerTabView: View {
                     lastPlaybackUpdate = now
 
                     if nowPlaying.isPlaying && !isDragging {
-                        nowPlaying.currentTime += elapsed
-                        nowPlaying.updateActiveLyric()
+                        displayTime = min(max(displayTime + elapsed, 0), max(nowPlaying.duration, 1))
+                        updateDisplayActiveLyric()
                     }
                 }
             }
+        }
+        .onChange(of: nowPlaying.currentSong) { _, _ in
+            syncDisplayClock(from: nowPlaying.currentTime, force: true)
+        }
+        .onChange(of: nowPlaying.currentTime) { _, newTime in
+            syncDisplayClock(from: newTime, force: !nowPlaying.isPlaying)
+        }
+        .onChange(of: nowPlaying.duration) { _, _ in
+            syncDisplayClock(from: min(displayTime, max(nowPlaying.duration, 1)), force: true)
+        }
+        .onChange(of: nowPlaying.lyrics) { _, _ in
+            updateDisplayActiveLyric()
+        }
+        .onChange(of: nowPlaying.currentSongLyricOffset) { _, _ in
+            updateDisplayActiveLyric()
         }
     }
     
@@ -434,6 +455,28 @@ struct PlayerTabView: View {
         .frame(height: 18)
         .animation(.easeInOut(duration: 0.16), value: shouldShowLyricControls)
         .animation(.easeInOut(duration: 0.16), value: nowPlaying.lyricsDisabledForCurrentSong)
+    }
+
+    private func syncDisplayClock(from managerTime: Double, force: Bool = false) {
+        let clampedTime = min(max(managerTime, 0), max(nowPlaying.duration, 1))
+        if force || abs(displayTime - clampedTime) > 1.5 {
+            displayTime = clampedTime
+            updateDisplayActiveLyric()
+        }
+    }
+
+    private func updateDisplayActiveLyric() {
+        guard !nowPlaying.lyrics.isEmpty else {
+            if displayActiveLyricIndex != 0 { displayActiveLyricIndex = 0 }
+            return
+        }
+
+        let globalOffset = UserDefaults.standard.double(forKey: "globalLyricOffset")
+        let adjustedTime = displayTime + 0.05 + globalOffset + nowPlaying.currentSongLyricOffset
+        let nextIndex = nowPlaying.lyrics.lastIndex(where: { $0.time <= adjustedTime }) ?? 0
+        if displayActiveLyricIndex != nextIndex {
+            displayActiveLyricIndex = nextIndex
+        }
     }
 
     private var lyricOffsetRail: some View {
