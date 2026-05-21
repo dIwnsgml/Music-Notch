@@ -9,7 +9,7 @@ extension NowPlayingManager {
         isFetching = true
         lastFetchTime = Date()
         
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .utility).async {
             let runningApps = NSWorkspace.shared.runningApplications
             var activeBrowsers: [String] = []
             var isSpotifyNativeRunning = false

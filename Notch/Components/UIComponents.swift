@@ -27,42 +27,58 @@ struct WaveformView: View {
     var animates: Bool = true
 
     private let maxHeights: [CGFloat] = [16, 24, 18, 22]
-    private let waveformFrameInterval: TimeInterval = 1.0 / 30.0
+    private let lowScales: [CGFloat] = [0.28, 0.22, 0.34, 0.26]
+    private let highScales: [CGFloat] = [0.90, 1.00, 0.78, 0.92]
+    private let durations: [Double] = [0.42, 0.36, 0.50, 0.40]
+    private let delays: [Double] = [0.0, 0.08, 0.15, 0.04]
+
+    @State private var animationPhase = false
+
+    private var shouldAnimate: Bool {
+        isPlaying && animates
+    }
     
     var body: some View {
-        TimelineView(.animation(minimumInterval: waveformFrameInterval, paused: !isPlaying || !animates)) { timeline in
-            Canvas(rendersAsynchronously: true) { context, size in
-                let barWidth: CGFloat = min(3, max(2, size.width / 8))
-                let spacing: CGFloat = 3
-                let totalWidth = CGFloat(maxHeights.count) * barWidth + CGFloat(maxHeights.count - 1) * spacing
-                let startX = (size.width - totalWidth) / 2
-                let fill = isPlaying ? color : Color.gray.opacity(0.5)
-
-                for index in maxHeights.indices {
-                    let height = barHeight(index: index, date: timeline.date)
-                    let rect = CGRect(
-                        x: startX + CGFloat(index) * (barWidth + spacing),
-                        y: (size.height - height) / 2,
-                        width: barWidth,
-                        height: height
-                    )
-                    context.fill(
-                        Path(roundedRect: rect, cornerRadius: barWidth / 2),
-                        with: .color(fill)
-                    )
-                }
+        HStack(spacing: 3) {
+            ForEach(maxHeights.indices, id: \.self) { index in
+                Capsule()
+                    .fill(isPlaying ? color : Color.gray.opacity(0.5))
+                    .frame(width: 3, height: maxHeights[index])
+                    .scaleEffect(y: barScale(index: index), anchor: .center)
+                    .animation(shouldAnimate ? barAnimation(index: index) : nil, value: animationPhase)
             }
+        }
+        .frame(height: maxHeights.max() ?? 24)
+        .id(shouldAnimate ? "wave-playing" : "wave-paused")
+        .transaction { transaction in
+            if !shouldAnimate {
+                transaction.disablesAnimations = true
+                transaction.animation = nil
+            }
+        }
+        .task(id: shouldAnimate) {
+            animationPhase = false
+            guard shouldAnimate else { return }
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            animationPhase = true
         }
     }
 
-    private func barHeight(index: Int, date: Date) -> CGFloat {
-        guard isPlaying else { return 4 }
-        guard animates else { return maxHeights[index] * 0.55 }
+    private func barScale(index: Int) -> CGFloat {
+        guard isPlaying else { return 0.22 }
+        guard animates else { return 0.55 }
+        return animationPhase ? highScales[index] : lowScales[index]
+    }
 
-        let speed = [5.4, 6.2, 7.1, 5.8][index]
-        let offset = Double(index) * 1.37
-        let wave = (sin(date.timeIntervalSinceReferenceDate * speed + offset) + 1) * 0.5
-        return 4 + (maxHeights[index] - 4) * CGFloat(0.28 + wave * 0.72)
+    private func barAnimation(index: Int) -> Animation {
+        guard isPlaying, animates else {
+            return .easeOut(duration: 0.18)
+        }
+
+        return .easeInOut(duration: durations[index])
+            .repeatForever(autoreverses: true)
+            .delay(delays[index])
     }
 }
 

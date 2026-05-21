@@ -55,9 +55,13 @@ class NowPlayingManager: ObservableObject {
     var lastFetchTime = Date(timeIntervalSince1970: 0)
     var lastLoopToggleTime = Date(timeIntervalSince1970: 0)
     var isNotchExpandedForPolling = false
+    var fastFetchWorkItem: DispatchWorkItem?
     private var currentFetchInterval: TimeInterval = 8.0
-    private let activeFetchInterval: TimeInterval = 1.0
-    private let idleFetchInterval: TimeInterval = 8.0
+    private let nativeActiveFetchInterval: TimeInterval = 3.0
+    private let browserActiveFetchInterval: TimeInterval = 1.5
+    private let expandedIdleFetchInterval: TimeInterval = 3.0
+    private let knownPausedFetchInterval: TimeInterval = 5.0
+    private let idleFetchInterval: TimeInterval = 12.0
     private let expandedDetailedScrapeInterval: TimeInterval = 5.0
     private let collapsedFullBrowserDiscoveryInterval: TimeInterval = 60.0
     private var lastFullBrowserDiscoveryTime = Date(timeIntervalSince1970: 0)
@@ -117,10 +121,20 @@ class NowPlayingManager: ObservableObject {
     }
 
     private var preferredFetchInterval: TimeInterval {
-        if isNotchExpandedForPolling || isPlaying || lastActiveBrowser != nil {
-            return activeFetchInterval
+        if isPlaying {
+            return isLastActiveNativePlayer ? nativeActiveFetchInterval : browserActiveFetchInterval
+        }
+        if lastActiveBrowser != nil {
+            return isLastActiveNativePlayer ? knownPausedFetchInterval : expandedIdleFetchInterval
+        }
+        if isNotchExpandedForPolling {
+            return expandedIdleFetchInterval
         }
         return idleFetchInterval
+    }
+
+    private var isLastActiveNativePlayer: Bool {
+        lastActiveBrowser == "SpotifyNative" || lastActiveBrowser == "AppleMusicNative"
     }
 
     func refreshFetchTimerIfNeeded() {
@@ -172,8 +186,138 @@ class NowPlayingManager: ObservableObject {
             if isPlaying { isPlaying = false }
         }
 
+        let appliedRichState = applyNativePlaybackNotification(
+            notificationName: notificationName,
+            userInfo: notification.userInfo ?? [:],
+            playbackState: state
+        )
+
         refreshFetchTimerIfNeeded()
-        triggerFastFetch()
+        if !appliedRichState {
+            triggerFastFetch()
+        }
+    }
+
+    @discardableResult
+    private func applyNativePlaybackNotification(
+        notificationName: String,
+        userInfo: [AnyHashable: Any],
+        playbackState: String
+    ) -> Bool {
+        let isSpotify = notificationName.contains("spotify")
+        let browser = isSpotify ? "SpotifyNative" : "AppleMusicNative"
+
+        guard let title = firstString(in: userInfo, keys: ["Name", "Title"]),
+              !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+
+        let artist = firstString(in: userInfo, keys: ["Artist", "Album Artist"]) ?? ""
+        let displayString = artist.isEmpty ? title : "\(title) - \(artist)"
+        let identifier = title + artist
+
+        let rawDuration = firstDouble(in: userInfo, keys: ["Duration", "Total Time", "TotalTime"]) ?? duration
+        let nextDuration = rawDuration > 10_000 ? rawDuration / 1000.0 : rawDuration
+        let nextTime = firstDouble(in: userInfo, keys: ["Playback Position", "Player Position", "Position"]) ?? currentTime
+
+        if lastActiveBrowser != browser {
+            lastActiveBrowser = browser
+            UserDefaults.standard.set(browser, forKey: "lastActiveBrowser")
+        }
+        if lastWindowIndex != nil {
+            lastWindowIndex = nil
+            UserDefaults.standard.removeObject(forKey: "lastWindowIndex")
+        }
+        if lastTabIndex != nil {
+            lastTabIndex = nil
+            UserDefaults.standard.removeObject(forKey: "lastTabIndex")
+        }
+
+        if abs(duration - nextDuration) > 0.25 {
+            duration = max(nextDuration, 1)
+        }
+
+        if internalSongIdentifier != identifier {
+            internalSongIdentifier = identifier
+            if currentTime != 0 { currentTime = 0 }
+            fetchLyricsEngine(title: title, artist: artist)
+
+            if isSpotify,
+               let artworkString = firstString(in: userInfo, keys: ["Artwork URL", "ArtworkURL", "Album Artwork URL"]),
+               let url = URL(string: artworkString),
+               artworkURL != url {
+                artworkURL = url
+                fetchDominantColor(from: url)
+            } else if isSpotify {
+                fetchSpotifyNativeArtwork(expectedIdentifier: identifier)
+            } else if !isSpotify {
+                fetchAppleMusicArtwork(title: title, artist: artist)
+            }
+        }
+
+        if currentSong != displayString {
+            currentSong = displayString
+        }
+        if abs(currentTime - nextTime) > 1.5 {
+            currentTime = max(nextTime, 0)
+        }
+        if playbackState.contains("playing"), !isPlaying {
+            isPlaying = true
+        } else if (playbackState.contains("paused") || playbackState.contains("stopped")), isPlaying {
+            isPlaying = false
+        }
+
+        return true
+    }
+
+    private func firstString(in userInfo: [AnyHashable: Any], keys: [String]) -> String? {
+        for key in keys {
+            if let value = userInfo[key] as? String, !value.isEmpty {
+                return value
+            }
+            if let value = userInfo[key] as? NSString, value.length > 0 {
+                return value as String
+            }
+        }
+        return nil
+    }
+
+    private func firstDouble(in userInfo: [AnyHashable: Any], keys: [String]) -> Double? {
+        for key in keys {
+            if let value = userInfo[key] as? Double { return value }
+            if let value = userInfo[key] as? Int { return Double(value) }
+            if let value = userInfo[key] as? NSNumber { return value.doubleValue }
+            if let value = userInfo[key] as? String, let parsed = Double(value) { return parsed }
+        }
+        return nil
+    }
+
+    private func fetchSpotifyNativeArtwork(expectedIdentifier: String) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let script = """
+            tell application "Spotify"
+                if player state is stopped then return "NO_IMAGE"
+                try
+                    return artwork url of current track
+                on error
+                    return "NO_IMAGE"
+                end try
+            end tell
+            """
+
+            guard let artworkString = NSAppleScript(source: script)?.executeAndReturnError(nil).stringValue,
+                  artworkString != "NO_IMAGE",
+                  let url = URL(string: artworkString) else {
+                return
+            }
+
+            DispatchQueue.main.async {
+                guard let self, self.internalSongIdentifier == expectedIdentifier else { return }
+                guard self.artworkURL != url else { return }
+                self.artworkURL = url
+                self.fetchDominantColor(from: url)
+            }
+        }
     }
     
     // ---------------------------------------------------------

@@ -250,11 +250,14 @@ struct PlayerTabView: View {
                             GeometryReader { geo in
                                 let itemHeight: CGFloat = 26
                                 let exactFrameHeight: CGFloat = CGFloat(visibleLyricLines) * itemHeight
-                                let activeOffset = CGFloat(displayActiveLyricIndex) * itemHeight
+                                let lyricIndices = visibleLyricIndices
+                                let windowStart = lyricIndices.first ?? displayActiveLyricIndex
+                                let activeOffset = CGFloat(max(0, displayActiveLyricIndex - windowStart)) * itemHeight
                                 let centerAdjustment = (exactFrameHeight - itemHeight) / 2.0
 
                                 VStack(spacing: 0) {
-                                    ForEach(Array(nowPlaying.lyrics.enumerated()), id: \.offset) { index, lyric in
+                                    ForEach(lyricIndices, id: \.self) { index in
+                                        let lyric = nowPlaying.lyrics[index]
                                         let distance = abs(index - displayActiveLyricIndex)
                                         let distDouble = Double(distance)
                                         let distCG = CGFloat(distance)
@@ -373,7 +376,10 @@ struct PlayerTabView: View {
             syncDisplayClock(from: nowPlaying.currentTime, force: true)
             var lastPlaybackUpdate = Date()
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(playbackClockInterval * 1_000_000_000))
+                let loopInterval = await MainActor.run {
+                    nowPlaying.isPlaying ? playbackClockInterval : 2.0
+                }
+                try? await Task.sleep(nanoseconds: UInt64(loopInterval * 1_000_000_000))
                 await MainActor.run {
                     let now = Date()
                     let elapsed = min(max(now.timeIntervalSince(lastPlaybackUpdate), 0), 2.0)
@@ -409,6 +415,15 @@ struct PlayerTabView: View {
 
     private var shouldShowLyricControls: Bool {
         showLyrics && (isLyricsHovering || isLyricOffsetRailHovering)
+    }
+
+    private var visibleLyricIndices: [Int] {
+        guard !nowPlaying.lyrics.isEmpty else { return [] }
+        let extraLines = max(2, visibleLyricLines)
+        let clampedActiveIndex = min(max(displayActiveLyricIndex, 0), nowPlaying.lyrics.count - 1)
+        let lowerBound = max(0, clampedActiveIndex - extraLines)
+        let upperBound = min(nowPlaying.lyrics.count - 1, clampedActiveIndex + extraLines)
+        return Array(lowerBound...upperBound)
     }
 
     private func lyricStatusControls(hasMedia: Bool) -> some View {
@@ -473,10 +488,26 @@ struct PlayerTabView: View {
 
         let globalOffset = UserDefaults.standard.double(forKey: "globalLyricOffset")
         let adjustedTime = displayTime + 0.05 + globalOffset + nowPlaying.currentSongLyricOffset
-        let nextIndex = nowPlaying.lyrics.lastIndex(where: { $0.time <= adjustedTime }) ?? 0
+        let nextIndex = lyricIndex(for: adjustedTime, currentIndex: displayActiveLyricIndex, lyrics: nowPlaying.lyrics)
         if displayActiveLyricIndex != nextIndex {
             displayActiveLyricIndex = nextIndex
         }
+    }
+
+    private func lyricIndex(for adjustedTime: Double, currentIndex: Int, lyrics: [LyricLine]) -> Int {
+        guard !lyrics.isEmpty else { return 0 }
+
+        var index = min(max(currentIndex, 0), lyrics.count - 1)
+        if lyrics[index].time <= adjustedTime {
+            while index + 1 < lyrics.count, lyrics[index + 1].time <= adjustedTime {
+                index += 1
+            }
+        } else {
+            while index > 0, lyrics[index].time > adjustedTime {
+                index -= 1
+            }
+        }
+        return index
     }
 
     private var lyricOffsetRail: some View {

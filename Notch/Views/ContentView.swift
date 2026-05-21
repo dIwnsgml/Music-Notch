@@ -540,6 +540,8 @@ struct ContentView: View {
     @State private var glowOpacity: Double = 0.0
     @State private var skipDirection: Int = 1
     @State private var lastSongChangeTime: Date = Date.distantPast
+    @State private var collapsedDisplayTime: Double = 0
+    @State private var collapsedActiveLyricIndex: Int = 0
     private let collapsedPlaybackClockInterval: TimeInterval = 0.5
     private let fileDropTypes = FileDropTypeIdentifiers.all
 
@@ -683,9 +685,7 @@ struct ContentView: View {
             }
             .frame(width: currentWidth, height: currentHeight, alignment: .top)
             .onHover { hovering in
-                if isHoveringNotch != hovering {
-                    isHoveringNotch = hovering
-                }
+                handleHoverState(hovering)
             }
             .onChange(of: currentWidth) { _, _ in
                 NotificationCenter.default.post(name: NSNotification.Name("CenterAppWindow"), object: nil)
@@ -790,11 +790,12 @@ struct ContentView: View {
                     lastPlaybackUpdate = now
 
                     if shouldAdvanceCollapsedPlaybackClock {
-                        nowPlaying.currentTime += elapsed
-                        nowPlaying.updateActiveLyric()
+                        collapsedDisplayTime = min(max(collapsedDisplayTime + elapsed, 0), max(nowPlaying.duration, 1))
+                        updateCollapsedActiveLyricIndex()
+                        updateLyricBanner()
                     }
 
-                    guard shouldPollHoverFallback else { return }
+                    guard shouldSampleHoverFallback else { return }
 
                     if isFileDropTargeted {
                         return
@@ -819,58 +820,31 @@ struct ContentView: View {
                         height: currentH
                     )
 
-                    let isHovering = panelRect.contains(mouseLoc)
-                    if isHoveringNotch != isHovering {
-                        isHoveringNotch = isHovering
-                    }
-
-                    if isPostFileDropExpansionSuppressed {
-                        hoverTask?.cancel()
-                        hoverTask = nil
-                        if isExpanded {
-                            isExpanded = false
-                        }
-                        if !isHovering {
-                            isPostFileDropExpansionSuppressed = false
-                            isFileDropLayoutLocked = false
-                        }
-                        return
-                    }
-
-                    if isHovering {
-                        if !isExpanded && enableHoverToExpand {
-                            if hoverTask == nil {
-                                hoverTask = Task {
-                                    if hoverDelay > 0 {
-                                        try? await Task.sleep(nanoseconds: UInt64(hoverDelay * 1_000_000_000))
-                                    }
-                                    guard !Task.isCancelled else { return }
-                                    await MainActor.run {
-                                        guard !isPostFileDropExpansionSuppressed else { return }
-                                        prepareExpandedLayerForExpansion()
-                                        isExpanded = true
-                                        isShowingBanner = false
-                                        isShowingLyricBanner = false
-                                        bannerTask?.cancel()
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        if hoverTask != nil {
-                            hoverTask?.cancel()
-                            hoverTask = nil
-                        }
-                        if isExpanded {
-                            isExpanded = false
-                        }
-                    }
+                    handleHoverState(panelRect.contains(mouseLoc))
                 }
             }
         }
-        .onChange(of: nowPlaying.activeLyricIndex) { _, _ in updateLyricBanner() }
+        .onChange(of: nowPlaying.currentSong) { _, _ in
+            syncCollapsedPlaybackClock(from: nowPlaying.currentTime, force: true)
+        }
+        .onChange(of: nowPlaying.currentTime) { _, newTime in
+            syncCollapsedPlaybackClock(from: newTime, force: !nowPlaying.isPlaying)
+        }
+        .onChange(of: nowPlaying.duration) { _, _ in
+            syncCollapsedPlaybackClock(from: min(collapsedDisplayTime, max(nowPlaying.duration, 1)), force: true)
+        }
+        .onChange(of: nowPlaying.activeLyricIndex) { _, _ in
+            syncCollapsedPlaybackClock(from: nowPlaying.currentTime)
+        }
         .onChange(of: showBannerLyrics) { _, _ in updateLyricBanner() }
-        .onChange(of: nowPlaying.lyrics) { _, _ in updateLyricBanner() }
+        .onChange(of: nowPlaying.lyrics) { _, _ in
+            updateCollapsedActiveLyricIndex()
+            updateLyricBanner()
+        }
+        .onChange(of: nowPlaying.currentSongLyricOffset) { _, _ in
+            updateCollapsedActiveLyricIndex()
+            updateLyricBanner()
+        }
         .onChange(of: nowPlaying.isPlaying) { _, newState in
             updateLyricBanner()
             guard showBannerOnControl else { return }
@@ -961,6 +935,7 @@ struct ContentView: View {
                         lineWidth: 2.5
                     )
                     .opacity(glowOpacity)
+                    .shadow(color: nowPlaying.artworkDominantColor.opacity(glowOpacity), radius: 7, x: 0, y: 0)
                     .allowsHitTesting(false)
             )
             .shadow(color: Color.black.opacity(0.5), radius: 12, y: 6)
@@ -1142,10 +1117,72 @@ struct ContentView: View {
         isExpanded || isHoveringNotch || isPostFileDropExpansionSuppressed || isFileDropTargeted || hoverTask != nil
     }
 
+    private var shouldSampleHoverFallback: Bool {
+        shouldPollHoverFallback || enableHoverToExpand
+    }
+
     private var contentLoopInterval: TimeInterval {
         if shouldPollHoverFallback { return 0.35 }
+        if enableHoverToExpand { return 0.75 }
         if shouldAdvanceCollapsedPlaybackClock { return collapsedPlaybackClockInterval }
-        return 1.0
+        return 4.0
+    }
+
+    private func handleHoverState(_ hovering: Bool) {
+        if isHoveringNotch != hovering {
+            isHoveringNotch = hovering
+        }
+
+        if isFileDropTargeted {
+            return
+        }
+
+        if isPostFileDropExpansionSuppressed {
+            hoverTask?.cancel()
+            hoverTask = nil
+            if isExpanded {
+                isExpanded = false
+            }
+            if !hovering {
+                isPostFileDropExpansionSuppressed = false
+                isFileDropLayoutLocked = false
+            }
+            return
+        }
+
+        if hovering {
+            scheduleHoverExpansionIfNeeded()
+        } else {
+            hoverTask?.cancel()
+            hoverTask = nil
+            if isExpanded {
+                isExpanded = false
+            }
+        }
+    }
+
+    private func scheduleHoverExpansionIfNeeded() {
+        guard enableHoverToExpand, !isExpanded, hoverTask == nil else { return }
+
+        hoverTask = Task {
+            if hoverDelay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(hoverDelay * 1_000_000_000))
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard !isPostFileDropExpansionSuppressed else { return }
+                guard isHoveringNotch else {
+                    hoverTask = nil
+                    return
+                }
+                prepareExpandedLayerForExpansion()
+                isExpanded = true
+                hoverTask = nil
+                isShowingBanner = false
+                isShowingLyricBanner = false
+                bannerTask?.cancel()
+            }
+        }
     }
 
     private func updateHardwareHUDVisibility() {
@@ -1475,9 +1512,9 @@ struct ContentView: View {
         if showGlowEffect {
             glowOpacity = 0.0
             glowRotation = 0.0
-            withAnimation(.easeIn(duration: 1.2)) { glowOpacity = 1.0 }
-            withAnimation(.easeInOut(duration: 5.0)) { glowRotation = 360 }
-            withAnimation(.easeOut(duration: 2.0).delay(3.0)) { glowOpacity = 0.0 }
+            withAnimation(.easeIn(duration: 0.35)) { glowOpacity = 1.0 }
+            withAnimation(.easeInOut(duration: 2.4)) { glowRotation = 360 }
+            withAnimation(.easeOut(duration: 0.85).delay(1.65)) { glowOpacity = 0.0 }
         }
 
         triggerBanner(text: newSong, duration: bannerDuration)
@@ -1527,19 +1564,68 @@ struct ContentView: View {
     }
 
     private func updateLyricBanner() {
-        guard showBannerLyrics, !isExpanded, nowPlaying.isPlaying, !nowPlaying.lyrics.isEmpty, nowPlaying.activeLyricIndex >= 0, nowPlaying.activeLyricIndex < nowPlaying.lyrics.count else {
-            withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) { isShowingLyricBanner = false }; return
+        guard showBannerLyrics, !isExpanded, nowPlaying.isPlaying, !nowPlaying.lyrics.isEmpty, collapsedActiveLyricIndex >= 0, collapsedActiveLyricIndex < nowPlaying.lyrics.count else {
+            if isShowingLyricBanner {
+                withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+                    isShowingLyricBanner = false
+                }
+            }
+            return
         }
-        let newLyric = nowPlaying.lyrics[nowPlaying.activeLyricIndex].text
+        let newLyric = nowPlaying.lyrics[collapsedActiveLyricIndex].text
         if newLyric.trimmingCharacters(in: .whitespaces).isEmpty {
-            withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) { isShowingLyricBanner = false }
-        }
-        else {
+            if isShowingLyricBanner {
+                withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+                    isShowingLyricBanner = false
+                }
+            }
+        } else if currentLyricText != newLyric || !isShowingLyricBanner {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
                 currentLyricText = newLyric
                 isShowingLyricBanner = true
             }
         }
+    }
+
+    private func syncCollapsedPlaybackClock(from managerTime: Double, force: Bool = false) {
+        let clampedTime = min(max(managerTime, 0), max(nowPlaying.duration, 1))
+        if force || abs(collapsedDisplayTime - clampedTime) > 1.5 {
+            collapsedDisplayTime = clampedTime
+            updateCollapsedActiveLyricIndex()
+            updateLyricBanner()
+        }
+    }
+
+    private func updateCollapsedActiveLyricIndex() {
+        guard !nowPlaying.lyrics.isEmpty else {
+            if collapsedActiveLyricIndex != 0 {
+                collapsedActiveLyricIndex = 0
+            }
+            return
+        }
+
+        let globalOffset = UserDefaults.standard.double(forKey: "globalLyricOffset")
+        let adjustedTime = collapsedDisplayTime + 0.05 + globalOffset + nowPlaying.currentSongLyricOffset
+        let nextIndex = collapsedLyricIndex(for: adjustedTime)
+        if collapsedActiveLyricIndex != nextIndex {
+            collapsedActiveLyricIndex = nextIndex
+        }
+    }
+
+    private func collapsedLyricIndex(for adjustedTime: Double) -> Int {
+        guard !nowPlaying.lyrics.isEmpty else { return 0 }
+
+        var index = min(max(collapsedActiveLyricIndex, 0), nowPlaying.lyrics.count - 1)
+        if nowPlaying.lyrics[index].time <= adjustedTime {
+            while index + 1 < nowPlaying.lyrics.count, nowPlaying.lyrics[index + 1].time <= adjustedTime {
+                index += 1
+            }
+        } else {
+            while index > 0, nowPlaying.lyrics[index].time > adjustedTime {
+                index -= 1
+            }
+        }
+        return index
     }
 
     private func showPomodoroCompletionBanner(from notification: Notification) {

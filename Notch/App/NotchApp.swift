@@ -32,6 +32,14 @@ extension Notification.Name {
     static let screenCaptureDidFinish = Notification.Name("ScreenCaptureDidFinish")
 }
 
+private enum AppDefaults {
+    static func register() {
+        UserDefaults.standard.register(defaults: [
+            "pomodoro_show_timer_banner": true
+        ])
+    }
+}
+
 @main
 struct DynamicIslandApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -39,6 +47,8 @@ struct DynamicIslandApp: App {
     @AppStorage("enableAnalytics") var enableAnalytics = true
     
     init() {
+        AppDefaults.register()
+
         let configuration = PostHogConfig(
             apiKey: "phc_tptR6JFYUrtWPDsY4Mo2rZNF9BHnUduUirV58uaLpAjT",
             host: "https://us.i.posthog.com"

@@ -220,7 +220,19 @@ extension NowPlayingManager {
         }
     }
     
-    func triggerFastFetch() { DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.isFetching = false; self.fetchTitle() } }
+    func triggerFastFetch(delay: TimeInterval = 0.2) {
+        fastFetchWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.fastFetchWorkItem = nil
+            self.isFetching = false
+            self.fetchTitle()
+        }
+
+        fastFetchWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
     
     func sendMediaKey(key: Int32) {
         let dataDown = Int((key << 16) | 0xa00); let dataUp = Int((key << 16) | 0xb00)
