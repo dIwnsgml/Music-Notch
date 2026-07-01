@@ -10,6 +10,10 @@
 	<string>WaveNotch uses your location to show local weather when the Weather plugin is enabled.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>WaveNotch uses your location to show local weather when the Weather plugin is enabled.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>WaveNotch uses Bluetooth access to show battery percentages for connected headphones and accessories.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>WaveNotch uses Bluetooth access to show battery percentages for connected headphones and accessories.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

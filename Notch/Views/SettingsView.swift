@@ -42,6 +42,7 @@ struct SettingsView: View {
     @AppStorage("hoverDelay") var hoverDelay: Double = 0.0
     @AppStorage("enableDoubleClickToOpen") var enableDoubleClickToOpen = true
     @AppStorage("launchAtLogin") var launchAtLogin = false
+    @AppStorage("hideNotchOnLockScreen") var hideNotchOnLockScreen = false
     @AppStorage("showGlowEffect") var showGlowEffect = true
     @AppStorage("invertSwipeDirection") var invertSwipeDirection = true
     @AppStorage("enableAnalytics") var enableAnalytics = true
@@ -58,6 +59,7 @@ struct SettingsView: View {
 
     // ⚡️ LYRICS & BANNER
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
+    @AppStorage("showSongChangeBanner") var showSongChangeBanner = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
     @AppStorage("showLyrics") var showLyrics = true
     @AppStorage("showBannerLyrics") var showBannerLyrics = true
@@ -789,6 +791,7 @@ struct SettingsView: View {
                 Toggle("Launch at Login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { newValue in toggleLaunchAtLogin(enabled: newValue) }
                 Toggle("Double-Click Player to Open Media App", isOn: $enableDoubleClickToOpen)
+                Toggle("Hide Notch on Lock Screen", isOn: $hideNotchOnLockScreen)
                 Toggle("Show Cinematic Glow on Song Change", isOn: $showGlowEffect)
                 Toggle("Invert Swipe Direction", isOn: $invertSwipeDirection)
             } header: { Text("App Behavior") }
@@ -828,6 +831,7 @@ struct SettingsView: View {
     private var lyricsContent: some View {
         Group {
             Section {
+                Toggle("Show Song Title When Track Changes", isOn: $showSongChangeBanner)
                 Toggle("Show Banner on Media Control", isOn: $showBannerOnControl)
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -1114,6 +1118,7 @@ struct DashboardSettingsView: View {
     @AppStorage("plugin_kaomoji_board_enabled") var kaomojiEnabled = false
     @AppStorage("plugin_weather_enabled") var weatherEnabled = false
     @AppStorage("plugin_hardware_hud_enabled") var hardwareHUDEnabled = false
+    @AppStorage("plugin_bluetooth_battery_enabled") var bluetoothBatteryEnabled = false
     @AppStorage("plugin_screen_capture_enabled") var screenCaptureEnabled = false
     @AppStorage("expandedPadding") var expandedPadding: Double = 16.0
 
@@ -1211,6 +1216,7 @@ struct DashboardSettingsView: View {
         case .kaomoji: return $kaomojiEnabled
         case .weather: return $weatherEnabled
         case .hardwareHUD: return $hardwareHUDEnabled
+        case .bluetoothBattery: return $bluetoothBatteryEnabled
         case .screenCapture: return $screenCaptureEnabled
         }
     }

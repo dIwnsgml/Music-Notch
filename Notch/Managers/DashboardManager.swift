@@ -17,6 +17,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
     case kaomoji
     case weather
     case hardwareHUD
+    case bluetoothBattery
     case screenCapture
     
     var id: String { self.rawValue }
@@ -38,6 +39,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .kaomoji: return "Kaomoji & Emoji Board"
         case .weather: return "Weather"
         case .hardwareHUD: return "Hardware HUD"
+        case .bluetoothBattery: return "Bluetooth Batteries"
         case .screenCapture: return "Screen Capture"
         }
     }
@@ -59,6 +61,7 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .kaomoji: return UserDefaults.standard.bool(forKey: "plugin_kaomoji_board_installed")
         case .weather: return UserDefaults.standard.bool(forKey: "plugin_weather_installed")
         case .hardwareHUD: return UserDefaults.standard.bool(forKey: "plugin_hardware_hud_installed")
+        case .bluetoothBattery: return UserDefaults.standard.bool(forKey: "plugin_bluetooth_battery_installed")
         case .screenCapture: return UserDefaults.standard.bool(forKey: "plugin_screen_capture_installed")
         }
     }
@@ -138,6 +141,7 @@ class DashboardManager: ObservableObject {
         let kaomojiEnabled = UserDefaults.standard.bool(forKey: "plugin_kaomoji_board_enabled")
         let weatherEnabled = UserDefaults.standard.bool(forKey: "plugin_weather_enabled")
         let hardwareHUDEnabled = UserDefaults.standard.bool(forKey: "plugin_hardware_hud_enabled")
+        let bluetoothBatteryEnabled = UserDefaults.standard.bool(forKey: "plugin_bluetooth_battery_enabled")
         let screenCaptureEnabled = UserDefaults.standard.bool(forKey: "plugin_screen_capture_enabled")
         if clipboardEnabled {
             _ = ClipboardHistoryManager.shared
@@ -224,6 +228,7 @@ class DashboardManager: ObservableObject {
             case .kaomoji: if kaomojiEnabled { widgets.append(.kaomoji) }
             case .weather: if weatherEnabled { widgets.append(.weather) }
             case .hardwareHUD: if hardwareHUDEnabled { widgets.append(.hardwareHUD) }
+            case .bluetoothBattery: if bluetoothBatteryEnabled { widgets.append(.bluetoothBattery) }
             case .screenCapture: if screenCaptureEnabled { widgets.append(.screenCapture) }
             }
         }

@@ -123,6 +123,7 @@ extension NowPlayingManager {
                 self.markDetailedMediaScrapeRun()
             }
             let effectiveJSCode = shouldUseDetailedScript ? jsCode : self.lightweightBrowserSnapshotScript()
+            var forceFullBrowserDiscovery = false
             
             // ⚡️ FAST PATH: Instantly check the last known active tab
             if let rawBrowser = self.lastActiveBrowser, let wIdx = self.lastWindowIndex, let tIdx = self.lastTabIndex {
@@ -135,26 +136,23 @@ extension NowPlayingManager {
                             self.parseAndApplyResult(result: result + "|||" + rawBrowser, browser: rawBrowser)
                             return
                         } else if result == "NOT_PLAYING" {
-                            if !self.isNotchExpandedForPolling {
-                                DispatchQueue.main.async {
-                                    if self.isPlaying { self.isPlaying = false }
-                                    self.refreshFetchTimerIfNeeded()
-                                    self.isFetching = false
-                                }
-                                return
-                            }
-                            // Expanded mode can afford a full loop in case another tab started playing.
+                            // The cached tab went stale. Even while collapsed, scan media tabs once
+                            // so browser tab/song switches do not wait for expansion. Keep the cached
+                            // indices for short retries in case the new media tab is still loading.
+                            forceFullBrowserDiscovery = true
                         } else {
+                            forceFullBrowserDiscovery = true
                             self.clearBrowserFastPath(browser: rawBrowser, windowIndex: wIdx, tabIndex: tIdx)
                         }
                     } else {
+                        forceFullBrowserDiscovery = true
                         self.clearBrowserFastPath(browser: rawBrowser, windowIndex: wIdx, tabIndex: tIdx)
                     }
                 }
             }
             
             // FULL LOOP: Only probe known media tabs; generic background tabs can be suspended by Memory Saver.
-            guard self.shouldRunFullBrowserDiscovery else {
+            guard forceFullBrowserDiscovery || self.shouldRunFullBrowserDiscovery else {
                 DispatchQueue.main.async {
                     if self.isPlaying { self.isPlaying = false }
                     self.refreshFetchTimerIfNeeded()

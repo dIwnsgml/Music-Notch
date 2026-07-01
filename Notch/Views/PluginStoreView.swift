@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 private enum PluginStoreCategoryFilter: String, CaseIterable, Identifiable {
     case all = "All"
@@ -604,6 +605,8 @@ struct PluginDetailView: View {
                     WeatherPluginSettingsView()
                 } else if plugin.id == "hardware_hud" {
                     HardwareHUDPluginSettingsView()
+                } else if plugin.id == "bluetooth_battery" {
+                    BluetoothBatteryPluginSettingsView()
                 } else if plugin.id == "screen_capture" {
                     ScreenCapturePluginSettingsView()
                 } else if plugin.id == "turntable_player" {
@@ -696,6 +699,8 @@ struct PluginIcon: View {
             return .orange
         case let id where id.contains("hardware_hud"):
             return .mint
+        case let id where id.contains("bluetooth_battery"):
+            return .green
         case let id where id.contains("screen_capture"):
             return .cyan
         default:
@@ -953,6 +958,68 @@ struct HardwareHUDPluginSettingsView: View {
             return "\(Int(gb.rounded())) GB"
         }
         return String(format: "%.1f GB", gb)
+    }
+}
+
+struct BluetoothBatteryPluginSettingsView: View {
+    @AppStorage("bluetooth_battery_show_laptop") private var showLaptopBattery = true
+    @StateObject private var manager = BluetoothBatteryManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PluginSettingToggle(
+                title: "Show Mac battery",
+                description: "Include the MacBook's internal battery as the first battery ring.",
+                key: "bluetooth_battery_show_laptop",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Detected Devices")
+                        .font(.system(size: 13, weight: .medium))
+                    Text(detectedText)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                Button {
+                    manager.refresh()
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Refresh")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            Text("Bluetooth battery percentages come from macOS Bluetooth and IOKit battery services. Some devices may require Bluetooth permission before percentages appear.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onAppear {
+            manager.refresh()
+        }
+        .onChange(of: showLaptopBattery) { _, _ in
+            manager.refresh()
+        }
+    }
+
+    private var detectedText: String {
+        guard !manager.devices.isEmpty else { return "No Bluetooth battery devices found." }
+        return manager.devices
+            .map { device in
+                device.percent.map { "\(device.name) \($0)%" } ?? "\(device.name) --"
+            }
+            .joined(separator: ", ")
     }
 }
 
@@ -1492,25 +1559,85 @@ struct FileTrayPluginSettingsView: View {
 
 struct TasksPluginSettingsView: View {
     @AppStorage("tasks_show_completed") private var showCompleted = true
+    @AppStorage("tasks_reminder_notifications_enabled") private var reminderNotificationsEnabled = true
+    @AppStorage("tasks_reminder_app_banner_enabled") private var reminderAppBannerEnabled = true
+    @AppStorage("tasks_detail_display_mode") private var detailDisplayMode = "compact"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             PomodoroSettingStepper(
-                title: "Task Limit",
+                title: "Reminder Limit",
                 key: "tasks_limit",
                 range: 5...100,
-                defaultValue: 30,
-                suffix: "tasks"
+                defaultValue: 60,
+                suffix: "items"
             )
 
             Divider().opacity(0.15)
 
             PluginSettingToggle(
-                title: "Show completed tasks",
-                description: "Keep completed tasks visible until you clear them.",
+                title: "Show completed reminders",
+                description: "Keep completed reminders visible in All and custom lists.",
                 key: "tasks_show_completed",
                 defaultValue: true
             )
+
+            Divider().opacity(0.15)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Reminder Details")
+                    .font(.system(size: 12, weight: .semibold))
+                Picker("", selection: $detailDisplayMode) {
+                    Text("Compact").tag("compact")
+                    Text("Hover").tag("hover")
+                    Text("Always").tag("always")
+                }
+                .pickerStyle(.segmented)
+            }
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "macOS notification banner",
+                description: "Use Notification Center like other apps, with a standard system banner and sound.",
+                key: "tasks_reminder_notifications_enabled",
+                defaultValue: true
+            )
+
+            Button {
+                openMacOSNotificationSettings()
+            } label: {
+                HStack {
+                    Image(systemName: "gearshape.fill")
+                    Text("Open macOS Notification Settings")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "WaveNotch reminder banner",
+                description: "Show due reminders inside the notch as a temporary in-app banner.",
+                key: "tasks_reminder_app_banner_enabled",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            Button {
+                TasksManager.shared.sendTestReminderAlerts()
+            } label: {
+                HStack {
+                    Image(systemName: "bell.badge")
+                    Text("Send Test Reminder")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
 
             Divider().opacity(0.15)
 
@@ -1519,7 +1646,7 @@ struct TasksPluginSettingsView: View {
             } label: {
                 HStack {
                     Image(systemName: "checkmark.circle")
-                    Text("Clear Completed Tasks")
+                    Text("Clear Completed Reminders")
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -1531,19 +1658,40 @@ struct TasksPluginSettingsView: View {
             } label: {
                 HStack {
                     Image(systemName: "trash")
-                    Text("Clear All Tasks")
+                    Text("Clear All Reminders")
                 }
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
 
-            Text("Tasks are stored locally and stay in your dashboard until removed.")
+            Text("Reminders, lists, tags, notes, priorities, and subtasks are stored locally.")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.secondary)
         }
         .onChange(of: showCompleted) { _, _ in
             TasksManager.shared.syncSettings()
+        }
+        .onChange(of: reminderNotificationsEnabled) { _, _ in
+            TasksManager.shared.syncSettings()
+        }
+        .onChange(of: reminderAppBannerEnabled) { _, _ in
+            TasksManager.shared.syncSettings()
+        }
+    }
+
+    private func openMacOSNotificationSettings() {
+        let candidateURLs = [
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.jason.WaveNotch",
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
+            "x-apple.systempreferences:com.apple.preference.notifications"
+        ]
+
+        for rawURL in candidateURLs {
+            guard let url = URL(string: rawURL) else { continue }
+            if NSWorkspace.shared.open(url) {
+                break
+            }
         }
     }
 }

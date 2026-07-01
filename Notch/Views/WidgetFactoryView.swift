@@ -2,6 +2,10 @@ import SwiftUI
 import Combine
 import AppKit
 import CoreLocation
+import Darwin
+import IOKit
+import IOKit.ps
+import ObjectiveC
 
 private enum WidgetPerformance {
     static let mediaAnimationFrameInterval: TimeInterval = 1.0 / 30.0
@@ -66,6 +70,7 @@ struct WidgetFactoryView: View {
                     case .kaomoji: KaomojiBoardWidget()
                     case .weather: WeatherWidget()
                     case .hardwareHUD: HardwareHUDWidget()
+                    case .bluetoothBattery: BluetoothBatteryWidget()
                     case .screenCapture: ScreenCaptureWidget()
                     }
                 }
@@ -93,6 +98,1110 @@ struct WidgetFactoryView: View {
                 )
             }
         }
+    }
+}
+
+struct BluetoothBatterySnapshot: Identifiable, Equatable {
+    enum Kind: String {
+        case laptop
+        case keyboard
+        case mouse
+        case trackpad
+        case headphones
+        case airPods
+        case leftEarbud
+        case rightEarbud
+        case caseBattery
+        case gameController
+        case generic
+    }
+
+    let id: String
+    let name: String
+    let percent: Int?
+    let isCharging: Bool
+    let kind: Kind
+
+    var iconName: String {
+        switch kind {
+        case .laptop: return "laptopcomputer"
+        case .keyboard: return "keyboard"
+        case .mouse: return "magicmouse"
+        case .trackpad: return "rectangle.and.hand.point.up.left"
+        case .headphones: return "headphones"
+        case .airPods, .leftEarbud, .rightEarbud: return "airpods"
+        case .caseBattery: return "case.fill"
+        case .gameController: return "gamecontroller.fill"
+        case .generic: return "battery.100"
+        }
+    }
+}
+
+final class BluetoothBatteryManager: ObservableObject {
+    static let shared = BluetoothBatteryManager()
+
+    @Published private(set) var devices: [BluetoothBatterySnapshot] = []
+    @Published private(set) var lastUpdated: Date?
+
+    private var timer: Timer?
+    private var isRefreshing = false
+
+    private init() {}
+
+    func start() {
+        refresh()
+        guard timer == nil else { return }
+
+        let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+            self?.refresh()
+        }
+        timer.tolerance = 6
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    func refresh() {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        let includeLaptop = UserDefaults.standard.object(forKey: "bluetooth_battery_show_laptop") as? Bool ?? true
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let snapshots = Self.collectSnapshots(includeLaptop: includeLaptop)
+
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.devices = snapshots
+                self.lastUpdated = Date()
+                self.isRefreshing = false
+            }
+        }
+    }
+
+    private static func collectSnapshots(includeLaptop: Bool) -> [BluetoothBatterySnapshot] {
+        var snapshots: [BluetoothBatterySnapshot] = []
+        var seen = Set<String>()
+
+        if includeLaptop, let laptop = laptopBatterySnapshot() {
+            snapshots.append(laptop)
+            seen.insert(laptop.id)
+        }
+
+        let ioBluetoothSnapshots = ioBluetoothBatterySnapshots()
+        for snapshot in ioBluetoothSnapshots {
+            guard !seen.contains(snapshot.id),
+                  !containsEquivalentBatterySnapshot(in: snapshots, candidate: snapshot) else { continue }
+            seen.insert(snapshot.id)
+            snapshots.append(snapshot)
+        }
+
+        let hasRealAppleAudioBattery = ioBluetoothSnapshots.contains { snapshot in
+            snapshot.percent != nil && isAppleAudioBatteryKind(snapshot.kind)
+        }
+
+        for snapshot in bluetoothBatterySnapshots(includeAppleAudioPlaceholders: !hasRealAppleAudioBattery) {
+            guard !seen.contains(snapshot.id),
+                  !containsEquivalentBatterySnapshot(in: snapshots, candidate: snapshot) else { continue }
+            seen.insert(snapshot.id)
+            snapshots.append(snapshot)
+        }
+
+        return snapshots.sorted { lhs, rhs in
+            if lhs.kind == .laptop { return true }
+            if rhs.kind == .laptop { return false }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    private static func containsEquivalentBatterySnapshot(in snapshots: [BluetoothBatterySnapshot], candidate: BluetoothBatterySnapshot) -> Bool {
+        guard candidate.percent != nil else { return false }
+        return snapshots.contains { snapshot in
+            snapshot.percent != nil
+                && snapshot.kind == candidate.kind
+                && snapshot.name.localizedCaseInsensitiveCompare(candidate.name) == .orderedSame
+        }
+    }
+
+    private static func laptopBatterySnapshot() -> BluetoothBatterySnapshot? {
+        guard let powerInfo = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(powerInfo)?.takeRetainedValue() as? [CFTypeRef] else {
+            return nil
+        }
+
+        for source in sources {
+            guard let description = IOPSGetPowerSourceDescription(powerInfo, source)?.takeUnretainedValue() as? [String: Any],
+                  let type = description[kIOPSTypeKey] as? String,
+                  type == kIOPSInternalBatteryType,
+                  let currentCapacity = numberValue(description[kIOPSCurrentCapacityKey]) else {
+                continue
+            }
+
+            let isCharging = (description[kIOPSIsChargingKey] as? Bool) ?? false
+            return BluetoothBatterySnapshot(
+                id: "internal-mac-battery",
+                name: "MacBook",
+                percent: clampPercent(currentCapacity),
+                isCharging: isCharging,
+                kind: .laptop
+            )
+        }
+
+        return nil
+    }
+
+    private static func ioBluetoothBatterySnapshots() -> [BluetoothBatterySnapshot] {
+        guard let deviceClass = ioBluetoothDeviceClass() else { return [] }
+
+        var snapshots: [BluetoothBatterySnapshot] = []
+        var seen = Set<String>()
+
+        for device in ioBluetoothDeviceCandidates(deviceClass: deviceClass) {
+            for snapshot in ioBluetoothBatterySnapshots(from: device) {
+                guard !seen.contains(snapshot.id) else { continue }
+                seen.insert(snapshot.id)
+                snapshots.append(snapshot)
+            }
+        }
+
+        return snapshots
+    }
+
+    private static func ioBluetoothDeviceClass() -> AnyClass? {
+        _ = dlopen("/System/Library/Frameworks/IOBluetooth.framework/IOBluetooth", RTLD_LAZY)
+        return NSClassFromString("IOBluetoothDevice")
+    }
+
+    private static func ioBluetoothDeviceCandidates(deviceClass: AnyClass) -> [NSObject] {
+        var devices: [NSObject] = []
+
+        for selector in ["connectedDevices", "pairedDevices", "favoriteDevices", "configuredDevices"] {
+            devices.append(contentsOf: objcClassArray(deviceClass, selector))
+        }
+
+        if let address = lastNowPlayingHeadsetAddress(),
+           let device = objcClassObject(deviceClass, "deviceWithAddressString:", string: address) as? NSObject {
+            devices.append(device)
+        }
+
+        var seen = Set<String>()
+        return devices.filter { device in
+            let identity = ioBluetoothDeviceIdentity(device)
+            guard !seen.contains(identity) else { return false }
+            seen.insert(identity)
+            return true
+        }
+    }
+
+    private static func ioBluetoothBatterySnapshots(from device: NSObject) -> [BluetoothBatterySnapshot] {
+        let isConnected = objcBool(device, "isConnected") ?? false
+        let name = ioBluetoothDeviceName(device)
+        let identity = ioBluetoothDeviceIdentity(device)
+        let isCharging = objcBool(device, "isBatteryCharging") ?? objcBool(device, "isCharging") ?? false
+        let isMultiBattery = objcBool(device, "isMultiBatteryDevice") ?? false
+
+        let combinedPercent = bluetoothBatteryPercent(objcUInt8(device, "batteryPercentCombined"))
+            ?? bluetoothBatteryPercent(objcUInt8(device, "batteryPercentSingle"))
+            ?? bluetoothBatteryPercent(objcInt64(device, "headsetBattery"))
+        let leftPercent = bluetoothBatteryPercent(objcUInt8(device, "batteryPercentLeft"))
+        let rightPercent = bluetoothBatteryPercent(objcUInt8(device, "batteryPercentRight"))
+        let casePercent = bluetoothBatteryPercent(objcUInt8(device, "batteryPercentCase"))
+        let hasComponentBattery = leftPercent != nil || rightPercent != nil || casePercent != nil
+        let hasBatteryValue = combinedPercent != nil || hasComponentBattery
+
+        guard isConnected || hasBatteryValue else { return [] }
+
+        let shortName = shortAccessoryName(name)
+        let baseID = "iobluetooth-\(identity)"
+        var snapshots: [BluetoothBatterySnapshot] = []
+
+        if isMultiBattery || hasComponentBattery {
+            if let leftPercent {
+                snapshots.append(
+                    BluetoothBatterySnapshot(
+                        id: "\(baseID)-left",
+                        name: "\(shortName) L",
+                        percent: leftPercent,
+                        isCharging: isCharging,
+                        kind: .leftEarbud
+                    )
+                )
+            }
+
+            if let rightPercent {
+                snapshots.append(
+                    BluetoothBatterySnapshot(
+                        id: "\(baseID)-right",
+                        name: "\(shortName) R",
+                        percent: rightPercent,
+                        isCharging: isCharging,
+                        kind: .rightEarbud
+                    )
+                )
+            }
+
+            if let casePercent {
+                snapshots.append(
+                    BluetoothBatterySnapshot(
+                        id: "\(baseID)-case",
+                        name: "\(shortName) Case",
+                        percent: casePercent,
+                        isCharging: isCharging,
+                        kind: .caseBattery
+                    )
+                )
+            }
+        }
+
+        if snapshots.isEmpty, let combinedPercent {
+            snapshots.append(
+                BluetoothBatterySnapshot(
+                    id: "\(baseID)-combined",
+                    name: name,
+                    percent: combinedPercent,
+                    isCharging: isCharging,
+                    kind: deviceKind(for: name)
+                )
+            )
+        }
+
+        return snapshots
+    }
+
+    private static func ioBluetoothDeviceName(_ device: NSObject) -> String {
+        let name = [
+            objcString(device, "getDisplayName"),
+            objcString(device, "displayName"),
+            objcString(device, "name"),
+            objcString(device, "getName"),
+            objcString(device, "nameOrAddress"),
+            objcString(device, "addressString"),
+            objcString(device, "getAddressString")
+        ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+
+        return cleanedDeviceName(name ?? "Bluetooth Device")
+    }
+
+    private static func ioBluetoothDeviceIdentity(_ device: NSObject) -> String {
+        let identity = [
+            objcString(device, "addressString"),
+            objcString(device, "getAddressString"),
+            objcString(device, "nameOrAddress"),
+            objcString(device, "name"),
+            objcString(device, "getName")
+        ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+
+        return (identity ?? "\(ObjectIdentifier(device))")
+            .lowercased()
+            .filter { $0.isLetter || $0.isNumber }
+    }
+
+    private static func bluetoothBatteryPercent(_ value: UInt8?) -> Int? {
+        guard let value, value > 0, value <= 100 else { return nil }
+        return Int(value)
+    }
+
+    private static func bluetoothBatteryPercent(_ value: Int64?) -> Int? {
+        guard let value, value > 0, value <= 100 else { return nil }
+        return Int(value)
+    }
+
+    private static func lastNowPlayingHeadsetAddress() -> String? {
+        CFPreferencesCopyAppValue(
+            "lastNowPlayingTargetHeadsetAddress" as CFString,
+            "com.apple.bluetooth" as CFString
+        ) as? String
+    }
+
+    private static func objcClassArray(_ cls: AnyClass, _ selectorName: String) -> [NSObject] {
+        guard let result = objcClassObject(cls, selectorName) else { return [] }
+        if let devices = result as? [NSObject] { return devices }
+        if let array = result as? NSArray {
+            return array.compactMap { $0 as? NSObject }
+        }
+        if let device = result as? NSObject { return [device] }
+        return []
+    }
+
+    private static func objcClassObject(_ cls: AnyClass, _ selectorName: String) -> AnyObject? {
+        let selector = NSSelectorFromString(selectorName)
+        guard let method = class_getClassMethod(cls, selector) else { return nil }
+        let implementation = method_getImplementation(method)
+        typealias Function = @convention(c) (AnyClass, Selector) -> AnyObject?
+        return unsafeBitCast(implementation, to: Function.self)(cls, selector)
+    }
+
+    private static func objcClassObject(_ cls: AnyClass, _ selectorName: String, string: String) -> AnyObject? {
+        let selector = NSSelectorFromString(selectorName)
+        guard let method = class_getClassMethod(cls, selector) else { return nil }
+        let implementation = method_getImplementation(method)
+        typealias Function = @convention(c) (AnyClass, Selector, NSString) -> AnyObject?
+        return unsafeBitCast(implementation, to: Function.self)(cls, selector, string as NSString)
+    }
+
+    private static func objcString(_ object: NSObject, _ selectorName: String) -> String? {
+        let selector = NSSelectorFromString(selectorName)
+        guard object.responds(to: selector),
+              let implementation = object.method(for: selector) else { return nil }
+        typealias Function = @convention(c) (AnyObject, Selector) -> AnyObject?
+        let value = unsafeBitCast(implementation, to: Function.self)(object, selector)
+        return value as? String
+    }
+
+    private static func objcBool(_ object: NSObject, _ selectorName: String) -> Bool? {
+        let selector = NSSelectorFromString(selectorName)
+        guard object.responds(to: selector),
+              let implementation = object.method(for: selector) else { return nil }
+        typealias Function = @convention(c) (AnyObject, Selector) -> Bool
+        return unsafeBitCast(implementation, to: Function.self)(object, selector)
+    }
+
+    private static func objcUInt8(_ object: NSObject, _ selectorName: String) -> UInt8? {
+        let selector = NSSelectorFromString(selectorName)
+        guard object.responds(to: selector),
+              let implementation = object.method(for: selector) else { return nil }
+        typealias Function = @convention(c) (AnyObject, Selector) -> UInt8
+        return unsafeBitCast(implementation, to: Function.self)(object, selector)
+    }
+
+    private static func objcInt64(_ object: NSObject, _ selectorName: String) -> Int64? {
+        let selector = NSSelectorFromString(selectorName)
+        guard object.responds(to: selector),
+              let implementation = object.method(for: selector) else { return nil }
+        typealias Function = @convention(c) (AnyObject, Selector) -> Int64
+        return unsafeBitCast(implementation, to: Function.self)(object, selector)
+    }
+
+    private static func bluetoothBatterySnapshots(includeAppleAudioPlaceholders: Bool) -> [BluetoothBatterySnapshot] {
+        var snapshots: [BluetoothBatterySnapshot] = []
+        var seen = Set<String>()
+
+        let matchingClasses = [
+            "AppleDeviceManagementHIDEventService",
+            "IOBluetoothHIDDriver",
+            "AppleHSBluetoothDevice",
+            "IOHIDDevice",
+            "IOHIDInterface",
+            "AppleUserHIDEventService"
+        ]
+
+        for className in matchingClasses {
+            for candidate in registryBatteryCandidates(matchingClass: className) {
+                guard candidate.percent >= 0, candidate.percent <= 100 else { continue }
+                let requiresBluetoothTransport = className == "IOHIDDevice"
+                guard !requiresBluetoothTransport || candidate.isBluetooth else { continue }
+
+                let identity = candidate.identity
+                guard !seen.contains(identity) else { continue }
+                seen.insert(identity)
+
+                snapshots.append(
+                    BluetoothBatterySnapshot(
+                        id: identity,
+                        name: candidate.name,
+                        percent: candidate.percent,
+                        isCharging: candidate.isCharging,
+                        kind: deviceKind(for: candidate.name)
+                    )
+                )
+            }
+        }
+
+        for snapshot in appleAudioBatterySnapshots() {
+            guard includeAppleAudioPlaceholders || snapshot.percent != nil else { continue }
+            guard !seen.contains(snapshot.id) else { continue }
+            seen.insert(snapshot.id)
+            snapshots.append(snapshot)
+        }
+
+        return snapshots
+    }
+
+    private static func isAppleAudioBatteryKind(_ kind: BluetoothBatterySnapshot.Kind) -> Bool {
+        switch kind {
+        case .airPods, .leftEarbud, .rightEarbud, .caseBattery, .headphones:
+            return true
+        case .laptop, .keyboard, .mouse, .trackpad, .gameController, .generic:
+            return false
+        }
+    }
+
+    private struct RegistryBatteryCandidate {
+        let identity: String
+        let name: String
+        let percent: Int
+        let isCharging: Bool
+        let isBluetooth: Bool
+    }
+
+    private static func registryBatteryCandidates(matchingClass: String) -> [RegistryBatteryCandidate] {
+        var candidates: [RegistryBatteryCandidate] = []
+
+        for entry in registryEntries(matchingClass: matchingClass) {
+            let properties = entry.properties
+            guard !isAppleBluetoothAudioDevice(properties: properties, registryName: entry.registryName),
+                  let percent = percentValue(in: properties) else {
+                continue
+            }
+
+            let name = bestDeviceName(from: properties, fallback: entry.registryName)
+            guard !name.isEmpty, !isInternalBatteryName(name) else { continue }
+
+            let identity = bestDeviceIdentity(from: properties, fallback: "\(matchingClass)-\(name)-\(percent)")
+            let isBluetooth = isBluetoothDevice(properties: properties, registryName: entry.registryName)
+            let isCharging = boolValue(properties["IsCharging"])
+                ?? boolValue(properties["BatteryIsCharging"])
+                ?? boolValue(properties["ExternalConnected"])
+                ?? false
+
+            candidates.append(
+                RegistryBatteryCandidate(
+                    identity: identity,
+                    name: name,
+                    percent: clampPercent(percent),
+                    isCharging: isCharging,
+                    isBluetooth: isBluetooth
+                )
+            )
+        }
+
+        return candidates
+    }
+
+    private struct RegistryEntry {
+        let matchingClass: String
+        let registryName: String
+        let properties: [String: Any]
+    }
+
+    private struct AppleAudioBatteryGroup {
+        var identity: String
+        var displayName: String
+        var combinedPercent: Int?
+        var leftPercent: Int?
+        var rightPercent: Int?
+        var casePercent: Int?
+        var isCharging: Bool
+    }
+
+    private static func appleAudioBatterySnapshots() -> [BluetoothBatterySnapshot] {
+        let matchingClasses = ["IOHIDInterface", "AppleUserHIDEventService", "IOHIDDevice"]
+        var groups: [String: AppleAudioBatteryGroup] = [:]
+
+        for className in matchingClasses {
+            for entry in registryEntries(matchingClass: className) {
+                let properties = entry.properties
+                guard isAppleBluetoothAudioDevice(properties: properties, registryName: entry.registryName) else {
+                    continue
+                }
+
+                let identity = bestDeviceIdentity(
+                    from: properties,
+                    fallback: "\(className)-\(entry.registryName)-\(numberValue(properties["ProductID"]) ?? 0)"
+                )
+                let displayName = appleAudioDisplayName(from: properties, fallback: entry.registryName)
+                let values = appleAudioBatteryValues(in: properties)
+                let isCharging = boolValue(properties["IsCharging"])
+                    ?? boolValue(properties["BatteryIsCharging"])
+                    ?? boolValue(properties["ExternalConnected"])
+                    ?? false
+
+                var group = groups[identity] ?? AppleAudioBatteryGroup(
+                    identity: identity,
+                    displayName: displayName,
+                    combinedPercent: nil,
+                    leftPercent: nil,
+                    rightPercent: nil,
+                    casePercent: nil,
+                    isCharging: false
+                )
+
+                if !displayName.isEmpty, group.displayName == "AirPods" || group.displayName == "Bluetooth Audio" {
+                    group.displayName = displayName
+                }
+                group.combinedPercent = group.combinedPercent ?? values.combined
+                group.leftPercent = group.leftPercent ?? values.left
+                group.rightPercent = group.rightPercent ?? values.right
+                group.casePercent = group.casePercent ?? values.caseBattery
+                group.isCharging = group.isCharging || isCharging
+                groups[identity] = group
+            }
+        }
+
+        return groups.values.flatMap { group in
+            appleAudioSnapshots(from: group)
+        }
+    }
+
+    private static func appleAudioSnapshots(from group: AppleAudioBatteryGroup) -> [BluetoothBatterySnapshot] {
+        let baseID = "apple-audio-\(group.identity)"
+        let hasComponentBattery = group.leftPercent != nil || group.rightPercent != nil || group.casePercent != nil
+        var snapshots: [BluetoothBatterySnapshot] = []
+
+        if hasComponentBattery {
+            if let leftPercent = group.leftPercent {
+                snapshots.append(
+                    BluetoothBatterySnapshot(
+                        id: "\(baseID)-left",
+                        name: "\(shortAccessoryName(group.displayName)) L",
+                        percent: clampPercent(leftPercent),
+                        isCharging: group.isCharging,
+                        kind: .leftEarbud
+                    )
+                )
+            }
+
+            if let rightPercent = group.rightPercent {
+                snapshots.append(
+                    BluetoothBatterySnapshot(
+                        id: "\(baseID)-right",
+                        name: "\(shortAccessoryName(group.displayName)) R",
+                        percent: clampPercent(rightPercent),
+                        isCharging: group.isCharging,
+                        kind: .rightEarbud
+                    )
+                )
+            }
+
+            if let casePercent = group.casePercent {
+                snapshots.append(
+                    BluetoothBatterySnapshot(
+                        id: "\(baseID)-case",
+                        name: "\(shortAccessoryName(group.displayName)) Case",
+                        percent: clampPercent(casePercent),
+                        isCharging: group.isCharging,
+                        kind: .caseBattery
+                    )
+                )
+            }
+        } else if let combinedPercent = group.combinedPercent {
+            snapshots.append(
+                BluetoothBatterySnapshot(
+                    id: "\(baseID)-combined",
+                    name: group.displayName,
+                    percent: clampPercent(combinedPercent),
+                    isCharging: group.isCharging,
+                    kind: deviceKind(for: group.displayName)
+                )
+            )
+        } else {
+            snapshots.append(
+                BluetoothBatterySnapshot(
+                    id: "\(baseID)-connected",
+                    name: group.displayName,
+                    percent: nil,
+                    isCharging: group.isCharging,
+                    kind: deviceKind(for: group.displayName)
+                )
+            )
+        }
+
+        return snapshots
+    }
+
+    private static func registryEntries(matchingClass: String) -> [RegistryEntry] {
+        guard let matching = IOServiceMatching(matchingClass) else { return [] }
+
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
+            return []
+        }
+        defer { IOObjectRelease(iterator) }
+
+        var entries: [RegistryEntry] = []
+
+        while true {
+            let service = IOIteratorNext(iterator)
+            if service == 0 { break }
+            defer { IOObjectRelease(service) }
+
+            guard let properties = registryProperties(for: service) else { continue }
+            entries.append(
+                RegistryEntry(
+                    matchingClass: matchingClass,
+                    registryName: registryEntryName(service),
+                    properties: properties
+                )
+            )
+        }
+
+        return entries
+    }
+
+    private static func registryProperties(for service: io_object_t) -> [String: Any]? {
+        var propertiesRef: Unmanaged<CFMutableDictionary>?
+        let result = IORegistryEntryCreateCFProperties(service, &propertiesRef, kCFAllocatorDefault, 0)
+        guard result == KERN_SUCCESS,
+              let retainedProperties = propertiesRef?.takeRetainedValue(),
+              let properties = retainedProperties as NSDictionary as? [String: Any] else {
+            return nil
+        }
+        return properties
+    }
+
+    private static func registryEntryName(_ service: io_object_t) -> String {
+        var nameBuffer = [CChar](repeating: 0, count: 256)
+        guard IORegistryEntryGetName(service, &nameBuffer) == KERN_SUCCESS else { return "" }
+        return String(cString: nameBuffer).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func bestDeviceName(from properties: [String: Any], fallback: String) -> String {
+        let keys = ["Product", "ProductName", "DeviceName", "Name", "DisplayName", "Manufacturer"]
+        for key in keys {
+            if let value = stringValue(properties[key]), !value.isEmpty {
+                return cleanedDeviceName(value)
+            }
+        }
+        return cleanedDeviceName(fallback)
+    }
+
+    private static func appleAudioDisplayName(from properties: [String: Any], fallback: String) -> String {
+        let productID = numberValue(properties["ProductID"])
+        if let productID, knownAirPodsProductIDs.contains(productID) {
+            return "AirPods"
+        }
+
+        let name = bestDeviceName(from: properties, fallback: fallback)
+        let lowerName = name.lowercased()
+        let genericNames = ["apple", "headset", "bluetooth audio", "appleuserhideventservice", "iohidinterface"]
+        if !name.isEmpty, name != fallback, !genericNames.contains(lowerName) {
+            return name
+        }
+
+        if lowerName == "headset" {
+            return "Headphones"
+        }
+
+        let fallbackName = cleanedDeviceName(fallback)
+        return fallbackName.isEmpty || fallbackName == "AppleUserHIDEventService" || fallbackName == "IOHIDInterface"
+            ? "Bluetooth Audio"
+            : fallbackName
+    }
+
+    private static func bestDeviceIdentity(from properties: [String: Any], fallback: String) -> String {
+        let keys = ["DeviceAddress", "BluetoothAddress", "BD_ADDR", "SerialNumber", "ProductID", "LocationID"]
+        for key in keys {
+            if let value = stringValue(properties[key]), !value.isEmpty {
+                return "\(key)-\(value)"
+            }
+            if let value = numberValue(properties[key]) {
+                return "\(key)-\(value)"
+            }
+        }
+        return fallback
+    }
+
+    private static func percentValue(in properties: [String: Any]) -> Int? {
+        let keys = [
+            "BatteryPercent",
+            "BatteryPercentCombined",
+            "BatteryPercentage",
+            "Battery Level",
+            "BatteryLevel",
+            "Battery",
+            "DeviceBatteryLevel",
+            "BatteryCurrentCapacity",
+            "PowerSourcePercent"
+        ]
+
+        return percentValue(in: properties, keys: keys)
+    }
+
+    private static func appleAudioBatteryValues(in properties: [String: Any]) -> (combined: Int?, left: Int?, right: Int?, caseBattery: Int?) {
+        let combinedKeys = [
+            "BatteryPercent",
+            "BatteryPercentCombined",
+            "BatteryPercentage",
+            "Battery Level",
+            "BatteryLevel",
+            "Battery",
+            "DeviceBatteryLevel",
+            "bat",
+            "batP"
+        ]
+        let leftKeys = [
+            "BatteryPercentLeft",
+            "BatteryPercentLeftBud",
+            "BatteryPercentLeftAirPod",
+            "LeftBatteryPercent",
+            "LeftBatteryLevel",
+            "LeftBattery",
+            "BatteryLevelLeft",
+            "BatteryLeft",
+            "Battery Left",
+            "leftBattery",
+            "batL"
+        ]
+        let rightKeys = [
+            "BatteryPercentRight",
+            "BatteryPercentRightBud",
+            "BatteryPercentRightAirPod",
+            "RightBatteryPercent",
+            "RightBatteryLevel",
+            "RightBattery",
+            "BatteryLevelRight",
+            "BatteryRight",
+            "Battery Right",
+            "rightBattery",
+            "batR"
+        ]
+        let caseKeys = [
+            "BatteryPercentCase",
+            "CaseBatteryPercent",
+            "CaseBatteryLevel",
+            "CaseBattery",
+            "BatteryLevelCase",
+            "BatteryCase",
+            "Battery Case",
+            "ChargingCaseBatteryPercent",
+            "chargingCaseBattery",
+            "batC"
+        ]
+
+        return (
+            percentValue(in: properties, keys: combinedKeys),
+            percentValue(in: properties, keys: leftKeys),
+            percentValue(in: properties, keys: rightKeys),
+            percentValue(in: properties, keys: caseKeys)
+        )
+    }
+
+    private static func percentValue(in properties: [String: Any], keys: [String]) -> Int? {
+        recursivePercentValue(in: properties, wantedKeys: Set(keys.map(normalizedPropertyKey)))
+    }
+
+    private static func recursivePercentValue(in value: Any?, wantedKeys: Set<String>) -> Int? {
+        guard let value else { return nil }
+
+        if let dictionary = value as? [String: Any] {
+            for (key, nestedValue) in dictionary {
+                guard wantedKeys.contains(normalizedPropertyKey(key)),
+                      let percent = normalizedPercent(nestedValue) else {
+                    continue
+                }
+                return percent
+            }
+
+            for nestedValue in dictionary.values {
+                if let percent = recursivePercentValue(in: nestedValue, wantedKeys: wantedKeys) {
+                    return percent
+                }
+            }
+        } else if let dictionary = value as? NSDictionary {
+            for (key, nestedValue) in dictionary {
+                guard let key = stringValue(key),
+                      wantedKeys.contains(normalizedPropertyKey(key)),
+                      let percent = normalizedPercent(nestedValue) else {
+                    continue
+                }
+                return percent
+            }
+
+            for nestedValue in dictionary.allValues {
+                if let percent = recursivePercentValue(in: nestedValue, wantedKeys: wantedKeys) {
+                    return percent
+                }
+            }
+        } else if let array = value as? [Any] {
+            for nestedValue in array {
+                if let percent = recursivePercentValue(in: nestedValue, wantedKeys: wantedKeys) {
+                    return percent
+                }
+            }
+        } else if let array = value as? NSArray {
+            for nestedValue in array {
+                if let percent = recursivePercentValue(in: nestedValue, wantedKeys: wantedKeys) {
+                    return percent
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private static func normalizedPercent(_ value: Any?) -> Int? {
+        guard let percent = numberValue(value), percent >= 0, percent <= 100 else { return nil }
+        return percent
+    }
+
+    nonisolated private static func normalizedPropertyKey(_ key: String) -> String {
+        key.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
+
+    private static func isBluetoothDevice(properties: [String: Any], registryName: String) -> Bool {
+        let strings = [
+            stringValue(properties["Transport"]),
+            stringValue(properties["DeviceUsage"]),
+            stringValue(properties["BluetoothAddress"]),
+            stringValue(properties["DeviceAddress"]),
+            stringValue(properties["BD_ADDR"]),
+            registryName
+        ]
+            .compactMap { $0?.lowercased() }
+
+        return strings.contains { value in
+            value.contains("bluetooth") || value.contains("bt-") || value.contains("btaacp") || value.contains(":")
+        }
+    }
+
+    private static func isAppleBluetoothAudioDevice(properties: [String: Any], registryName: String) -> Bool {
+        let transport = stringValue(properties["Transport"])?.lowercased() ?? ""
+        if transport.contains("bt-aacp") || transport.contains("btaacp") {
+            return true
+        }
+
+        let name = bestDeviceName(from: properties, fallback: registryName).lowercased()
+        let isKnownAudioName = name.contains("airpods")
+            || name.contains("airpod")
+            || name.contains("beats")
+            || name.contains("headphone")
+            || name.contains("earbuds")
+        return isKnownAudioName && isBluetoothDevice(properties: properties, registryName: registryName)
+    }
+
+    private static func deviceKind(for name: String) -> BluetoothBatterySnapshot.Kind {
+        let lower = name.lowercased()
+        if lower.contains("macbook") { return .laptop }
+        if lower.contains("keyboard") { return .keyboard }
+        if lower.contains("mouse") { return .mouse }
+        if lower.contains("trackpad") { return .trackpad }
+        if lower.contains("airpods") || lower.contains("airpod") { return .airPods }
+        if lower.contains("case") { return .caseBattery }
+        if lower.contains("headphone") || lower.contains("buds") || lower.contains("beats") { return .headphones }
+        if lower.contains("controller") || lower.contains("gamepad") { return .gameController }
+        return .generic
+    }
+
+    private static func shortAccessoryName(_ name: String) -> String {
+        let lower = name.lowercased()
+        if lower.contains("airpods") || lower.contains("airpod") { return "AirPods" }
+        if lower.contains("beats") { return "Beats" }
+        if lower == "bluetooth audio" { return "Audio" }
+        return name
+    }
+
+    private static let knownAirPodsProductIDs: Set<Int> = [
+        8212,
+        8214,
+        8228
+    ]
+
+    private static func isInternalBatteryName(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return lower.contains("internalbattery") || lower == "battery"
+    }
+
+    private static func cleanedDeviceName(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "Bluetooth", with: "")
+            .replacingOccurrences(of: "Device", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func stringValue(_ value: Any?) -> String? {
+        if let value = value as? String { return value }
+        if let value = value as? NSString { return value as String }
+        if let value = value as? Data {
+            return value.map { String(format: "%02x", $0) }.joined(separator: ":")
+        }
+        return nil
+    }
+
+    private static func numberValue(_ value: Any?) -> Int? {
+        if let value = value as? Int { return value }
+        if let value = value as? NSNumber { return value.intValue }
+        if let value = value as? String { return Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        return nil
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool? {
+        if let value = value as? Bool { return value }
+        if let value = value as? NSNumber { return value.boolValue }
+        if let value = value as? String {
+            let normalized = value.lowercased()
+            if normalized == "yes" || normalized == "true" || normalized == "1" { return true }
+            if normalized == "no" || normalized == "false" || normalized == "0" { return false }
+        }
+        return nil
+    }
+
+    private static func clampPercent(_ value: Int) -> Int {
+        min(max(value, 0), 100)
+    }
+}
+
+struct BluetoothBatteryWidget: View {
+    @StateObject private var manager = BluetoothBatteryManager.shared
+    @AppStorage("bluetooth_battery_show_laptop") private var showLaptopBattery = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "battery.100.bolt")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.green)
+                    .frame(width: 34, height: 34)
+                    .background(Color.green.opacity(0.16))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Batteries")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.55))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    manager.refresh()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white.opacity(0.68))
+                        .frame(width: 28, height: 28)
+                        .background(Color.white.opacity(0.09))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            if manager.devices.isEmpty {
+                emptyState
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                GeometryReader { geo in
+                    let ringSize = min(60, max(48, geo.size.height - 48))
+                    let itemWidth = max(76, ringSize + 22)
+                    let spacing: CGFloat = 14
+                    let deviceCount = CGFloat(manager.devices.count)
+                    let contentWidth = deviceCount * itemWidth + max(0, deviceCount - 1) * spacing
+                    let railWidth = max(geo.size.width, contentWidth + 12)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: spacing) {
+                            ForEach(manager.devices) { device in
+                                BluetoothBatteryRing(device: device, ringSize: ringSize, lineWidth: 6)
+                                    .frame(width: itemWidth)
+                            }
+                        }
+                        .frame(width: railWidth, alignment: contentWidth <= geo.size.width ? .center : .leading)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                    }
+                    .frame(width: geo.size.width, height: geo.size.height)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .padding(16)
+        .onAppear { manager.start() }
+        .onDisappear { manager.stop() }
+        .onChange(of: showLaptopBattery) { _, _ in
+            manager.refresh()
+        }
+    }
+
+    private var subtitle: String {
+        guard !manager.devices.isEmpty else { return "No battery devices found" }
+        let deviceCount = manager.devices.count
+        return "\(deviceCount) \(deviceCount == 1 ? "device" : "devices")"
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "battery.0")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundColor(.white.opacity(0.42))
+            Text("Connect Bluetooth devices")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white.opacity(0.58))
+        }
+    }
+}
+
+private struct BluetoothBatteryRing: View {
+    let device: BluetoothBatterySnapshot
+    var ringSize: CGFloat = 58
+    var lineWidth: CGFloat = 8
+
+    private var ringColor: Color {
+        guard let percent = device.percent else { return .white.opacity(0.55) }
+        if percent <= 20 { return .red }
+        if percent <= 40 { return .orange }
+        return .green
+    }
+
+    var body: some View {
+        VStack(spacing: 5) {
+            ZStack {
+                Circle()
+                    .stroke(ringColor.opacity(0.18), lineWidth: lineWidth)
+                    .padding(lineWidth / 2)
+
+                if let percent = device.percent {
+                    Circle()
+                        .trim(from: 0, to: CGFloat(percent) / 100)
+                        .stroke(ringColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                        .padding(lineWidth / 2)
+                        .rotationEffect(.degrees(-90))
+                        .shadow(color: ringColor.opacity(0.28), radius: 4, x: 0, y: 0)
+                } else {
+                    Circle()
+                        .trim(from: 0, to: 0.78)
+                        .stroke(ringColor.opacity(0.42), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [3.5, 7]))
+                        .padding(lineWidth / 2)
+                        .rotationEffect(.degrees(-90))
+                }
+
+                Image(systemName: device.iconName)
+                    .font(.system(size: max(18, ringSize * 0.36), weight: .semibold))
+                    .foregroundColor(.white.opacity(0.86))
+
+                if device.isCharging {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: max(9, ringSize * 0.17), weight: .black))
+                        .foregroundColor(.white)
+                        .offset(y: -ringSize * 0.42)
+                }
+            }
+            .frame(width: ringSize, height: ringSize)
+            .padding(.horizontal, 3)
+            .padding(.vertical, 2)
+
+            Text(device.percent.map { "\($0)%" } ?? "--")
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            Text(device.name)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundColor(.white.opacity(0.48))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        if let percent = device.percent {
+            return "\(device.name), \(percent) percent"
+        }
+        return "\(device.name), battery unavailable"
     }
 }
 

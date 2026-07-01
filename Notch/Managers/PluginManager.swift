@@ -98,7 +98,7 @@ class PluginManager: ObservableObject {
         WaveNotchPlugin(
             id: "tasks",
             name: "Tasks",
-            description: "Create, complete, and clear quick tasks directly from the notch.",
+            description: "Reminders-style lists with dates, flags, priority, tags, notes, subtasks, search, and completion.",
             iconName: "checkmark.circle.fill",
             assetImageName: nil,
             category: .productivity,
@@ -130,6 +130,15 @@ class PluginManager: ObservableObject {
             assetImageName: nil,
             category: .system,
             storageKeyBase: "plugin_hardware_hud"
+        ),
+        WaveNotchPlugin(
+            id: "bluetooth_battery",
+            name: "Bluetooth Batteries",
+            description: "Show battery rings for connected Bluetooth devices, with an option to include your Mac battery.",
+            iconName: "battery.100.bolt",
+            assetImageName: nil,
+            category: .system,
+            storageKeyBase: "plugin_bluetooth_battery"
         ),
         WaveNotchPlugin(
             id: "screen_capture",

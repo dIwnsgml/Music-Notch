@@ -3,6 +3,7 @@ import AppKit
 import SkyLightWindow
 import Sparkle
 import PostHog
+import UserNotifications
 
 extension SkyLightOperator {
     func undelegateWindow(_ window: NSWindow) {
@@ -30,12 +31,20 @@ extension Notification.Name {
     static let pomodoroSessionCompleted = Notification.Name("PomodoroSessionCompleted")
     static let screenCaptureWillStart = Notification.Name("ScreenCaptureWillStart")
     static let screenCaptureDidFinish = Notification.Name("ScreenCaptureDidFinish")
+    static let notchPluginInteractionLockChanged = Notification.Name("NotchPluginInteractionLockChanged")
+    static let taskReminderBannerRequested = Notification.Name("TaskReminderBannerRequested")
 }
 
 private enum AppDefaults {
     static func register() {
         UserDefaults.standard.register(defaults: [
-            "pomodoro_show_timer_banner": true
+            "pomodoro_show_timer_banner": true,
+            "hideNotchOnLockScreen": false,
+            "showSongChangeBanner": true,
+            "bluetooth_battery_show_laptop": true,
+            "tasks_reminder_notifications_enabled": true,
+            "tasks_reminder_app_banner_enabled": true,
+            "tasks_detail_display_mode": "compact"
         ])
     }
 }
@@ -377,11 +386,14 @@ final class DropHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     var panel: IslandPanel!
     let updaterController: SPUStandardUpdaterController
     private var isSkyLightEnabled = false
     private var restoreSkyLightTask: Task<Void, Never>?
+    private var isScreenLocked = false
+    private var isHiddenForScreenCapture = false
+    private var defaultsObserver: NSObjectProtocol?
     
     override init() {
         updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
@@ -389,6 +401,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
+        TasksManager.shared.startReminderMonitoring()
         
         // ⚡️ Large transparent window to allow dynamic sizing of content within it
         let panelWidth: CGFloat = 1000 
@@ -462,6 +476,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: .screenCaptureDidFinish, object: nil, queue: .main) { _ in
             self.restorePanelAfterScreenCapture()
         }
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(screenDidLock),
+            name: Notification.Name("com.apple.screenIsLocked"),
+            object: nil
+        )
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(screenDidUnlock),
+            name: Notification.Name("com.apple.screenIsUnlocked"),
+            object: nil
+        )
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard self?.isScreenLocked == true else { return }
+            self?.applyLockScreenVisibility()
+        }
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -532,18 +574,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                self?.centerPanel()
-                self?.enableSkyLight()
+                guard let self, !self.shouldKeepPanelHidden else { return }
+                self.centerPanel()
+                self.enableSkyLight()
             }
         }
     }
 
     private func hidePanelForScreenCapture() {
+        isHiddenForScreenCapture = true
         disableSkyLight()
         panel.orderOut(nil)
     }
 
     private func restorePanelAfterScreenCapture() {
+        isHiddenForScreenCapture = false
+        guard !shouldKeepPanelHidden else { return }
         centerPanel(on: screenForPanel() ?? NSScreen.main ?? NSScreen.screens.first)
         panel.orderFrontRegardless()
         scheduleSkyLightRestore(after: 0.15)
@@ -552,6 +598,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func repositionAfterScreenChange() {
         disableSkyLight()
         centerPanel(on: screenForPanel() ?? NSScreen.main ?? NSScreen.screens.first)
+        scheduleSkyLightRestore(after: 0.15)
+    }
+
+    private var shouldHideOnLockScreen: Bool {
+        UserDefaults.standard.object(forKey: "hideNotchOnLockScreen") as? Bool ?? false
+    }
+
+    private var shouldKeepPanelHidden: Bool {
+        isHiddenForScreenCapture || (isScreenLocked && shouldHideOnLockScreen)
+    }
+
+    @objc private func screenDidLock() {
+        isScreenLocked = true
+        applyLockScreenVisibility()
+    }
+
+    @objc private func screenDidUnlock() {
+        isScreenLocked = false
+        applyLockScreenVisibility()
+    }
+
+    private func applyLockScreenVisibility() {
+        guard panel != nil else { return }
+
+        if isScreenLocked && shouldHideOnLockScreen {
+            disableSkyLight()
+            panel.orderOut(nil)
+            return
+        }
+
+        guard !shouldKeepPanelHidden else { return }
+        centerPanel(on: screenForPanel() ?? NSScreen.main ?? NSScreen.screens.first)
+        panel.orderFrontRegardless()
         scheduleSkyLightRestore(after: 0.15)
     }
 }

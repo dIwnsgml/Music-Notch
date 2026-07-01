@@ -480,6 +480,7 @@ struct ContentView: View {
     @AppStorage("hoverDelay") var hoverDelay: Double = 0.0
 
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
+    @AppStorage("showSongChangeBanner") var showSongChangeBanner = true
     @AppStorage("bannerDuration") var bannerDuration: Double = 3.5
     @AppStorage("showLyrics") var showLyrics = true
     @AppStorage("showBannerLyrics") var showBannerLyrics = true
@@ -517,7 +518,13 @@ struct ContentView: View {
 
     @State private var isShowingBanner = false
     @State private var bannerText: String = ""
+    @State private var bannerIconName: String?
+    @State private var bannerTintColor: Color = .white
     @State private var bannerTask: Task<Void, Never>? = nil
+    @State private var isShowingTaskReminderBanner = false
+    @State private var taskReminderBannerTitle = ""
+    @State private var taskReminderBannerBody = ""
+    @State private var taskReminderBannerTask: Task<Void, Never>? = nil
     @State private var isShowingLyricBanner = false
     @State private var currentLyricText: String = ""
     @State private var isFileDropTargeted = false
@@ -528,6 +535,7 @@ struct ContentView: View {
     @State private var shouldRenderExpandedLayer = false
     @State private var expandedLayerRenderTask: Task<Void, Never>? = nil
     @State private var isHoveringNotch = false
+    @State private var isPluginInteractionLocked = false
 
     @State private var cachedThemeImage: NSImage? = nil
 
@@ -682,6 +690,7 @@ struct ContentView: View {
                 }
 
                 settingsButtonLayer
+                taskReminderNativeBannerLayer
             }
             .frame(width: currentWidth, height: currentHeight, alignment: .top)
             .onHover { hovering in
@@ -867,6 +876,10 @@ struct ContentView: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .notchPluginInteractionLockChanged)) { notification in
+            let locked = notification.userInfo?["isLocked"] as? Bool ?? false
+            handlePluginInteractionLock(locked)
+        }
         .onChange(of: isFileDropTargeted) { _, targeted in
             if targeted {
                 isFileDropLayoutLocked = true
@@ -881,6 +894,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .pomodoroSessionCompleted)) { notification in
             showPomodoroCompletionBanner(from: notification)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .taskReminderBannerRequested)) { notification in
+            showTaskReminderBanner(from: notification)
         }
         .edgesIgnoringSafeArea(.all)
     }
@@ -960,6 +976,51 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    private var taskReminderNativeBannerLayer: some View {
+        if isExpanded && isShowingTaskReminderBanner {
+            HStack(spacing: 10) {
+                Image(systemName: "bell.badge.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.yellow)
+                    .frame(width: 32, height: 32)
+                    .background(Color.yellow.opacity(0.18))
+                    .clipShape(Circle())
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(taskReminderBannerTitle)
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    Text(taskReminderBannerBody)
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.58))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Text("now")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.45))
+            }
+            .padding(.horizontal, 12)
+            .frame(width: max(220, currentWidth - 44), height: 48)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.black.opacity(0.66))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+            .shadow(color: .black.opacity(0.28), radius: 14, x: 0, y: 8)
+            .padding(.top, notchHeight + 8)
+            .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: .top)))
+            .zIndex(20)
+        }
+    }
+
+    @ViewBuilder
     private var settingsButtonLayer: some View {
         if isExpanded && showSettingsButton && !usesFileDropOnlyLayout {
             HStack {
@@ -1031,10 +1092,18 @@ struct ContentView: View {
             if showsCollapsedBanner {
                 ZStack {
                     if isShowingBanner {
-                        MarqueeText(text: bannerText, font: .system(size: 12, weight: .bold), alignment: .center)
-                            .foregroundColor(nowPlaying.artworkDominantColor)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                            .id("banner_\(bannerText)")
+                        HStack(spacing: 6) {
+                            if let bannerIconName {
+                                Image(systemName: bannerIconName)
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(bannerTintColor)
+                            }
+
+                            MarqueeText(text: bannerText, font: .system(size: 12, weight: .bold), alignment: .center)
+                                .foregroundColor(bannerIconName == nil ? nowPlaying.artworkDominantColor : .white)
+                        }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .id("banner_\(bannerIconName ?? "none")_\(bannerText)")
                     } else if showTimerBanner {
                         HStack(spacing: 6) {
                             Image(systemName: pomodoroTimer.pendingTransition == nil ? "timer" : "bell.badge.fill")
@@ -1114,7 +1183,7 @@ struct ContentView: View {
     }
 
     private var shouldPollHoverFallback: Bool {
-        isExpanded || isHoveringNotch || isPostFileDropExpansionSuppressed || isFileDropTargeted || hoverTask != nil
+        isExpanded || isHoveringNotch || isPluginInteractionLocked || isPostFileDropExpansionSuppressed || isFileDropTargeted || hoverTask != nil
     }
 
     private var shouldSampleHoverFallback: Bool {
@@ -1137,6 +1206,16 @@ struct ContentView: View {
             return
         }
 
+        if isPluginInteractionLocked {
+            hoverTask?.cancel()
+            hoverTask = nil
+            if !isExpanded {
+                prepareExpandedLayerForExpansion()
+                isExpanded = true
+            }
+            return
+        }
+
         if isPostFileDropExpansionSuppressed {
             hoverTask?.cancel()
             hoverTask = nil
@@ -1156,6 +1235,26 @@ struct ContentView: View {
             hoverTask?.cancel()
             hoverTask = nil
             if isExpanded {
+                isExpanded = false
+            }
+        }
+    }
+
+    private func handlePluginInteractionLock(_ locked: Bool) {
+        guard isPluginInteractionLocked != locked else { return }
+
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            isPluginInteractionLocked = locked
+            hoverTask?.cancel()
+            hoverTask = nil
+
+            if locked {
+                prepareExpandedLayerForExpansion()
+                isExpanded = true
+                isShowingBanner = false
+                isShowingLyricBanner = false
+                bannerTask?.cancel()
+            } else if !isHoveringNotch && !isFileDropTargeted && !isPostFileDropExpansionSuppressed {
                 isExpanded = false
             }
         }
@@ -1197,10 +1296,12 @@ struct ContentView: View {
         case .spotifyQueue, .youtubeQueue: return 250
         case .spotifyPlaylists, .youtubePlaylists: return playlistWidgetHeight
         case .pomodoro: return pomodoroWidgetHeight
-        case .clipboard, .fileTray, .tasks: return 220
+        case .clipboard, .fileTray: return 220
+        case .tasks: return 270
         case .kaomoji: return 220
         case .weather: return 132
         case .hardwareHUD: return 174
+        case .bluetoothBattery: return 174
         case .screenCapture: return 174
         default: return 160
         }
@@ -1517,7 +1618,9 @@ struct ContentView: View {
             withAnimation(.easeOut(duration: 0.85).delay(1.65)) { glowOpacity = 0.0 }
         }
 
-        triggerBanner(text: newSong, duration: bannerDuration)
+        if showSongChangeBanner {
+            triggerBanner(text: newSong, duration: bannerDuration)
+        }
     }
 
     private func loadThemeImage() {
@@ -1639,9 +1742,38 @@ struct ContentView: View {
         triggerBanner(text: "\(completedTitle) complete - \(nextTitle) ready", duration: 3.0)
     }
 
-    private func triggerBanner(text: String, duration: Double) {
+    private func showTaskReminderBanner(from notification: Notification) {
+        let title = notification.userInfo?["title"] as? String ?? "Reminder"
+        let body = notification.userInfo?["body"] as? String ?? "Reminder due now."
+
+        if isExpanded {
+            taskReminderBannerTitle = title
+            taskReminderBannerBody = body
+            taskReminderBannerTask?.cancel()
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                isShowingTaskReminderBanner = true
+            }
+            taskReminderBannerTask = Task {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        isShowingTaskReminderBanner = false
+                    }
+                    taskReminderBannerTask = nil
+                }
+            }
+        } else {
+            triggerBanner(text: title, duration: 4.0, iconName: "bell.badge.fill", tint: .yellow)
+        }
+    }
+
+    private func triggerBanner(text: String, duration: Double, iconName: String? = nil, tint: Color = .white) {
         if !isExpanded {
             bannerText = text
+            bannerIconName = iconName
+            bannerTintColor = tint
+            isShowingLyricBanner = false
             withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) { isShowingBanner = true }
 
             let sleepTime = UInt64(duration * 1_000_000_000)
@@ -1649,7 +1781,11 @@ struct ContentView: View {
             bannerTask = Task {
                 try? await Task.sleep(nanoseconds: sleepTime)
                 guard !Task.isCancelled else { return }
-                await MainActor.run { withAnimation { isShowingBanner = false }; updateLyricBanner() }
+                await MainActor.run {
+                    withAnimation { isShowingBanner = false }
+                    bannerIconName = nil
+                    updateLyricBanner()
+                }
             }
         }
     }
