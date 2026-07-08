@@ -479,7 +479,10 @@ struct SettingsView: View {
                 if themeBackgroundType == "color" {
                     ColorPicker("Color", selection: Binding(
                         get: { Color(hex: themeBackgroundColorHex) ?? .black },
-                        set: { themeBackgroundColorHex = $0.toHex() }
+                        set: {
+                            themeBackgroundColorHex = $0.toHex()
+                            themeBackgroundHoverOnly = false
+                        }
                     ))
                     .labelsHidden()
                     .frame(width: 44)
@@ -628,6 +631,7 @@ struct SettingsView: View {
                 if !themeBackgroundImagePath.isEmpty {
                     Button {
                         themeBackgroundType = "image"
+                        themeBackgroundHoverOnly = false
                     } label: {
                         VStack(spacing: 8) {
                             ThemePreviewThumbnail(
@@ -673,7 +677,10 @@ struct SettingsView: View {
                 if themeBackgroundType == "color" {
                     ColorPicker("Notch Background Color", selection: Binding(
                         get: { Color(hex: themeBackgroundColorHex) ?? .black },
-                        set: { themeBackgroundColorHex = $0.toHex() }
+                        set: {
+                            themeBackgroundColorHex = $0.toHex()
+                            themeBackgroundHoverOnly = false
+                        }
                     ))
                 }
 
@@ -727,6 +734,7 @@ struct SettingsView: View {
         themePresetID = preset.id
         themeBackgroundType = "preset"
         themeBackgroundOpacity = 1.0
+        themeBackgroundHoverOnly = false
     }
 
     private func chooseThemeImage() {
@@ -749,6 +757,7 @@ struct SettingsView: View {
             clearThemeImage(removeStoredPathOnly: true)
             themeBackgroundImagePath = destination.path
             themeBackgroundType = "image"
+            themeBackgroundHoverOnly = false
         } catch {
             print("Failed to copy background image: \(error)")
         }
@@ -819,6 +828,18 @@ struct SettingsView: View {
                     }
                 }
             } header: { Text("System Permissions") }
+
+            Section {
+                Button {
+                    OnboardingWindowManager.shared.show(reset: true)
+                } label: {
+                    Label("Open Welcome Setup", systemImage: "sparkles")
+                }
+
+                Text("Run the first-time setup again to review theme, media, lyrics, plugins, pets, and essential defaults.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } header: { Text("Onboarding") }
 
             Section {
                 Toggle("Share Anonymous Usage Data", isOn: $enableAnalytics)

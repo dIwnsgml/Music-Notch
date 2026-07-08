@@ -10,7 +10,7 @@ PROJECT_DIR="/Users/jasonlee/Coding/App/Notch"
 RELEASES_DIR="$PROJECT_DIR/Releases"
 WEBSITE_PUBLIC_DIR="/Users/jasonlee/Coding/Web/Wave-Notch-Website/public"
 SPARKLE_BIN="/Users/jasonlee/Downloads/Sparkle-2.9.1/bin/generate_appcast"
-MASTER_BACKGROUND="$RELEASES_DIR/background.png"
+MASTER_BACKGROUND="$PROJECT_DIR/background.png"
 EXPORT_PLIST="$PROJECT_DIR/ExportOptions.plist"
 NOTARY_PROFILE="WaveNotchNotary" # ⚡️ Your secure keychain profile
 

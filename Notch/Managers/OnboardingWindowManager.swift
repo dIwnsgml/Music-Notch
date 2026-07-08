@@ -8,11 +8,11 @@ class OnboardingWindowManager {
     func showIfNeeded() {
         guard !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            self.show()
+            self.show(reset: true)
         }
     }
     
-    func show() {
+    func show(reset: Bool = false) {
         if window == nil {
             let hostingController = NSHostingController(rootView: OnboardingView())
             window = NSWindow(
@@ -29,6 +29,8 @@ class OnboardingWindowManager {
             window?.standardWindowButton(.zoomButton)?.isHidden = true
             window?.standardWindowButton(.miniaturizeButton)?.isHidden = true
             window?.level = .floating
+        } else if reset {
+            window?.contentViewController = NSHostingController(rootView: OnboardingView())
         }
         
         // ⚡️ CRITICAL for Menu Bar apps: Forces the window to the front

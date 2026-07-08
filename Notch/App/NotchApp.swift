@@ -33,19 +33,29 @@ extension Notification.Name {
     static let screenCaptureDidFinish = Notification.Name("ScreenCaptureDidFinish")
     static let notchPluginInteractionLockChanged = Notification.Name("NotchPluginInteractionLockChanged")
     static let taskReminderBannerRequested = Notification.Name("TaskReminderBannerRequested")
+    static let onboardingLyricsDemoChanged = Notification.Name("OnboardingLyricsDemoChanged")
 }
 
 private enum AppDefaults {
     static func register() {
-        UserDefaults.standard.register(defaults: [
+        let defaults = UserDefaults.standard
+
+        defaults.register(defaults: [
             "pomodoro_show_timer_banner": true,
             "hideNotchOnLockScreen": false,
             "showSongChangeBanner": true,
+            "themeBackgroundHoverOnly": false,
             "bluetooth_battery_show_laptop": true,
             "tasks_reminder_notifications_enabled": true,
             "tasks_reminder_app_banner_enabled": true,
             "tasks_detail_display_mode": "compact"
         ])
+
+        let hoverOnlyResetKey = "themeBackgroundHoverOnlyDefaultReset_20260708"
+        if !defaults.bool(forKey: hoverOnlyResetKey) {
+            defaults.set(false, forKey: "themeBackgroundHoverOnly")
+            defaults.set(true, forKey: hoverOnlyResetKey)
+        }
     }
 }
 

@@ -2,18 +2,30 @@ import SwiftUI
 import ApplicationServices
 
 struct OnboardingView: View {
-    private let totalPages = 6
+    private let totalPages = 8
+    private let lyricsPageIndex = 4
+    private let pluginsPageIndex = 5
 
     @State private var currentPage = 0
     @State private var hasAccessibilityAccess = AXIsProcessTrusted()
+    @State private var selectedPluginIDs: Set<String> = initialOnboardingPluginSelection()
+    @State private var hasVisitedPluginPage = false
 
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("enableAnalytics") private var enableAnalytics = true
+    @AppStorage("hideNotchOnLockScreen") private var hideNotchOnLockScreen = false
 
     @AppStorage("themeBackgroundType") private var themeBackgroundType = "preset"
     @AppStorage("themePresetID") private var themePresetID = ThemePreset.defaultID
     @AppStorage("themeBackgroundOpacity") private var themeBackgroundOpacity = 1.0
+    @AppStorage("themeBackgroundHoverOnly") private var themeBackgroundHoverOnly = false
     @AppStorage("themeGlassyWidgets") private var themeGlassyWidgets = true
+
+    @AppStorage("showSongChangeBanner") private var showSongChangeBanner = true
+    @AppStorage("showBannerOnControl") private var showBannerOnControl = true
+    @AppStorage("showLyrics") private var showLyrics = true
+    @AppStorage("showBannerLyrics") private var showBannerLyrics = true
+    @AppStorage("notch_pets_enabled") private var notchPetsEnabled = false
 
     @AppStorage("enableAppleMusic") private var enableAppleMusic = false
     @AppStorage("enableSpotify") private var enableSpotify = false
@@ -34,8 +46,10 @@ struct OnboardingView: View {
                 case 1: permissionsPage
                 case 2: themePage
                 case 3: integrationsPage
-                case 4: gesturesPage
-                case 5: finishPage
+                case 4: lyricsPage
+                case 5: pluginsPage
+                case 6: essentialsPage
+                case 7: finishPage
                 default: EmptyView()
                 }
             }
@@ -54,10 +68,19 @@ struct OnboardingView: View {
             if themeBackgroundType.isEmpty {
                 applyTheme(ThemePreset.preset(id: ThemePreset.defaultID))
             }
+            handlePageState()
+        }
+        .onDisappear {
+            stopLyricsDemo()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             hasAccessibilityAccess = AXIsProcessTrusted()
         }
+        .onChange(of: currentPage) { _, _ in handlePageState() }
+        .onChange(of: showLyrics) { _, _ in updateLyricsDemoState(preferredBanner: "lyrics") }
+        .onChange(of: showBannerLyrics) { _, _ in updateLyricsDemoState(preferredBanner: "lyrics") }
+        .onChange(of: showSongChangeBanner) { _, _ in updateLyricsDemoState(preferredBanner: "song") }
+        .onChange(of: showBannerOnControl) { _, _ in updateLyricsDemoState(preferredBanner: "mediaControl") }
     }
 
     private var footer: some View {
@@ -107,15 +130,16 @@ struct OnboardingView: View {
             symbol: "waveform",
             symbolColor: .orange,
             title: "Welcome to WaveNotch",
-            subtitle: "Set up music controls, live lyrics, widgets, and your notch theme in a few steps."
+            subtitle: "Set up your notch dashboard, themes, live lyrics, plugins, pets, and system glanceables in a few steps."
         ) {
             HStack(spacing: 22) {
                 onboardingNotchPreview
 
                 VStack(alignment: .leading, spacing: 14) {
-                    OnboardingFeatureRow(icon: "music.note", color: .orange, title: "Music-aware notch", desc: "Shows what is playing and gives you quick playback controls.")
-                    OnboardingFeatureRow(icon: "text.quote", color: .blue, title: "Live lyrics", desc: "Displays synced lyrics in the expanded player and menu-bar banner.")
-                    OnboardingFeatureRow(icon: "square.grid.2x2", color: .purple, title: "Useful plugins", desc: "Add weather, timers, clipboard history, files, tasks, queues, and more.")
+                    OnboardingFeatureRow(icon: "music.note", color: .orange, title: "Music and lyrics", desc: "Control playback, view synced lyrics, and search alternate lyric sources.")
+                    OnboardingFeatureRow(icon: "square.grid.2x2", color: .purple, title: "Dashboard plugins", desc: "Choose productivity, media, system, and utility widgets for the expanded notch.")
+                    OnboardingFeatureRow(icon: "speedometer", color: .teal, title: "System glanceables", desc: "Track weather, hardware, batteries, network speed, screen capture, and more.")
+                    OnboardingFeatureRow(icon: "pawprint.fill", color: .pink, title: "Notch Pets", desc: "Enable a small animated companion that moves around the notch and dashboard.")
                 }
             }
             .padding(.top, 6)
@@ -306,21 +330,133 @@ struct OnboardingView: View {
         }
     }
 
-    private var gesturesPage: some View {
+    private var lyricsPage: some View {
         OnboardingPage(
-            symbol: "hand.draw.fill",
-            symbolColor: .purple,
-            title: "Learn the quick controls",
-            subtitle: "These defaults make the notch useful without opening Settings every time."
+            symbol: "quote.bubble.fill",
+            symbolColor: .blue,
+            title: "Choose your lyrics behavior",
+            subtitle: "Watch the actual notch while you toggle these. It is playing a temporary mock song for setup."
         ) {
-            VStack(alignment: .leading, spacing: 16) {
-                OnboardingFeatureRow(icon: "hand.draw.fill", color: .purple, title: "Swipe or scroll to skip", desc: "Hover over the notch and scroll left or right to move between tracks.")
-                OnboardingFeatureRow(icon: "cursorarrow.click.2", color: .blue, title: "Double click to open", desc: "Double click the expanded player to open the active media app or browser.")
-                OnboardingFeatureRow(icon: "keyboard", color: .orange, title: "Hide instantly", desc: "Use Control + Command + H to hide or show WaveNotch globally.")
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Label("Now previewing on the notch", systemImage: "arrow.up.to.line.compact")
+                        .font(.system(size: 15, weight: .black))
+                    Text("The compact notch is temporarily showing Last Night on Earth with the same banner behavior these settings control.")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        OnboardingCompactFeatureRow(icon: "music.note", color: .blue, title: "Mock song", desc: "Last Night on Earth")
+                        OnboardingCompactFeatureRow(icon: "text.quote", color: .cyan, title: "Lyrics line", desc: "We keep moving through the night")
+                        OnboardingCompactFeatureRow(icon: "sparkles", color: .purple, title: "Live preview", desc: "Changes update the notch instantly.")
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .background(panelBackground)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Display")
+                        .font(.system(size: 12, weight: .black))
+                        .foregroundColor(.secondary)
+                    OnboardingToggleRow(icon: "text.quote", title: "Show lyrics in the player", isOn: $showLyrics)
+                    OnboardingToggleRow(icon: "captions.bubble.fill", title: "Show lyric banner near the notch", isOn: $showBannerLyrics)
+                    OnboardingToggleRow(icon: "music.note.tv", title: "Show song title on track change", isOn: $showSongChangeBanner)
+                    OnboardingToggleRow(icon: "rectangle.and.hand.point.up.left.fill", title: "Show banner on media controls", isOn: $showBannerOnControl)
+                }
+                .padding(18)
+                .frame(width: 272, alignment: .topLeading)
+                .background(panelBackground)
             }
-            .padding(20)
-            .frame(maxWidth: 560, alignment: .leading)
-            .background(panelBackground)
+            .frame(maxWidth: 620)
+
+            Text("Leaving this page stops the temporary preview. Real playback and lyric search are not modified.")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 580)
+        }
+    }
+
+    private var pluginsPage: some View {
+        OnboardingPage(
+            symbol: "square.grid.2x2.fill",
+            symbolColor: .purple,
+            title: "Pick your starting plugins",
+            subtitle: "Select the widgets you want installed and enabled on the expanded dashboard."
+        ) {
+            VStack(spacing: 12) {
+                HStack(spacing: 10) {
+                    Label("\(selectedPluginIDs.count) selected", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    Button("Recommended") {
+                        selectedPluginIDs = Set(onboardingPluginOptions.filter { $0.isRecommended }.map(\.id))
+                    }
+                    Button("Select All") {
+                        selectedPluginIDs = Set(onboardingPluginOptions.map(\.id))
+                    }
+                    Button("Clear") {
+                        selectedPluginIDs.removeAll()
+                    }
+                }
+
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                        ForEach(onboardingPluginOptions) { option in
+                            OnboardingPluginCard(
+                                option: option,
+                                isSelected: selectedPluginIDs.contains(option.id)
+                            ) {
+                                togglePlugin(option)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .frame(height: 214)
+            }
+            .frame(maxWidth: 640)
+        }
+    }
+
+    private var essentialsPage: some View {
+        OnboardingPage(
+            symbol: "slider.horizontal.3",
+            symbolColor: .purple,
+            title: "Set the essentials",
+            subtitle: "These defaults control how visible and interactive WaveNotch feels day to day."
+        ) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Behavior")
+                        .font(.system(size: 12, weight: .black))
+                        .foregroundColor(.secondary)
+                    OnboardingToggleRow(icon: "pawprint.fill", title: "Enable Notch Pets", isOn: $notchPetsEnabled)
+                    OnboardingToggleRow(icon: "lock.display", title: "Hide notch on lock screen", isOn: $hideNotchOnLockScreen)
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .background(panelBackground)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Quick Controls")
+                        .font(.system(size: 12, weight: .black))
+                        .foregroundColor(.secondary)
+                    OnboardingCompactFeatureRow(icon: "hand.draw.fill", color: .purple, title: "Swipe or scroll", desc: "Skip tracks from the notch.")
+                    OnboardingCompactFeatureRow(icon: "cursorarrow.click.2", color: .blue, title: "Double click", desc: "Open the active media app.")
+                    OnboardingCompactFeatureRow(icon: "keyboard", color: .orange, title: "Control + Command + H", desc: "Hide or show WaveNotch.")
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .background(panelBackground)
+            }
+            .frame(maxWidth: 620)
         }
     }
 
@@ -340,7 +476,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Theme: \(selectedTheme.name)")
                             .font(.system(size: 14, weight: .bold))
-                        Text("Media apps and plugin layout can be changed anytime.")
+                        Text("\(selectedPluginIDs.count) plugins selected. Media apps, pets, lyrics, and layout can be changed anytime.")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.secondary)
                     }
@@ -381,6 +517,7 @@ struct OnboardingView: View {
         themePresetID = preset.id
         themeBackgroundType = "preset"
         themeBackgroundOpacity = 1.0
+        themeBackgroundHoverOnly = false
     }
 
     private func requestAccess() {
@@ -389,10 +526,131 @@ struct OnboardingView: View {
         hasAccessibilityAccess = AXIsProcessTrusted()
     }
 
+    private func handlePageState() {
+        preparePluginPageIfNeeded()
+        updateLyricsDemoState()
+    }
+
+    private func preparePluginPageIfNeeded() {
+        guard currentPage == pluginsPageIndex, !hasVisitedPluginPage else { return }
+        hasVisitedPluginPage = true
+        selectedPluginIDs = recommendedOnboardingPluginIDs
+    }
+
+    private var recommendedOnboardingPluginIDs: Set<String> {
+        Set(onboardingPluginOptions.filter { $0.isRecommended }.map(\.id))
+    }
+
+    private var defaultLyricsDemoBannerMode: String {
+        if showBannerOnControl { return "mediaControl" }
+        if showSongChangeBanner { return "song" }
+        if showBannerLyrics { return "lyrics" }
+        return "none"
+    }
+
+    private func updateLyricsDemoState(preferredBanner: String? = nil) {
+        guard currentPage == lyricsPageIndex else {
+            stopLyricsDemo()
+            return
+        }
+
+        NotificationCenter.default.post(
+            name: .onboardingLyricsDemoChanged,
+            object: nil,
+            userInfo: [
+                "active": true,
+                "showLyrics": showLyrics,
+                "showBannerLyrics": showBannerLyrics,
+                "showSongChangeBanner": showSongChangeBanner,
+                "showBannerOnControl": showBannerOnControl,
+                "preferredBanner": preferredBanner ?? defaultLyricsDemoBannerMode
+            ]
+        )
+    }
+
+    private func stopLyricsDemo() {
+        NotificationCenter.default.post(
+            name: .onboardingLyricsDemoChanged,
+            object: nil,
+            userInfo: ["active": false]
+        )
+    }
+
+    private func togglePlugin(_ option: OnboardingPluginOption) {
+        if selectedPluginIDs.contains(option.id) {
+            selectedPluginIDs.remove(option.id)
+        } else {
+            selectedPluginIDs.insert(option.id)
+        }
+    }
+
+    private func applySelectedPlugins() {
+        let defaults = UserDefaults.standard
+
+        defaults.set(true, forKey: "plugin_player_enabled")
+
+        for option in onboardingPluginOptions {
+            let selected = selectedPluginIDs.contains(option.id)
+            defaults.set(selected, forKey: "\(option.storagePrefix)_installed")
+            defaults.set(selected, forKey: "\(option.storagePrefix)_enabled")
+        }
+
+        DashboardManager.shared.refreshWidgets()
+    }
+
     private func finishOnboarding() {
+        applySelectedPlugins()
         hasCompletedOnboarding = true
         OnboardingWindowManager.shared.close()
     }
+}
+
+private struct OnboardingPluginOption: Identifiable {
+    let id: String
+    let name: String
+    let description: String
+    let category: String
+    let icon: String
+    let color: Color
+    let storagePrefix: String
+    let isRecommended: Bool
+}
+
+private let onboardingPluginOptions: [OnboardingPluginOption] = [
+    OnboardingPluginOption(id: "pomodoro_timer", name: "Pomodoro", description: "Study sessions, breaks, banners, and focus reminders.", category: "Focus", icon: "timer", color: .red, storagePrefix: "plugin_pomodoro_timer", isRecommended: true),
+    OnboardingPluginOption(id: "tasks", name: "Tasks", description: "Reminders-style tasks with due dates, notes, and alerts.", category: "Focus", icon: "checklist", color: .blue, storagePrefix: "plugin_tasks", isRecommended: true),
+    OnboardingPluginOption(id: "clipboard_history", name: "Clipboard", description: "Recent text, images, and copied files in one place.", category: "Utility", icon: "doc.on.clipboard.fill", color: .purple, storagePrefix: "plugin_clipboard_history", isRecommended: false),
+    OnboardingPluginOption(id: "file_tray", name: "File Tray", description: "Drop, hold, and drag files back out when you need them.", category: "Utility", icon: "tray.full.fill", color: .cyan, storagePrefix: "plugin_file_tray", isRecommended: false),
+    OnboardingPluginOption(id: "kaomoji_board", name: "Kaomoji", description: "One-click emoji and text faces for fast copying.", category: "Utility", icon: "face.smiling.fill", color: .pink, storagePrefix: "plugin_kaomoji_board", isRecommended: false),
+    OnboardingPluginOption(id: "weather", name: "Weather", description: "Current conditions, feels-like temperature, humidity, and wind.", category: "Glance", icon: "sun.max.fill", color: .yellow, storagePrefix: "plugin_weather", isRecommended: false),
+    OnboardingPluginOption(id: "hardware_hud", name: "Hardware HUD", description: "CPU cores, memory pressure, and internal temperature.", category: "Glance", icon: "cpu.fill", color: .teal, storagePrefix: "plugin_hardware_hud", isRecommended: false),
+    OnboardingPluginOption(id: "bluetooth_battery", name: "Batteries", description: "Bluetooth device battery rings with optional Mac battery.", category: "Glance", icon: "battery.100.bolt", color: .green, storagePrefix: "plugin_bluetooth_battery", isRecommended: false),
+    OnboardingPluginOption(id: "network_speed", name: "Network Speed", description: "Live upload and download speedometer.", category: "Glance", icon: "arrow.up.arrow.down.circle.fill", color: .mint, storagePrefix: "plugin_network_speed", isRecommended: false),
+    OnboardingPluginOption(id: "screen_capture", name: "Screen Capture", description: "Screenshot and recording controls from the notch.", category: "Utility", icon: "record.circle", color: .orange, storagePrefix: "plugin_screen_capture", isRecommended: false),
+    OnboardingPluginOption(id: "spotify_queue", name: "Spotify Queue", description: "Upcoming Spotify tracks with quick play actions.", category: "Music", icon: "list.bullet", color: .green, storagePrefix: "plugin_spotify_queue", isRecommended: false),
+    OnboardingPluginOption(id: "spotify_playlists", name: "Spotify Playlists", description: "Saved Spotify playlists on the dashboard.", category: "Music", icon: "music.note.list", color: .green, storagePrefix: "plugin_spotify_playlists", isRecommended: false),
+    OnboardingPluginOption(id: "youtube_queue", name: "YouTube Queue", description: "Queue view for YouTube and YouTube Music.", category: "Music", icon: "play.rectangle.fill", color: .red, storagePrefix: "plugin_youtube_queue", isRecommended: false),
+    OnboardingPluginOption(id: "youtube_playlists", name: "YouTube Playlists", description: "YouTube Music playlist shortcuts.", category: "Music", icon: "rectangle.stack.fill", color: .red, storagePrefix: "plugin_youtube_playlists", isRecommended: false),
+    OnboardingPluginOption(id: "turntable_player", name: "Turntable", description: "Animated vinyl view for the currently playing song.", category: "Music", icon: "record.circle", color: .brown, storagePrefix: "plugin_turntable_player", isRecommended: false),
+    OnboardingPluginOption(id: "cassette_tape", name: "Cassette Tape", description: "Animated cassette with cover art and tape reels.", category: "Music", icon: "rectangle.roundedtop.fill", color: .orange, storagePrefix: "plugin_cassette_tape", isRecommended: true),
+    OnboardingPluginOption(id: "google_calendar", name: "Calendar", description: "Upcoming calendar events in the dashboard.", category: "Focus", icon: "calendar", color: .indigo, storagePrefix: "plugin_google_calendar", isRecommended: false)
+]
+
+private func initialOnboardingPluginSelection() -> Set<String> {
+    let defaults = UserDefaults.standard
+    let hasExistingPluginChoices = onboardingPluginOptions.contains {
+        defaults.object(forKey: "\($0.storagePrefix)_installed") != nil
+            || defaults.object(forKey: "\($0.storagePrefix)_enabled") != nil
+    }
+
+    if !hasExistingPluginChoices {
+        return Set(onboardingPluginOptions.filter { $0.isRecommended }.map(\.id))
+    }
+
+    return Set(onboardingPluginOptions.filter {
+        defaults.bool(forKey: "\($0.storagePrefix)_installed")
+            || defaults.bool(forKey: "\($0.storagePrefix)_enabled")
+    }.map(\.id))
 }
 
 private struct OnboardingPage<Content: View>: View {
@@ -403,24 +661,24 @@ private struct OnboardingPage<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(spacing: 22) {
-            VStack(spacing: 12) {
+        VStack(spacing: 18) {
+            VStack(spacing: 10) {
                 ZStack {
                     Circle()
                         .fill(symbolColor.opacity(0.16))
-                        .frame(width: 72, height: 72)
+                        .frame(width: 64, height: 64)
                     Image(systemName: symbol)
-                        .font(.system(size: 30, weight: .bold))
+                        .font(.system(size: 27, weight: .bold))
                         .foregroundColor(symbolColor)
                 }
 
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     Text(title)
-                        .font(.system(size: 30, weight: .black))
+                        .font(.system(size: 28, weight: .black))
                         .multilineTextAlignment(.center)
 
                     Text(subtitle)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .lineLimit(3)
@@ -433,8 +691,100 @@ private struct OnboardingPage<Content: View>: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 34)
-        .padding(.top, 34)
-        .padding(.bottom, 18)
+        .padding(.top, 24)
+        .padding(.bottom, 12)
+    }
+}
+
+private struct OnboardingPluginCard: View {
+    let option: OnboardingPluginOption
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(option.color.opacity(isSelected ? 0.24 : 0.14))
+                    Image(systemName: option.icon)
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(option.color)
+                }
+                .frame(width: 40, height: 40)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Text(option.name)
+                            .font(.system(size: 13, weight: .black))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+
+                        Text(option.category)
+                            .font(.system(size: 9, weight: .black))
+                            .foregroundColor(option.color)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(option.color.opacity(0.14), in: Capsule())
+
+                        Spacer(minLength: 0)
+                    }
+
+                    Text(option.description)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(isSelected ? option.color : .secondary.opacity(0.45))
+            }
+            .padding(12)
+            .frame(minHeight: 76, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(isSelected ? option.color.opacity(0.13) : Color.white.opacity(0.055))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(isSelected ? option.color.opacity(0.70) : Color.white.opacity(0.10), lineWidth: isSelected ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct OnboardingCompactFeatureRow: View {
+    let icon: String
+    let color: Color
+    let title: String
+    let desc: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 11) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(color.opacity(0.14))
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(color)
+            }
+            .frame(width: 34, height: 34)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .bold))
+                    .lineLimit(1)
+                Text(desc)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
     }
 }
 

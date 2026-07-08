@@ -529,6 +529,12 @@ struct ContentView: View {
     @State private var taskReminderBannerTitle = ""
     @State private var taskReminderBannerBody = ""
     @State private var taskReminderBannerTask: Task<Void, Never>? = nil
+    @State private var onboardingLyricsDemoActive = false
+    @State private var onboardingLyricsDemoShowLyrics = true
+    @State private var onboardingLyricsDemoShowBannerLyrics = true
+    @State private var onboardingLyricsDemoShowSongChangeBanner = true
+    @State private var onboardingLyricsDemoShowBannerOnControl = true
+    @State private var onboardingLyricsDemoBannerMode = "mediaControl"
     @State private var isShowingLyricBanner = false
     @State private var currentLyricText: String = ""
     @State private var isFileDropTargeted = false
@@ -603,6 +609,12 @@ struct ContentView: View {
     }
 
     private var showsCollapsedBanner: Bool {
+        if onboardingLyricsDemoActive {
+            return onboardingLyricsDemoShowSongChangeBanner
+                || onboardingLyricsDemoShowBannerLyrics
+                || onboardingLyricsDemoShowBannerOnControl
+        }
+
         let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
         return isShowingBanner || shouldShowPomodoroTimerBanner || (isShowingLyricBanner && hasMedia)
     }
@@ -672,7 +684,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        let hasMedia = nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING"
+        let hasMedia = onboardingLyricsDemoActive || (nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING")
 
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
@@ -869,7 +881,12 @@ struct ContentView: View {
             guard showBannerOnControl else { return }
             guard nowPlaying.currentSong != "No Music" && nowPlaying.currentSong != "NOT_PLAYING" else { return }
             guard Date().timeIntervalSince(lastSongChangeTime) > 0.5 else { return }
-            triggerBanner(text: newState ? "Resumed" : "Paused", duration: 1.5)
+            triggerBanner(
+                text: newState ? "Resumed" : "Paused",
+                duration: 1.5,
+                iconName: newState ? "play.fill" : "pause.fill",
+                tint: nowPlaying.artworkDominantColor
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: .fileTrayDropTargetChanged)) { notification in
             let targeted = notification.userInfo?["isTargeted"] as? Bool ?? false
@@ -907,6 +924,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .taskReminderBannerRequested)) { notification in
             showTaskReminderBanner(from: notification)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .onboardingLyricsDemoChanged)) { notification in
+            handleOnboardingLyricsDemo(notification)
         }
         .edgesIgnoringSafeArea(.all)
     }
@@ -1088,14 +1108,16 @@ struct ContentView: View {
 
     @ViewBuilder
     private func collapsedLayer(hasMedia: Bool, currentCollapsedHeight: CGFloat) -> some View {
-        let showTimerIcon = pomodoroPluginEnabled && showPomodoroNotchTimer
-        let showTimerText = shouldShowPomodoroCollapsedTimeText
-        let showTimerBanner = shouldShowPomodoroTimerBanner
+        let showTimerIcon = !onboardingLyricsDemoActive && pomodoroPluginEnabled && showPomodoroNotchTimer
+        let showTimerText = !onboardingLyricsDemoActive && shouldShowPomodoroCollapsedTimeText
+        let showTimerBanner = !onboardingLyricsDemoActive && shouldShowPomodoroTimerBanner
 
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 ZStack {
-                    if showTimerIcon {
+                    if onboardingLyricsDemoActive {
+                        onboardingLyricsDemoArtwork
+                    } else if showTimerIcon {
                         pomodoroCollapsedProgressIcon
                     } else if hasMedia && nowPlaying.artworkURL != nil {
                         AsyncImage(url: nowPlaying.artworkURL) { image in
@@ -1129,7 +1151,10 @@ struct ContentView: View {
                         .contentTransition(.numericText())
                         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pomodoroTimer.timeText)
                 } else {
-                    WaveformView(isPlaying: nowPlaying.isPlaying, color: nowPlaying.artworkDominantColor)
+                    WaveformView(
+                        isPlaying: onboardingLyricsDemoActive ? true : nowPlaying.isPlaying,
+                        color: onboardingLyricsDemoActive ? onboardingLyricsDemoAccentColor : nowPlaying.artworkDominantColor
+                    )
                         .frame(width: 24, alignment: .trailing)
                 }
             }
@@ -1138,7 +1163,11 @@ struct ContentView: View {
 
             if showsCollapsedBanner {
                 ZStack {
-                    if isShowingBanner {
+                    if onboardingLyricsDemoActive {
+                        onboardingLyricsDemoBanner
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .id("onboarding_lyrics_demo_\(onboardingLyricsDemoBannerText)")
+                    } else if isShowingBanner {
                         HStack(spacing: 6) {
                             if let bannerIconName {
                                 Image(systemName: bannerIconName)
@@ -1210,6 +1239,78 @@ struct ContentView: View {
         return "\(pomodoroTimer.mode.title) \(pomodoroTimer.timeText)"
     }
 
+    private var onboardingLyricsDemoAccentColor: Color {
+        Color(red: 0.42, green: 0.76, blue: 1.0)
+    }
+
+    private var activeOnboardingLyricsDemoBannerMode: String {
+        switch onboardingLyricsDemoBannerMode {
+        case "mediaControl" where onboardingLyricsDemoShowBannerOnControl:
+            return "mediaControl"
+        case "song" where onboardingLyricsDemoShowSongChangeBanner:
+            return "song"
+        case "lyrics" where onboardingLyricsDemoShowBannerLyrics:
+            return "lyrics"
+        default:
+            if onboardingLyricsDemoShowBannerOnControl { return "mediaControl" }
+            if onboardingLyricsDemoShowSongChangeBanner { return "song" }
+            if onboardingLyricsDemoShowBannerLyrics { return "lyrics" }
+            return "none"
+        }
+    }
+
+    private var onboardingLyricsDemoBannerText: String {
+        switch activeOnboardingLyricsDemoBannerMode {
+        case "mediaControl":
+            return "Paused"
+        case "song":
+            return "Last Night on Earth"
+        case "lyrics":
+            return "We keep moving through the night"
+        default:
+            return ""
+        }
+    }
+
+    private var onboardingLyricsDemoBannerIcon: String {
+        switch activeOnboardingLyricsDemoBannerMode {
+        case "mediaControl": return "pause.fill"
+        case "song": return "music.note"
+        case "lyrics": return "text.quote"
+        default: return "music.note"
+        }
+    }
+
+    private var onboardingLyricsDemoArtwork: some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.18, green: 0.28, blue: 0.92),
+                        Color(red: 0.84, green: 0.22, blue: 0.58),
+                        Color(red: 1.0, green: 0.62, blue: 0.22)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                Image(systemName: "music.note")
+                    .font(.system(size: 10, weight: .black))
+                    .foregroundColor(.white)
+            )
+            .frame(width: 20, height: 20)
+    }
+
+    private var onboardingLyricsDemoBanner: some View {
+        HStack(spacing: 6) {
+            Image(systemName: onboardingLyricsDemoBannerIcon)
+                .font(.system(size: 11, weight: .bold))
+            MarqueeText(text: onboardingLyricsDemoBannerText, font: .system(size: 12, weight: .bold), alignment: .center)
+        }
+        .foregroundColor(onboardingLyricsDemoAccentColor)
+    }
+
     private var pomodoroCollapsedProgressIcon: some View {
         ZStack {
             Circle()
@@ -1250,6 +1351,15 @@ struct ContentView: View {
         }
 
         if isFileDropTargeted {
+            return
+        }
+
+        if onboardingLyricsDemoActive {
+            hoverTask?.cancel()
+            hoverTask = nil
+            if isExpanded {
+                isExpanded = false
+            }
             return
         }
 
@@ -1303,6 +1413,30 @@ struct ContentView: View {
                 bannerTask?.cancel()
             } else if !isHoveringNotch && !isFileDropTargeted && !isPostFileDropExpansionSuppressed {
                 isExpanded = false
+            }
+        }
+    }
+
+    private func handleOnboardingLyricsDemo(_ notification: Notification) {
+        let active = notification.userInfo?["active"] as? Bool ?? false
+
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            onboardingLyricsDemoActive = active
+            onboardingLyricsDemoShowLyrics = notification.userInfo?["showLyrics"] as? Bool ?? onboardingLyricsDemoShowLyrics
+            onboardingLyricsDemoShowBannerLyrics = notification.userInfo?["showBannerLyrics"] as? Bool ?? onboardingLyricsDemoShowBannerLyrics
+            onboardingLyricsDemoShowSongChangeBanner = notification.userInfo?["showSongChangeBanner"] as? Bool ?? onboardingLyricsDemoShowSongChangeBanner
+            onboardingLyricsDemoShowBannerOnControl = notification.userInfo?["showBannerOnControl"] as? Bool ?? onboardingLyricsDemoShowBannerOnControl
+            onboardingLyricsDemoBannerMode = notification.userInfo?["preferredBanner"] as? String ?? onboardingLyricsDemoBannerMode
+
+            if active {
+                hoverTask?.cancel()
+                hoverTask = nil
+                isExpanded = false
+                isShowingBanner = false
+                isShowingLyricBanner = false
+                bannerTask?.cancel()
+            } else {
+                updateLyricBanner()
             }
         }
     }

@@ -1126,7 +1126,7 @@ private struct NotchPetSpriteKitView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> ClearNotchPetSKView {
         let view = ClearNotchPetSKView()
-        view.preferredFramesPerSecond = 30
+        view.preferredFramesPerSecond = isCompact ? 30 : 60
         view.ignoresSiblingOrder = true
         view.allowsTransparency = true
         view.shouldCullNonVisibleNodes = true
@@ -1156,11 +1156,14 @@ private struct NotchPetSpriteKitView: NSViewRepresentable {
 
     func updateNSView(_ view: ClearNotchPetSKView, context: Context) {
         configureClearSurface(view)
+        view.preferredFramesPerSecond = isCompact ? 30 : 60
         if view.scene !== context.coordinator.scene {
             view.presentScene(context.coordinator.scene)
         }
 
-        context.coordinator.scene.size = view.bounds.size
+        if context.coordinator.scene.size != view.bounds.size {
+            context.coordinator.scene.size = view.bounds.size
+        }
         context.coordinator.scene.updateConfiguration(
             kind: kind,
             catStyle: catStyle,
@@ -1285,6 +1288,7 @@ private final class NotchPetSpriteScene: SKScene {
     private var currentPetScale: CGFloat = 1
     private var lastLayoutSize: CGSize = .zero
     private var lastRoamState = false
+    private var currentTextureSignature: String?
 
     private static var textureCache: [String: [SKTexture]] = [:]
     private static var sheetTextureCache: [String: SKTexture] = [:]
@@ -1329,6 +1333,7 @@ private final class NotchPetSpriteScene: SKScene {
     override func didChangeSize(_ oldSize: CGSize) {
         super.didChangeSize(oldSize)
         layoutPet(forceRoamRestart: false)
+        scheduleRoamRestartAfterResize(from: oldSize)
     }
 
     func updateConfiguration(
@@ -1431,6 +1436,15 @@ private final class NotchPetSpriteScene: SKScene {
     }
 
     private func runTextureAnimation(_ animation: NotchPetSpriteAnimation) {
+        let source = currentSpriteSource
+        let textureSignature = "\(source.assetName)-\(animation.rawValue)"
+        if currentAnimation == animation,
+           currentTextureSignature == textureSignature,
+           petNode.action(forKey: "textureAnimation") != nil {
+            foodNode.isHidden = animation != .eat
+            return
+        }
+
         let textures = Self.textures(
             kind: currentKind,
             catStyle: currentCatStyle,
@@ -1441,6 +1455,7 @@ private final class NotchPetSpriteScene: SKScene {
         guard !textures.isEmpty else { return }
 
         currentAnimation = animation
+        currentTextureSignature = textureSignature
         petNode.texture = textures[0]
         petNode.removeAction(forKey: "textureAnimation")
         foodNode.isHidden = animation != .eat
@@ -1486,6 +1501,24 @@ private final class NotchPetSpriteScene: SKScene {
         layoutFoodBowl(petSide: side)
 
         lastLayoutSize = size
+    }
+
+    private func scheduleRoamRestartAfterResize(from oldSize: CGSize) {
+        guard currentShouldRoam, size.width > 1, size.height > 1 else { return }
+        let widthDelta = abs(size.width - oldSize.width)
+        let heightDelta = abs(size.height - oldSize.height)
+        guard widthDelta > 2 || heightDelta > 2 else { return }
+
+        removeAction(forKey: "resizeRoutineRestart")
+        run(
+            SKAction.sequence([
+                SKAction.wait(forDuration: 0.18),
+                SKAction.run { [weak self] in
+                    self?.layoutPet(forceRoamRestart: true)
+                }
+            ]),
+            withKey: "resizeRoutineRestart"
+        )
     }
 
     private func startPerchRoutine(petSide: CGFloat) {
@@ -1742,7 +1775,7 @@ private final class NotchPetSpriteScene: SKScene {
 
     private func move(to point: CGPoint, duration: TimeInterval) -> SKAction {
         let action = SKAction.move(to: point, duration: duration)
-        action.timingMode = .easeInEaseOut
+        action.timingMode = .linear
         return action
     }
 
