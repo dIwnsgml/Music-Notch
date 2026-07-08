@@ -148,6 +148,15 @@ class PluginManager: ObservableObject {
             assetImageName: nil,
             category: .system,
             storageKeyBase: "plugin_screen_capture"
+        ),
+        WaveNotchPlugin(
+            id: "network_speed",
+            name: "Network Speed",
+            description: "Watch real-time upload and download speed so you can tell if Wi-Fi is dropping or a site is slow.",
+            iconName: "arrow.up.arrow.down.circle.fill",
+            assetImageName: nil,
+            category: .system,
+            storageKeyBase: "plugin_network_speed"
         )
     ]
 }

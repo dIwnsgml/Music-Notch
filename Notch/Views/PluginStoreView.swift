@@ -609,6 +609,8 @@ struct PluginDetailView: View {
                     BluetoothBatteryPluginSettingsView()
                 } else if plugin.id == "screen_capture" {
                     ScreenCapturePluginSettingsView()
+                } else if plugin.id == "network_speed" {
+                    NetworkSpeedPluginSettingsView()
                 } else if plugin.id == "turntable_player" {
                     TurntablePluginSettingsView()
                 } else if plugin.id == "cassette_tape" {
@@ -702,6 +704,8 @@ struct PluginIcon: View {
         case let id where id.contains("bluetooth_battery"):
             return .green
         case let id where id.contains("screen_capture"):
+            return .cyan
+        case let id where id.contains("network_speed"):
             return .cyan
         default:
             return .accentColor
@@ -1185,6 +1189,87 @@ struct ScreenCapturePluginSettingsView: View {
         }
         .onAppear {
             capture.refreshPermissionStatus()
+        }
+    }
+}
+
+struct NetworkSpeedPluginSettingsView: View {
+    @AppStorage("network_speed_unit") private var unitMode = "bits"
+    @AppStorage("network_speed_refresh_interval") private var refreshInterval = 1.0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Speed Unit")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Choose how upload and download speeds are displayed.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Picker("", selection: $unitMode) {
+                    Text("Bits").tag("bits")
+                    Text("Bytes").tag("bytes")
+                }
+                .pickerStyle(.menu)
+                .frame(width: 104)
+            }
+
+            Divider().opacity(0.15)
+
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Refresh Rate")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Lower values feel more live; higher values use less CPU.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Picker("", selection: $refreshInterval) {
+                    Text("0.5 sec").tag(0.5)
+                    Text("1 sec").tag(1.0)
+                    Text("2 sec").tag(2.0)
+                    Text("5 sec").tag(5.0)
+                }
+                .pickerStyle(.menu)
+                .frame(width: 104)
+            }
+            .onChange(of: refreshInterval) { _, _ in
+                NetworkSpeedManager.shared.syncSettings()
+            }
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show mini graph",
+                description: "Display a compact upload/download activity graph.",
+                key: "network_speed_show_graph",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Show interface name",
+                description: "Show Wi-Fi, Ethernet, VPN, or other active interfaces under the title.",
+                key: "network_speed_show_interface",
+                defaultValue: true
+            )
+
+            Divider().opacity(0.15)
+
+            PluginSettingToggle(
+                title: "Include virtual interfaces",
+                description: "Include VPN, peer-to-peer, and other virtual adapters in speed totals.",
+                key: "network_speed_include_virtual",
+                defaultValue: false
+            )
         }
     }
 }

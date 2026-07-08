@@ -11,6 +11,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
     case theme = "Theme" // ⚡️ NEW: Custom backgrounds
     case lyrics = "Lyrics & Banner"
+    case pets = "Pets"
     case layout = "Layout" // ⚡️ NEW: Layout Editor
     case shortcuts = "Shortcuts"
     case integrations = "Integrations"
@@ -23,6 +24,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .theme: return "paintbrush"
         case .lyrics: return "text.quote"
+        case .pets: return "pawprint.fill"
         case .layout: return "square.grid.2x2"
         case .shortcuts: return "keyboard"
         case .integrations: return "puzzlepiece.extension"
@@ -56,6 +58,9 @@ struct SettingsView: View {
     @AppStorage("themeBackgroundBlur") var themeBackgroundBlur: Double = 0.0
     @AppStorage("themeGlassyWidgets") var themeGlassyWidgets: Bool = true
     @AppStorage("themeBackgroundHoverOnly") var themeBackgroundHoverOnly = false
+
+    // 🐾 PETS
+    @AppStorage("notch_pets_enabled") var notchPetsEnabled = false
 
     // ⚡️ LYRICS & BANNER
     @AppStorage("showBannerOnControl") var showBannerOnControl = true
@@ -161,6 +166,11 @@ struct SettingsView: View {
                         PluginStoreView()
                     } else if selectedTab == .layout {
                         DashboardSettingsView()
+                    } else if selectedTab == .pets {
+                        Form {
+                            petsContent
+                        }
+                        .formStyle(.grouped)
                     } else if selectedTab == .theme {
                         themeContent
                     } else {
@@ -168,6 +178,7 @@ struct SettingsView: View {
                             switch selectedTab {
                             case .general: generalContent
                             case .lyrics: lyricsContent
+                            case .pets: petsContent
                             case .shortcuts: shortcutsContent
                             case .integrations: integrationsContent
                             default: EmptyView()
@@ -189,6 +200,7 @@ struct SettingsView: View {
         }
         .frame(width: 820, height: 680)
         .onAppear {
+            NotchPetsPreferences.migratePluginStateIfNeeded()
             hasAccessibilityAccess = AXIsProcessTrusted()
             launchAtLogin = SMAppService.mainApp.status == .enabled
             isSpotifyInstalled = checkAppExists(bundleID: "com.spotify.client")
@@ -826,6 +838,30 @@ struct SettingsView: View {
     }
 
     // ---------------------------------------------------------
+    // 🐾 PETS TAB
+    // ---------------------------------------------------------
+    private var petsContent: some View {
+        Group {
+            Section {
+                Toggle("Enable Notch Pets", isOn: $notchPetsEnabled)
+                Text("Pets roam over the collapsed notch and expanded dashboard without taking widget layout space.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } header: {
+                Text("Companion")
+            }
+
+            if notchPetsEnabled {
+                Section {
+                    NotchPetsSettingsView()
+                } header: {
+                    Text("Pet Settings")
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------
     // 🎵 LYRICS & BANNER TAB
     // ---------------------------------------------------------
     private var lyricsContent: some View {
@@ -1120,6 +1156,7 @@ struct DashboardSettingsView: View {
     @AppStorage("plugin_hardware_hud_enabled") var hardwareHUDEnabled = false
     @AppStorage("plugin_bluetooth_battery_enabled") var bluetoothBatteryEnabled = false
     @AppStorage("plugin_screen_capture_enabled") var screenCaptureEnabled = false
+    @AppStorage("plugin_network_speed_enabled") var networkSpeedEnabled = false
     @AppStorage("expandedPadding") var expandedPadding: Double = 16.0
 
     var body: some View {
@@ -1218,6 +1255,8 @@ struct DashboardSettingsView: View {
         case .hardwareHUD: return $hardwareHUDEnabled
         case .bluetoothBattery: return $bluetoothBatteryEnabled
         case .screenCapture: return $screenCaptureEnabled
+        case .networkSpeed: return $networkSpeedEnabled
+        case .notchPets: return .constant(false)
         }
     }
 }

@@ -72,6 +72,8 @@ struct WidgetFactoryView: View {
                     case .hardwareHUD: HardwareHUDWidget()
                     case .bluetoothBattery: BluetoothBatteryWidget()
                     case .screenCapture: ScreenCaptureWidget()
+                    case .networkSpeed: NetworkSpeedWidget()
+                    case .notchPets: EmptyView()
                     }
                 }
                 .frame(maxHeight: .infinity)

@@ -336,7 +336,7 @@ struct LyricsSearchView: View {
         appliedResultID = nil
         results = []
 
-        let primarySources: Set<LyricsSearchSource> = selectedSource == .all ? [.cache, .lrclib] : selectedSource.sources
+        let primarySources: Set<LyricsSearchSource> = selectedSource == .all ? [.cache, .lrclib, .kugou] : selectedSource.sources
         let primaryResults = await nowPlaying.searchLyricsResults(title: title, artist: artist, sources: primarySources)
         guard activeSearchID == searchID else { return }
 
@@ -392,6 +392,7 @@ struct LyricsSearchView: View {
         switch source {
         case .cache: return .blue
         case .lrclib: return .green
+        case .kugou: return .orange
         case .lyricsOVH: return .purple
         case .netease: return .red
         }
@@ -409,6 +410,7 @@ private enum LyricsSourceFilter: String, CaseIterable, Hashable, Identifiable {
     case all
     case cache
     case lrclib
+    case kugou
     case lyricsOVH
     case netease
 
@@ -419,6 +421,7 @@ private enum LyricsSourceFilter: String, CaseIterable, Hashable, Identifiable {
         case .all: return "All"
         case .cache: return "Cached"
         case .lrclib: return "LRCLIB"
+        case .kugou: return "KuGou"
         case .lyricsOVH: return "Lyrics.ovh"
         case .netease: return "Netease"
         }
@@ -432,6 +435,8 @@ private enum LyricsSourceFilter: String, CaseIterable, Hashable, Identifiable {
             return [.cache]
         case .lrclib:
             return [.lrclib]
+        case .kugou:
+            return [.kugou]
         case .lyricsOVH:
             return [.lyricsOVH]
         case .netease:

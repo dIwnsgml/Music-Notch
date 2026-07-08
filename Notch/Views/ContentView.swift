@@ -511,6 +511,10 @@ struct ContentView: View {
     @AppStorage("plugin_spotify_playlists_enabled") var spotifyPlaylistsEnabled = false
     @AppStorage("plugin_pomodoro_timer_enabled") var pomodoroPluginEnabled = false
     @AppStorage("plugin_file_tray_enabled") var fileTrayPluginEnabled = false
+    @AppStorage("notch_pets_enabled") var notchPetsEnabled = false
+    @AppStorage("notch_pets_kind") var notchPetKindRaw = NotchPetKind.cat.rawValue
+    @AppStorage("notch_pets_expanded_scale") var notchPetExpandedScale = 0.7
+    @AppStorage("notch_pets_collapsed_scale") var notchPetCollapsedScale = 1.0
     @AppStorage("pomodoro_show_notch_timer") var showPomodoroNotchTimer = true
     @AppStorage("pomodoro_show_time_text") var showPomodoroTimeText = false
     @AppStorage("pomodoro_show_timer_banner") var showPomodoroTimerBanner = true
@@ -689,6 +693,7 @@ struct ContentView: View {
                         )
                 }
 
+                expandedNotchPetPerchLayer(currentWidth: currentWidth, currentHeight: currentHeight)
                 settingsButtonLayer
                 taskReminderNativeBannerLayer
             }
@@ -719,6 +724,9 @@ struct ContentView: View {
             .animation(.easeOut(duration: 0.18), value: shouldRenderExpandedLayer)
             .animation(.spring(response: 0.30, dampingFraction: 1.0, blendDuration: 0.1), value: showsCollapsedBanner)
             .animation(.spring(response: 0.28, dampingFraction: 0.9, blendDuration: 0.08), value: collapsedWidth)
+            .overlay(alignment: .top) {
+                collapsedNotchPetPerchLayer(currentWidth: currentWidth)
+            }
 
             Spacer()
         }
@@ -727,6 +735,8 @@ struct ContentView: View {
         .opacity(isAppHidden ? 0 : 1)
         .allowsHitTesting(!isAppHidden)
         .onAppear {
+            NotchPetsPreferences.migratePluginStateIfNeeded()
+            applyNotchPetScaleDefaultMigration()
             localMediaKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { event in
                 handleSystemKey(event: event)
                 return event
@@ -899,6 +909,43 @@ struct ContentView: View {
             showTaskReminderBanner(from: notification)
         }
         .edgesIgnoringSafeArea(.all)
+    }
+
+    @ViewBuilder
+    private func expandedNotchPetPerchLayer(currentWidth: CGFloat, currentHeight: CGFloat) -> some View {
+        if notchPetsEnabled && isExpanded && !usesFileDropOnlyLayout {
+            NotchPetPerchView(kind: NotchPetKind(rawValue: notchPetKindRaw) ?? .cat, size: notchPetExpandedScale, isExpanded: true, isHoveringNotch: isHoveringNotch)
+                .frame(width: max(currentWidth - 36, 180), height: max(currentHeight - 44, 120))
+                .offset(y: 18)
+                .allowsHitTesting(false)
+                .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                .zIndex(3)
+        }
+    }
+
+    private func applyNotchPetScaleDefaultMigration() {
+        let defaults = UserDefaults.standard
+        let migrationKey = "notch_pets_expanded_scale_default_20260706"
+        guard !defaults.bool(forKey: migrationKey) else { return }
+
+        if defaults.object(forKey: "notch_pets_expanded_scale") == nil
+            || abs(defaults.double(forKey: "notch_pets_expanded_scale") - 1.0) < 0.001 {
+            defaults.set(0.7, forKey: "notch_pets_expanded_scale")
+        }
+
+        defaults.set(true, forKey: migrationKey)
+    }
+
+    @ViewBuilder
+    private func collapsedNotchPetPerchLayer(currentWidth: CGFloat) -> some View {
+        if notchPetsEnabled && !isExpanded && !usesFileDropOnlyLayout {
+            NotchPetPerchView(kind: NotchPetKind(rawValue: notchPetKindRaw) ?? .cat, size: notchPetCollapsedScale, isExpanded: false, isHoveringNotch: isHoveringNotch)
+                .frame(width: max(currentWidth - 28, 160), height: max(notchHeight + bannerHeightAddon, 58))
+                .offset(y: max(0, notchHeight - 38))
+                .allowsHitTesting(false)
+                .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                .zIndex(30)
+        }
     }
 
     @ViewBuilder
@@ -1303,6 +1350,8 @@ struct ContentView: View {
         case .hardwareHUD: return 174
         case .bluetoothBattery: return 174
         case .screenCapture: return 174
+        case .networkSpeed: return 174
+        case .notchPets: return 0
         default: return 160
         }
     }

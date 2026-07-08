@@ -15,6 +15,9 @@ private nonisolated enum LyricsSearchNetwork {
             if sources.contains(.lrclib) {
                 group.addTask { await searchLRCLIB(title: title, artist: artist) }
             }
+            if sources.contains(.kugou) {
+                group.addTask { await searchKuGou(title: title, artist: artist) }
+            }
             if sources.contains(.lyricsOVH) {
                 group.addTask { await searchLyricsOVH(title: title, artist: artist) }
             }
@@ -232,6 +235,113 @@ private nonisolated enum LyricsSearchNetwork {
         }
     }
 
+    private static func searchKuGou(title: String, artist: String) async -> [LyricsSearchResult] {
+        let query = "\(title) \(artist)".trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return [] }
+
+        var components = URLComponents(string: "https://lyrics.kugou.com/search")
+        components?.queryItems = [
+            URLQueryItem(name: "ver", value: "1"),
+            URLQueryItem(name: "man", value: "yes"),
+            URLQueryItem(name: "client", value: "pc"),
+            URLQueryItem(name: "keyword", value: query)
+        ]
+
+        guard let url = components?.url else { return [] }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 3.0
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) WaveNotch/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("https://www.kugou.com/", forHTTPHeaderField: "Referer")
+
+        guard let data = await fetchData(request),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = json["candidates"] as? [[String: Any]],
+              !candidates.isEmpty else {
+            return []
+        }
+
+        return await withTaskGroup(of: LyricsSearchResult?.self) { group in
+            for candidate in candidates.prefix(5) {
+                guard let id = stringValue(candidate["id"]),
+                      let accessKey = stringValue(candidate["accesskey"]),
+                      !id.isEmpty,
+                      !accessKey.isEmpty else {
+                    continue
+                }
+
+                let candidateTitle = stringValue(candidate["song"]) ?? title
+                let candidateArtist = stringValue(candidate["singer"]) ?? artist
+                let score = matchScore(
+                    apiTitle: candidateTitle,
+                    apiArtist: candidateArtist,
+                    targetTitle: title,
+                    targetArtist: artist
+                ) * 0.96
+
+                group.addTask {
+                    guard let lyricText = await fetchKuGouLyric(id: id, accessKey: accessKey) else {
+                        return nil
+                    }
+
+                    return makeResult(
+                        source: .kugou,
+                        title: candidateTitle,
+                        artist: candidateArtist,
+                        album: nil,
+                        syncedLyrics: lyricText,
+                        plainLyrics: nil,
+                        score: score
+                    )
+                }
+            }
+
+            var results: [LyricsSearchResult] = []
+            for await result in group {
+                if let result {
+                    results.append(result)
+                }
+            }
+            return results
+        }
+    }
+
+    private static func fetchKuGouLyric(id: String, accessKey: String) async -> String? {
+        var components = URLComponents(string: "https://lyrics.kugou.com/download")
+        components?.queryItems = [
+            URLQueryItem(name: "ver", value: "1"),
+            URLQueryItem(name: "client", value: "pc"),
+            URLQueryItem(name: "id", value: id),
+            URLQueryItem(name: "accesskey", value: accessKey),
+            URLQueryItem(name: "fmt", value: "lrc"),
+            URLQueryItem(name: "charset", value: "utf8")
+        ]
+
+        guard let url = components?.url else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 3.0
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) WaveNotch/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("https://www.kugou.com/", forHTTPHeaderField: "Referer")
+
+        guard let data = await fetchData(request),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let content = json["content"] as? String else {
+            return nil
+        }
+
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("[") {
+            return trimmed
+        }
+
+        guard let decoded = Data(base64Encoded: trimmed, options: .ignoreUnknownCharacters),
+              let text = String(data: decoded, encoding: .utf8),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+
+        return text
+    }
+
     private static func fetchNeteaseLyric(id: Int) async -> String? {
         guard let url = URL(string: "https://music.163.com/api/song/lyric?id=\(id)&lv=1&kv=1&tv=-1") else { return nil }
 
@@ -314,6 +424,19 @@ private nonisolated enum LyricsSearchNetwork {
         return names.joined(separator: ", ")
     }
 
+    private static func stringValue(_ value: Any?) -> String? {
+        switch value {
+        case let string as String:
+            return string
+        case let int as Int:
+            return String(int)
+        case let double as Double:
+            return String(Int(double))
+        default:
+            return nil
+        }
+    }
+
     private static func matchScore(apiTitle: String, apiArtist: String, targetTitle: String, targetArtist: String) -> Double {
         let normalizedAPITitle = normalize(apiTitle)
         let normalizedTargetTitle = normalize(targetTitle)
@@ -381,10 +504,26 @@ extension NowPlayingManager {
     }
 
     private func cleanedLyricTitle(_ title: String) -> String {
-        var cleanTitle = title
-            .replacingOccurrences(of: "(Official Video)", with: "", options: .caseInsensitive)
-            .replacingOccurrences(of: "[Official Music Video]", with: "", options: .caseInsensitive)
-            .replacingOccurrences(of: "(Lyrics)", with: "", options: .caseInsensitive)
+        var cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let metadataPatterns = [
+            #"[\(\[]\s*(official\s*)?(music\s*)?video\s*[\)\]]"#,
+            #"[\(\[]\s*(official\s*)?audio\s*[\)\]]"#,
+            #"[\(\[]\s*(lyrics?|lyric\s*video|visualizer|mv)\s*[\)\]]"#,
+            #"[\(\[]\s*(remaster(ed)?|radio\s*edit|clean|explicit)\s*[\)\]]"#,
+            #"\s*-\s*(official\s*)?(music\s*)?video\s*$"#,
+            #"\s*-\s*(lyrics?|lyric\s*video|visualizer|mv)\s*$"#
+        ]
+
+        for pattern in metadataPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                cleanTitle = regex.stringByReplacingMatches(
+                    in: cleanTitle,
+                    range: NSRange(cleanTitle.startIndex..., in: cleanTitle),
+                    withTemplate: ""
+                )
+            }
+        }
 
         if let regex = try? NSRegularExpression(pattern: "(\\(|-)?\\s*(feat\\.|ft\\.|featuring).*?(\\)|$)", options: .caseInsensitive) {
             cleanTitle = regex.stringByReplacingMatches(
@@ -460,11 +599,56 @@ extension NowPlayingManager {
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
             guard self.currentLyricSearchID == searchTicket else { return }
-            self.fetchLRCLibGet(title: cleanTitle, artist: artist, cacheKey: cacheKey, ticket: searchTicket)
+            self.fetchBestLyrics(title: cleanTitle, artist: artist, cacheKey: cacheKey, ticket: searchTicket)
         }
 
         lyricSearchTask = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + (forceRefresh ? 0.1 : 2.0), execute: workItem)
+    }
+
+    private func fetchBestLyrics(title: String, artist: String, cacheKey: String, ticket: UUID) {
+        Task { [weak self] in
+            guard let self else { return }
+            let sources: Set<LyricsSearchSource> = [.lrclib, .kugou, .netease, .lyricsOVH]
+            let results = await LyricsSearchNetwork.search(title: title, artist: artist, sources: sources)
+
+            guard self.currentLyricSearchID == ticket else { return }
+
+            if let best = self.bestAutomaticLyricsResult(results) {
+                self.saveAndPublish(result: best, cacheKey: cacheKey, ticket: ticket)
+            } else {
+                self.handleLyricsNotFound(ticket: ticket)
+            }
+        }
+    }
+
+    private func bestAutomaticLyricsResult(_ results: [LyricsSearchResult]) -> LyricsSearchResult? {
+        results
+            .filter { result in
+                result.isSynced ? result.score >= 0.50 : result.score >= 0.48
+            }
+            .sorted { lhs, rhs in
+                automaticLyricsRank(lhs) > automaticLyricsRank(rhs)
+            }
+            .first
+    }
+
+    private func automaticLyricsRank(_ result: LyricsSearchResult) -> Double {
+        let sourceBonus: Double
+        switch result.source {
+        case .cache:
+            sourceBonus = 0.20
+        case .lrclib:
+            sourceBonus = 0.08
+        case .kugou:
+            sourceBonus = 0.06
+        case .netease:
+            sourceBonus = 0.04
+        case .lyricsOVH:
+            sourceBonus = 0.00
+        }
+
+        return result.score + (result.isSynced ? 0.18 : 0.0) + sourceBonus
     }
 
     // MARK: - Sources
@@ -631,6 +815,33 @@ extension NowPlayingManager {
     }
 
     // MARK: - Cache and state
+
+    private func saveAndPublish(result: LyricsSearchResult, cacheKey: String, ticket: UUID) {
+        guard currentLyricSearchID == ticket else { return }
+        guard !result.lines.isEmpty else {
+            handleLyricsNotFound(ticket: ticket)
+            return
+        }
+
+        DispatchQueue.main.async {
+            let existingOffset = self.lyricsCache[cacheKey]?.songOffset ?? self.currentSongLyricOffset
+            let entry = CachedLyricsEntry(
+                lyrics: result.lines,
+                songOffset: existingOffset,
+                noLyrics: false,
+                updatedAt: Date()
+            )
+            self.lyricsCache[cacheKey] = entry
+            self.persistLyricsCache()
+            self.currentLyricsCacheKey = cacheKey
+            self.currentSongLyricOffset = existingOffset
+            self.lyricsDisabledForCurrentSong = false
+            self.lyrics = result.lines
+            self.activeLyricIndex = 0
+            self.isSearchingLyrics = false
+            self.updateActiveLyric()
+        }
+    }
 
     private func saveAndPublish(lyricsText: String, isSynced: Bool, cacheKey: String, ticket: UUID) {
         guard currentLyricSearchID == ticket else { return }

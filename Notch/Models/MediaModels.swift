@@ -30,6 +30,7 @@ nonisolated struct LyricsSearchQuery: Equatable, Sendable {
 nonisolated enum LyricsSearchSource: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case cache = "Cached"
     case lrclib = "LRCLIB"
+    case kugou = "KuGou"
     case lyricsOVH = "Lyrics.ovh"
     case netease = "Netease"
 

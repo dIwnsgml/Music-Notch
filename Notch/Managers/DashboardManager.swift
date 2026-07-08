@@ -19,6 +19,8 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
     case hardwareHUD
     case bluetoothBattery
     case screenCapture
+    case networkSpeed
+    case notchPets
     
     var id: String { self.rawValue }
     
@@ -41,6 +43,8 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .hardwareHUD: return "Hardware HUD"
         case .bluetoothBattery: return "Bluetooth Batteries"
         case .screenCapture: return "Screen Capture"
+        case .networkSpeed: return "Network Speed"
+        case .notchPets: return "Notch Pets"
         }
     }
     
@@ -63,6 +67,15 @@ enum NotchWidgetType: String, Codable, CaseIterable, Identifiable {
         case .hardwareHUD: return UserDefaults.standard.bool(forKey: "plugin_hardware_hud_installed")
         case .bluetoothBattery: return UserDefaults.standard.bool(forKey: "plugin_bluetooth_battery_installed")
         case .screenCapture: return UserDefaults.standard.bool(forKey: "plugin_screen_capture_installed")
+        case .networkSpeed: return UserDefaults.standard.bool(forKey: "plugin_network_speed_installed")
+        case .notchPets: return false
+        }
+    }
+
+    var usesDashboardArea: Bool {
+        switch self {
+        case .notchPets: return false
+        default: return true
         }
     }
 }
@@ -115,7 +128,7 @@ class DashboardManager: ObservableObject {
             fullOrder = NotchWidgetType.allCases
         }
         
-        return fullOrder.filter { $0.isInstalled }
+        return fullOrder.filter { $0.isInstalled && $0.usesDashboardArea }
     }
     
     func saveWidgetOrder(_ order: [NotchWidgetType]) {
@@ -143,6 +156,7 @@ class DashboardManager: ObservableObject {
         let hardwareHUDEnabled = UserDefaults.standard.bool(forKey: "plugin_hardware_hud_enabled")
         let bluetoothBatteryEnabled = UserDefaults.standard.bool(forKey: "plugin_bluetooth_battery_enabled")
         let screenCaptureEnabled = UserDefaults.standard.bool(forKey: "plugin_screen_capture_enabled")
+        let networkSpeedEnabled = UserDefaults.standard.bool(forKey: "plugin_network_speed_enabled")
         if clipboardEnabled {
             _ = ClipboardHistoryManager.shared
         }
@@ -230,6 +244,8 @@ class DashboardManager: ObservableObject {
             case .hardwareHUD: if hardwareHUDEnabled { widgets.append(.hardwareHUD) }
             case .bluetoothBattery: if bluetoothBatteryEnabled { widgets.append(.bluetoothBattery) }
             case .screenCapture: if screenCaptureEnabled { widgets.append(.screenCapture) }
+            case .networkSpeed: if networkSpeedEnabled { widgets.append(.networkSpeed) }
+            case .notchPets: break
             }
         }
         
